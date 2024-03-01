@@ -1,2 +1,5 @@
 __pycache__
 .env*
+build/
+dist/
+google_jetstream.egg-info/
