@@ -1,0 +1,8 @@
+absl-py
+flax
+grpcio
+jax
+jaxlib
+portpicker
+numpy
+seqio
