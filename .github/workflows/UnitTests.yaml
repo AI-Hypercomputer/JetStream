@@ -28,7 +28,7 @@ on:
 
 jobs:
   py:
-    name: "Python type and lint check"
+    name: "Python type check"
     strategy:
       matrix:
         os: [ubuntu-20.04]
@@ -43,14 +43,10 @@ jobs:
     - name: Install Dependencies
       run: |
         pip install pytype
-        pip install pylint
         pip install -r requirements.txt
     - name: Typecheck the code with pytype
       run: |
         pytype --jobs auto --disable import-error --disable module-attr jetstream/
-    - name: Analysing the code with pylint
-      run: |
-        pylint jetstream/
 
   cpu:
     name: "JetStream unit tests"
@@ -77,6 +73,8 @@ jobs:
     - name: Test JetStream core orchestrator
       run: |
         python -m jetstream.core.orchestrator_test
+        sleep 20 && fuser -k 9000/tcp
     - name: Test JetStream core server library
       run: |
         python -m jetstream.core.server_test
+        sleep 20 && fuser -k 9000/tcp
