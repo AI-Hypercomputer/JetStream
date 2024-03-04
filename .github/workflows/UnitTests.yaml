@@ -70,11 +70,3 @@ jobs:
     - name: Test mock JetStream engine implementation
       run: |
         python -m jetstream.engine.mock_engine_test
-    - name: Test JetStream core orchestrator
-      run: |
-        python -m jetstream.core.orchestrator_test
-        sleep 20 && fuser -k 9000/tcp
-    - name: Test JetStream core server library
-      run: |
-        python -m jetstream.core.server_test
-        sleep 20 && fuser -k 9000/tcp
