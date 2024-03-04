@@ -18,7 +18,7 @@ See orchestrator test for why these characters specifically will be the
 response.
 """
 
-from typing import Any
+from typing import Any, Type
 
 import grpc
 import portpicker
@@ -48,7 +48,7 @@ class ServerTest(parameterized.TestCase):
   )
   def test_server(
       self,
-      config: config_lib.ServerConfig,
+      config: Type[config_lib.ServerConfig],
       expected_tokens: list[str],
       devices: list[Any],
   ):
