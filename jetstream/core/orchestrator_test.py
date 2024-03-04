@@ -61,6 +61,8 @@ class OrchestratorTest(absltest.TestCase):
     driver = orchestrator.Driver(
         prefill_engines=[prefill_engine],
         generate_engines=[generate_engine],
+        prefill_params=[prefill_engine.load_params()],
+        generate_params=[generate_engine.load_params()],
     )
     return driver
 
