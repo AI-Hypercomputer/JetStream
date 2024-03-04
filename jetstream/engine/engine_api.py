@@ -15,7 +15,7 @@
 """Defines the JetStream API.
 
 These functions are the accelerator functions which an outer sampling loop
-could want to call, enabling interleaved (continous batching) inference.
+could want to call, enabling interleaved (continuous batching) inference.
 """
 
 import abc

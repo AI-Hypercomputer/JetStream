@@ -29,10 +29,10 @@ python -m jetstream.core.orchestrator_test
 # Test JetStream core server library
 python -m jetstream.core.server_test
 
-# Test mock JET engine implementation
+# Test mock JetStream engine implementation
 python -m jetstream.engine.mock_engine_test
 
-# Test mock JET engine implementation
+# Test mock JetStream token utils
 python -m jetstream.engine.utils_test
 
 ```
