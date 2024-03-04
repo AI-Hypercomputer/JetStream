@@ -47,7 +47,7 @@ jobs:
         pip install -r requirements.txt
     - name: Typecheck the code with pytype
       run: |
-        pytype --jobs auto --disable import-error --exclude "**/*_pb2.py" --exclude "**/*_pb2_grpc.py" jetstream/
+        pytype --jobs auto --disable import-error --disable module-attr jetstream/
     - name: Analysing the code with pylint
       run: |
         pylint jetstream/
@@ -74,3 +74,9 @@ jobs:
     - name: Test mock JetStream engine implementation
       run: |
         python -m jetstream.engine.mock_engine_test
+    - name: Test JetStream core orchestrator
+      run: |
+        python -m jetstream.core.orchestrator_test
+    - name: Test JetStream core server library
+      run: |
+        python -m jetstream.core.server_test
