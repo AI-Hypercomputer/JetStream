@@ -47,7 +47,7 @@ jobs:
         pip install -r requirements.txt
     - name: Typecheck the code with pytype
       run: |
-        pytype --jobs auto --disable import-error --exclude *_pb2*.py jetstream/
+        pytype --jobs auto --disable import-error --exclude "**/*_pb2.py" --exclude "**/*_pb2_grpc.py" jetstream/
     - name: Analysing the code with pylint
       run: |
         pylint jetstream/
