@@ -41,7 +41,13 @@ On the client side, run:
     (run with mock)
     python -m benchmarks.benchmark_serving \
         --request-rate 1
+
+e2e example: python3 benchmark_serving.py --tokenizer /home/rwitten/maxtext/assets/tokenizer --num-prompts 100  --dataset ~/ShareGPT_V3_unfiltered_cleaned_split.json 
 """
+
+
+import tensorflow as tf
+import tensorflow_text as tftxt
 
 import argparse
 import asyncio
@@ -89,8 +95,11 @@ def get_tokenizer(tokenizer_name: str) -> Any:
   if tokenizer_name == "test":
     return "test"
   else:
-    raise NotImplementedError
-
+    with tf.io.gfile.GFile(tokenizer_name, 'rb') as model_fp:
+      sp_model = model_fp.read()
+    sp_tokenizer = tftxt.SentencepieceTokenizer(
+        model=sp_model, add_bos=True, add_eos=False, reverse=False)
+    return sp_tokenizer
 
 def sample_requests(
     dataset_path: str,
@@ -114,11 +123,11 @@ def sample_requests(
 
   # Tokenize the prompts and completions.
   prompts = [prompt for prompt, _ in dataset]
-  prompt_token_ids = tokenizer.encode(
+  prompt_token_ids = tokenizer.tokenize(
       prompts
   )  # adjust this code based on tokenizer method
   completions = [completion for _, completion in dataset]
-  completion_token_ids = tokenizer.encode(
+  completion_token_ids = tokenizer.tokenize(
       completions
   )  # adjust this code based on tokenizer method
   tokenized_dataset = []
@@ -176,7 +185,7 @@ def calculate_metrics(
   for i in range(len(outputs)):
     if outputs[i].success:
       output_len = len(
-          tokenizer.encode(outputs[i].generated_text)
+          tokenizer.tokenize(outputs[i].generated_text)
           if tokenizer != "test"
           else "ĊŌƟ"
       )
