@@ -466,7 +466,7 @@ if __name__ == "__main__":
       "--total-mock-requests",
       type=int,
       default=150,
-      help="The maximum number of threads used for request dispatching.",
+      help="The maximum number of mock requests to send for benchmark testing.",
   )
   parser.add_argument("--seed", type=int, default=0)
   parser.add_argument(
