@@ -77,24 +77,27 @@ to debug hangs due to bugs in threads (it is easier to debug with live logs).
 import dataclasses
 import functools
 import logging
+import os
 import queue
+import signal
 import threading
 import time
+import traceback
 from typing import Any, Iterable, Optional, Union
 
 import grpc
 import jax
-import numpy as np
-
-from jetstream.engine import engine_api
-from jetstream.engine import token_utils
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
+from jetstream.engine import engine_api
+from jetstream.engine import token_utils
+import numpy as np
 
 
 @dataclasses.dataclass
 class ActiveRequest:
   """Current state of the driver."""
+
   #################### Information relevant for generation #####################
   max_tokens: int
   # [num_samples,] which corresponds to whether each sample is complete for the
@@ -127,6 +130,21 @@ class ActiveRequest:
     This should be called only from within the Drivers background thread.
     """
     self.return_channel.put(generated_tokens)
+
+
+class JetThread(threading.Thread):
+  """Thread that kills the program if it fails.
+
+  If a driver thread goes down, we can't operate.
+  """
+
+  def run(self):
+    try:
+      super().run()
+    except Exception as e:  # pylint: disable=broad-exception-caught
+      print(f'Thread {self.name} encountered an error: {e}')
+      traceback.print_exc()
+      os.kill(os.getpid(), signal.SIGKILL)
 
 
 class Driver:
@@ -213,40 +231,47 @@ class Driver:
 
     # Construct a)
     self._generate_slots = [queue.Queue() for _ in generate_engines]
-    _ = [[self._generate_slots[idx].put(i)
-          for i in range(engine.max_concurrent_decodes)]
-         for idx, engine in enumerate(generate_engines)]
+    _ = [
+        [
+            self._generate_slots[idx].put(i)
+            for i in range(engine.max_concurrent_decodes)
+        ]
+        for idx, engine in enumerate(generate_engines)
+    ]
 
     # Kick off all our threads
     self._prefill_threads = [
-        threading.Thread(
-            target=functools.partial(self._prefill_thread, idx, engine)
+        JetThread(
+            target=functools.partial(self._prefill_thread, idx, engine),
+            name=f'prefill-{idx}',
         )
         for idx, engine in enumerate(self._prefill_engines)
     ]
-    self._transfer_thread = threading.Thread(target=self._transfer_thread)
+    self._transfer_thread = JetThread(target=self._transfer_thread)
     self._generate_threads = [
-        threading.Thread(
+        JetThread(
             target=functools.partial(
                 self._generate_thread,
                 idx,
                 engine,
                 self._generate_slots[idx],
                 self._detokenize_backlogs[idx],
-            )
+            ),
+            name=f'generate-{idx}',
         )
         for idx, engine in enumerate(self._generate_engines)
     ]
     # Construct b)
     self.detokenize_threads = [
-        threading.Thread(
+        JetThread(
             target=functools.partial(
                 self._detokenize_thread,
                 idx,
                 engine,
                 self._generate_slots[idx],
                 self._detokenize_backlogs[idx],
-            )
+            ),
+            name=f'detokenize-{idx}',
         )
         for idx, engine in enumerate(self._generate_engines)
     ]
@@ -268,8 +293,12 @@ class Driver:
     else:
       return None
 
-  def _prefill_thread(self, idx: int, prefill_engine: engine_api.Engine,
-                      transfer_backpressure: int = 8):
+  def _prefill_thread(
+      self,
+      idx: int,
+      prefill_engine: engine_api.Engine,
+      transfer_backpressure: int = 8,
+  ):
     """Thread which runs in the background performing prefills."""
     logging.info('---------Spinning up prefill thread %d.---------', idx)
     prefill_params = self._prefill_params[idx]
@@ -280,7 +309,7 @@ class Driver:
     while self.live:
       # We don't want to keep lots of kv caches live in memory on the prefill
       # slice that aren't about to be sent over to a generation slice.
-      if (self._transfer_backlog.qsize() < transfer_backpressure):
+      if self._transfer_backlog.qsize() < transfer_backpressure:
         # Check if there is anything on the prefill backlog, pop if so.
         try:
           request = self._prefill_backlog.get(block=True)
@@ -288,7 +317,15 @@ class Driver:
           history = self._load_cache_history(request.history_path)  # pylint: disable = assignment-from-none
           # Tokenize, and introduce a leading dimension
           is_bos = not bool(request.history_path)
-          logging.info('Prefilling on prefill engine %d : "%s", prefill queue size, %d, is_bos: %s, history: %s', idx, request.prefill_text, self._prefill_backlog.qsize(), is_bos, request.history_path)  # pylint: disable = line-too-long
+          logging.info(
+              'Prefilling on prefill engine %d : "%s", prefill queue size, %d,'
+              ' is_bos: %s, history: %s',
+              idx,
+              request.prefill_text,
+              self._prefill_backlog.qsize(),
+              is_bos,
+              request.history_path,
+          )  # pylint: disable = line-too-long
           padded_tokens, true_length = token_utils.tokenize_and_pad(
               request.prefill_text,
               vocab,
@@ -385,13 +422,14 @@ class Driver:
         new_request = self._generate_backlogs[idx].get()
         slot = my_slots.get()
         logging.info(
-            'Generate slice %d slot %d step %d,'
-            ' generating for : "%s"', idx, slot, generate_timestep,
+            'Generate slice %d slot %d step %d, generating for : "%s"',
+            idx,
+            slot,
+            generate_timestep,
             new_request.prefill_text,
         )
         decode_state = generate_engine.insert(
-            new_request.prefill_result, decode_state,
-            slot=slot
+            new_request.prefill_result, decode_state, slot=slot
         )
         new_request.generate_timestep_added = generate_timestep
         new_request.complete = np.zeros(
@@ -412,7 +450,7 @@ class Driver:
             generate_timestep,
             my_slots.qsize(),
             generate_engine.max_concurrent_decodes,
-            (time.time() - time_of_last_generate)*10**3,
+            (time.time() - time_of_last_generate) * 10**3,
         )
         time_of_last_generate = time.time()
 
