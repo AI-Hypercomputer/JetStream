@@ -23,7 +23,6 @@ from typing import Any, Type
 
 import grpc
 import jax
-
 from jetstream.core import config_lib
 from jetstream.core import orchestrator
 from jetstream.core.proto import jetstream_pb2_grpc
@@ -33,17 +32,23 @@ _HOST = '[::]'
 
 
 def run(
-    threads: int,
     port: int,
     config: Type[config_lib.ServerConfig],
     devices: Any,
     credentials: Any = grpc.insecure_server_credentials(),
+    threads: int | None = None,
 ) -> grpc.Server:
-  """Runs a server with a specified config."""
+  """Runs a server with a specified config.
+
+  Args:
+    port: Port on which the server will be made available.
+    config: A ServerConfig to config engine, model, device slices, etc.
+    device: Device objects, will be used to get engine with proper slicing.
+    credentials: Should use grpc credentials by default.
+    threads: Number of RPC handlers worker threads. This should be at least
+      equal to the decoding batch size to fully saturate the decoding queue.
+  """
   logging.info('Kicking off gRPC server.')
-  server = grpc.server(
-      futures.ThreadPoolExecutor(max_workers=threads)
-  )  # pytype: disable=wrong-keyword-args
   engines = config_lib.get_engines(config, devices=devices)
   prefill_params = [pe.load_params() for pe in engines.prefill_engines]
   generate_params = [ge.load_params() for ge in engines.generate_engines]
@@ -55,10 +60,14 @@ def run(
       prefill_params=prefill_params + shared_params,
       generate_params=generate_params + shared_params,
   )
+  # We default threads to the total number of concurrent allowed decodes,
+  # to make sure we can fully saturate the model. Set default minimum to 64.
+  threads = threads or max(driver.get_total_concurrent_requests(), 64)
+  server = grpc.server(futures.ThreadPoolExecutor(max_workers=threads))  # pytype: disable=wrong-keyword-args
   jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
       orchestrator.LLMOrchestrator(driver=driver), server
   )
-  logging.info('Starting server on port %d', port)
+  logging.info('Starting server on port %d with %d threads', port, threads)
 
   server.add_secure_port(f'{_HOST}:{port}', credentials)
   server.start()

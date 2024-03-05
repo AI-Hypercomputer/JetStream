@@ -147,6 +147,16 @@ class JetThread(threading.Thread):
       os.kill(os.getpid(), signal.SIGKILL)
 
 
+def _abort_or_raise(
+    context: grpc.ServicerContext | None, code: grpc.StatusCode, details: str
+):
+  """Safely aborts a gRPC context if available, or raises an Exception."""
+  if context is None:
+    raise RuntimeError(details)
+
+  context.abort(code, details)
+
+
 class Driver:
   """Drives the engines."""
 
@@ -281,6 +291,15 @@ class Driver:
     self._transfer_thread.start()
     _ = [f.start() for f in self._generate_threads]
     _ = [f.start() for f in self.detokenize_threads]
+
+  def get_total_concurrent_requests(self) -> int:
+    """Returns the total number of concurrent requests the driver can service."""
+    # We don't support filling all backlogs at once because it can cause GIL
+    # contention.
+    total_max_concurrent_decodes = sum(
+        [e.max_concurrent_decodes for e in self._generate_engines]
+    )
+    return total_max_concurrent_decodes
 
   def place_request_on_prefill_queue(self, request: ActiveRequest):
     """Used to place new requests for prefilling and generation."""
@@ -544,7 +563,18 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     )
     # The first stage is being prefilled, all other stages are handled
     # inside the driver (transfer, generate*N, detokenize).
-    self._driver.place_request_on_prefill_queue(active_request)
+    try:
+      self._driver.place_request_on_prefill_queue(active_request)
+    except queue.Full:
+      # Safely abort the gRPC server thread with a retriable error.
+      _abort_or_raise(
+          context=context,
+          code=grpc.StatusCode.RESOURCE_EXHAUSTED,
+          details=(
+              'The driver prefill queue is full and more requests cannot be'
+              ' handled. You may retry this request.'
+          ),
+      )
     logging.info(
         'Placed request with text "%s" on the prefill queue.',
         active_request.prefill_text,

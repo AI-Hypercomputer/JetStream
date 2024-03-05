@@ -24,9 +24,6 @@ from jetstream.core import server_lib
 
 
 _PORT = flags.DEFINE_integer('port', 9000, 'port to listen on')
-_THREADS = flags.DEFINE_integer(
-    'threads', 64, 'number of worker threads in thread pool'
-)
 _CONFIG = flags.DEFINE_string(
     'config',
     'InterleavedCPUTestServer',
@@ -41,7 +38,6 @@ def main(argv: Sequence[str]):
   # We separate credential from run so that we can unit test it with local credentials.
   # TODO: Add grpc credentials for OSS.
   jetstream_server = server_lib.run(
-      threads=_THREADS.value,
       port=_PORT.value,
       config=server_config,
       devices=devices,
