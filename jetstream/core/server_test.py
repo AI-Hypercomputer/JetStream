@@ -59,7 +59,6 @@ class ServerTest(parameterized.TestCase):
     credentials = grpc.local_server_credentials()
 
     _ = server_lib.run(
-        threads=25,
         port=port,
         config=config,
         devices=devices,
