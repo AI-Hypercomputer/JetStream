@@ -80,6 +80,7 @@ import logging
 import os
 import queue
 import signal
+import sys
 import threading
 import time
 import traceback
@@ -92,6 +93,23 @@ from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine import engine_api
 from jetstream.engine import token_utils
 import numpy as np
+
+
+root = logging.getLogger()
+root.setLevel(logging.DEBUG)
+
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+root.addHandler(handler)
+
+def delete_pytree(p):
+  def delete_leaf(leaf):
+    if isinstance(leaf, jax.Array):
+      leaf.delete()
+    del leaf
+  jax.tree_map(delete_leaf, p)
 
 
 @dataclasses.dataclass
@@ -169,14 +187,12 @@ class Driver:
   # Stage 1
   _prefill_backlog: queue.Queue[ActiveRequest]
   # Stage 2
-  _transfer_backlog: queue.Queue[ActiveRequest]
-  # Stage 3
   # We keep this as a dict to avoid a possibly expensive object comparison
   # when logging the index of the generate engine we send a prefill result
   # to, it allows us to natively have the index from the min operation, rather
   # than have to call .index()
   _generate_backlogs: dict[int, queue.Queue[ActiveRequest]] = {}
-  # Stage 4
+  # Stage 3
   # This can be a list because we can pass it as an arg to generate and
   # detokenize threads. It is a list of tokens to be detokenized.
   _detokenize_backlogs: list[queue.Queue[engine_api.ResultTokens]] = []
@@ -204,15 +220,11 @@ class Driver:
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
     # Stage 2
-    # After prefilling, it is placed here in order to get transferred to
-    # one of the generate backlogs.
-    self._transfer_backlog = queue.Queue()
-    # Stage 3
     # Each generate engine accesses its own generate backlog.
     self._generate_backlogs = {
         idx: queue.Queue() for idx, _ in enumerate(generate_engines)
     }
-    # Stage 4
+    # Stage 3
     # After generation, ActiveRequests are placed on the detokenization backlog
     # for tokens to be sent into each ActiveRequest's return channel.
     # We have one of these per generate engine to simplify the logic keeping
@@ -257,7 +269,6 @@ class Driver:
         )
         for idx, engine in enumerate(self._prefill_engines)
     ]
-    self._transfer_thread = JetThread(target=self._transfer_thread)
     self._generate_threads = [
         JetThread(
             target=functools.partial(
@@ -288,7 +299,6 @@ class Driver:
     self.live = True
     # Kick off all threads
     _ = [f.start() for f in self._prefill_threads]
-    self._transfer_thread.start()
     _ = [f.start() for f in self._generate_threads]
     _ = [f.start() for f in self.detokenize_threads]
 
@@ -316,7 +326,7 @@ class Driver:
       self,
       idx: int,
       prefill_engine: engine_api.Engine,
-      transfer_backpressure: int = 8,
+      generate_backpressure: int = 3,
   ):
     """Thread which runs in the background performing prefills."""
     logging.info('---------Spinning up prefill thread %d.---------', idx)
@@ -328,7 +338,7 @@ class Driver:
     while self.live:
       # We don't want to keep lots of kv caches live in memory on the prefill
       # slice that aren't about to be sent over to a generation slice.
-      if self._transfer_backlog.qsize() < transfer_backpressure:
+      if (self._generate_backlogs[idx].qsize() < generate_backpressure):
         # Check if there is anything on the prefill backlog, pop if so.
         try:
           request = self._prefill_backlog.get(block=True)
@@ -337,10 +347,9 @@ class Driver:
           # Tokenize, and introduce a leading dimension
           is_bos = not bool(request.history_path)
           logging.info(
-              'Prefilling on prefill engine %d : "%s", prefill queue size, %d,'
+              'Prefilling on prefill engine %d : prefill queue size, %d,'
               ' is_bos: %s, history: %s',
               idx,
-              request.prefill_text,
               self._prefill_backlog.qsize(),
               is_bos,
               request.history_path,
@@ -359,51 +368,14 @@ class Driver:
               padded_tokens=padded_tokens,
               true_length=true_length,
           )
-          jax.block_until_ready(prefill_result)
           request.prefill_result = prefill_result
           # Once prefill is complete, place it on the generation queue.
-          self._transfer_backlog.put(request)
+          self._generate_backlogs[idx].put(request)
           logging.info(
-              'Placed request "%s" on the transfer queue.', request.prefill_text
+              f'Placed request on the generate queue, {self._generate_backlogs[idx].qsize()=}'
           )
         except queue.Empty:
           # Otherwise, don't do anything!
-          pass
-
-  def _transfer_thread(self, generation_backpressure: int = 8):
-    """Transfers the kv cache on an active request to the least full generate backlog."""
-    while self.live:
-      # We don't want to keep lots of kv caches live in memory on a generate
-      # slice that haven't been inserted
-      if (
-          sum([backlog.qsize() for backlog in self._generate_backlogs.values()])
-          < generation_backpressure
-      ):
-        try:
-          new_request = self._transfer_backlog.get(block=True)
-
-          # Get the index of the generate queue with the minimmum qsize.
-          idx = min(
-              self._generate_backlogs.items(), key=lambda q: q[1].qsize()
-          )[0]
-          logging.info(
-              'Transferring "%s" to generate engine %d.',
-              new_request.prefill_text,
-              idx,
-          )
-          # Transfer the info to the relevant generate backlog.
-          new_request.prefill_result = jax.device_put(
-              new_request.prefill_result,
-              self._generate_engines[idx].get_prefix_destination_sharding(),
-          )
-          # Place the request on the correct generate backlog.
-          self._generate_backlogs[idx].put(new_request)
-          logging.info(
-              'Request "%s" tsuccessfully transferrred to generate engine %d.',
-              new_request.prefill_text,
-              idx,
-          )
-        except queue.Empty:
           pass
 
   def _generate_thread(
@@ -434,22 +406,28 @@ class Driver:
     generate_params = self._generate_params[idx]
     logging.info('---------Generate params %d loaded.---------', idx)
     time_of_last_generate = time.time()
+    time_of_last_print = time.time()
     while self.live:
+      if (time.time() - time_of_last_print) > 1:
+        logging.info(
+           f'Generate thread making a decision with: prefill_backlog={self._prefill_backlog.qsize()} generate_free_slots={my_slots.qsize()}'
+        )
+        time_of_last_print = time.time()
       # Check if there are any free my_slots.
       if not my_slots.empty() and not self._generate_backlogs[idx].empty():
         # Only get requests from the backlog corresponding to this engine.
         new_request = self._generate_backlogs[idx].get()
         slot = my_slots.get()
         logging.info(
-            'Generate slice %d slot %d step %d, generating for : "%s"',
+            'Generate slice %d slot %d step %d',
             idx,
             slot,
             generate_timestep,
-            new_request.prefill_text,
         )
         decode_state = generate_engine.insert(
             new_request.prefill_result, decode_state, slot=slot
         )
+        delete_pytree(new_request.prefill_result)
         new_request.generate_timestep_added = generate_timestep
         new_request.complete = np.zeros(
             (generate_engine.samples_per_slot,), dtype=np.bool_
@@ -576,8 +554,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
           ),
       )
     logging.info(
-        'Placed request with text "%s" on the prefill queue.',
-        active_request.prefill_text,
+        'Placed request on the prefill queue.',
     )
 
     while True:
