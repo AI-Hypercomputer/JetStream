@@ -242,7 +242,7 @@ async def send_request(
     max_tokens: int,
     threads: int,
 ) -> RequestFuncOutput:
-  """Send the request to wiz server."""
+  """Send the request to JetStream server."""
   loop = asyncio.get_running_loop()
   loop.set_default_executor(ThreadPoolExecutor(max_workers=threads))
   request = jetstream_pb2.DecodeRequest(
@@ -406,7 +406,7 @@ def main(args: argparse.Namespace):
     # Save to file
     base_model_id = model_id.split("/")[-1]
     file_name = (
-        f"JetEngine-{args.request_rate}qps-{base_model_id}-{current_dt}.json"
+        f"JetStream-{args.request_rate}qps-{base_model_id}-{current_dt}.json"
     )
     with open(file_name, "w") as outfile:
       json.dump(result_json, outfile)
@@ -433,7 +433,7 @@ if __name__ == "__main__":
       help=(
           "Name of the model. (it's just used to label the benchmark, the model"
           " config is defined in config_lib, and passed as the server config"
-          " flag when we run the wiz-pathways server)"
+          " flag when we run the JetStream server)"
       ),
   )
   parser.add_argument(

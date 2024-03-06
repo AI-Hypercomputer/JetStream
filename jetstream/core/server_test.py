@@ -91,8 +91,7 @@ class ServerTest(parameterized.TestCase):
           == expected_tokens[counter]
       )
       counter += 1
-    server.driver.stop()
-    server.server.stop(grace=None)
+    server.stop()
 
 
 if __name__ == '__main__':

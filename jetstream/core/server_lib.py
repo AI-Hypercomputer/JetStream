@@ -18,7 +18,6 @@ See implementations/*/sever.py for examples.
 """
 
 from concurrent import futures
-import dataclasses
 import logging
 from typing import Any, Type
 
@@ -32,10 +31,24 @@ from jetstream.core.proto import jetstream_pb2_grpc
 _HOST = '[::]'
 
 
-@dataclasses.dataclass
 class JetStreamServer:
-  driver: orchestrator.Driver
-  server: grpc.Server
+  """JetStream grpc server."""
+
+  def __init__(self, driver: orchestrator.Driver, server: grpc.Server):
+    self._driver = driver
+    self._server = server
+
+  def start(self, port, credentials) -> None:
+    self._server.add_secure_port(f'{_HOST}:{port}', credentials)
+    self._server.start()
+
+  def stop(self) -> None:
+    # Gracefully clean up threads in the orchestrator.
+    self._driver.stop()
+    self._server.stop(0)
+
+  def wait_for_termination(self) -> None:
+    self._server.wait_for_termination()
 
 
 def run(
@@ -50,10 +63,13 @@ def run(
   Args:
     port: Port on which the server will be made available.
     config: A ServerConfig to config engine, model, device slices, etc.
-    device: Device objects, will be used to get engine with proper slicing.
+    devices: Device objects, will be used to get engine with proper slicing.
     credentials: Should use grpc credentials by default.
     threads: Number of RPC handlers worker threads. This should be at least
       equal to the decoding batch size to fully saturate the decoding queue.
+
+  Returns:
+    JetStreamServer that wraps the grpc server and orchestrator driver.
   """
   logging.info('Kicking off gRPC server.')
   engines = config_lib.get_engines(config, devices=devices)
@@ -76,9 +92,9 @@ def run(
   )
   logging.info('Starting server on port %d with %d threads', port, threads)
 
-  server.add_secure_port(f'{_HOST}:{port}', credentials)
-  server.start()
-  return JetStreamServer(driver, server)
+  jetstream_server = JetStreamServer(driver, server)
+  jetstream_server.start(port, credentials)
+  return jetstream_server
 
 
 def get_devices() -> Any:
