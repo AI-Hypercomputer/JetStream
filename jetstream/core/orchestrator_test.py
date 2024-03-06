@@ -41,10 +41,10 @@ decoded (these are the ascii chars at those indices which is what the test
 tokenizer returns).
 """
 
-from jetstream.engine import mock_engine
+from absl.testing import absltest
 from jetstream.core import orchestrator
 from jetstream.core.proto import jetstream_pb2
-from absl.testing import absltest
+from jetstream.engine import mock_engine
 
 
 class OrchestratorTest(absltest.TestCase):
@@ -87,12 +87,16 @@ class OrchestratorTest(absltest.TestCase):
     counter = 0
     for token in iterator:
       # Tokens come through as bytes.
-      print('actual output: ' + bytes(token.response[0], encoding='utf-8').decode())
+      print(
+          'actual output: '
+          + bytes(token.response[0], encoding='utf-8').decode()
+      )
       assert (
           bytes(token.response[0], encoding='utf-8').decode()
           == expected_tokens[counter]
       )
       counter += 1
+    driver.stop()
 
 
 if __name__ == '__main__':

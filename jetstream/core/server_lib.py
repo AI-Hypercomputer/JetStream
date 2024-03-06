@@ -18,6 +18,7 @@ See implementations/*/sever.py for examples.
 """
 
 from concurrent import futures
+import dataclasses
 import logging
 from typing import Any, Type
 
@@ -31,13 +32,19 @@ from jetstream.core.proto import jetstream_pb2_grpc
 _HOST = '[::]'
 
 
+@dataclasses.dataclass
+class JetStreamServer:
+  driver: orchestrator.Driver
+  server: grpc.Server
+
+
 def run(
     port: int,
     config: Type[config_lib.ServerConfig],
     devices: Any,
     credentials: Any = grpc.insecure_server_credentials(),
     threads: int | None = None,
-) -> grpc.Server:
+) -> JetStreamServer:
   """Runs a server with a specified config.
 
   Args:
@@ -71,7 +78,7 @@ def run(
 
   server.add_secure_port(f'{_HOST}:{port}', credentials)
   server.start()
-  return server
+  return JetStreamServer(driver, server)
 
 
 def get_devices() -> Any:
