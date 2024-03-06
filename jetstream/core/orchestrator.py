@@ -76,6 +76,7 @@ to debug hangs due to bugs in threads (it is easier to debug with live logs).
 
 import dataclasses
 import functools
+import itertools
 import logging
 import os
 import queue
@@ -100,15 +101,19 @@ root.setLevel(logging.DEBUG)
 
 handler = logging.StreamHandler(sys.stdout)
 handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 handler.setFormatter(formatter)
 root.addHandler(handler)
+
 
 def delete_pytree(p):
   def delete_leaf(leaf):
     if isinstance(leaf, jax.Array):
       leaf.delete()
     del leaf
+
   jax.tree_map(delete_leaf, p)
 
 
@@ -185,19 +190,19 @@ class Driver:
   _prefill_params: Optional[dict[int, Any]] = {}
   _generate_params: Optional[dict[int, Any]] = {}
   # Stage 1
-  _prefill_backlog: queue.Queue[ActiveRequest]
+  _prefill_backlog: queue.Queue[ActiveRequest | None]
   # Stage 2
   # We keep this as a dict to avoid a possibly expensive object comparison
   # when logging the index of the generate engine we send a prefill result
   # to, it allows us to natively have the index from the min operation, rather
   # than have to call .index()
-  _generate_backlogs: dict[int, queue.Queue[ActiveRequest]] = {}
+  _generate_backlogs: dict[int, queue.Queue[ActiveRequest | None]] = {}
   # Stage 3
   # This can be a list because we can pass it as an arg to generate and
   # detokenize threads. It is a list of tokens to be detokenized.
   _detokenize_backlogs: list[queue.Queue[engine_api.ResultTokens]] = []
   _generate_slots: list[queue.Queue[int]] = []
-  _active_requests: list[queue.Queue[tuple[int, ActiveRequest]]] = []
+  _active_requests: list[queue.Queue[tuple[int, ActiveRequest | None]]] = []
 
   def __init__(
       self,
@@ -296,11 +301,58 @@ class Driver:
         )
         for idx, engine in enumerate(self._generate_engines)
     ]
+    self._all_threads = list(
+        itertools.chain(
+            self._prefill_threads,
+            self._generate_threads,
+            self.detokenize_threads,
+        )
+    )
     self.live = True
     # Kick off all threads
-    _ = [f.start() for f in self._prefill_threads]
-    _ = [f.start() for f in self._generate_threads]
-    _ = [f.start() for f in self.detokenize_threads]
+    for t in self._all_threads:
+      t.start()
+
+  def stop(self):
+    """Stops the driver and all background threads."""
+    # Signal to all threads that they should stop.
+    self.live = False
+
+    all_backlogs = list(
+        itertools.chain(
+            [self._prefill_backlog],
+            self._generate_backlogs.values(),
+            self._detokenize_backlogs,
+        )
+    )
+
+    while any(t.is_alive() for t in self._all_threads):
+      # Empty all backlogs and mark any remaining requests as cancelled.
+      for q in all_backlogs:
+        while True:
+          try:
+            r = q.get_nowait()
+            if r is None:
+              continue
+            elif isinstance(r, ActiveRequest):
+              r.return_channel = None
+            else:  # detokenize backlog
+              _, r = r
+              if isinstance(r, ActiveRequest):
+                r.return_channel = None
+          except queue.Empty:
+            break
+
+      # Put sentinels to unblock threads.
+      for q in all_backlogs:
+        try:
+          q.put_nowait(None)
+        except queue.Full:
+          pass
+
+    # Wait for all threads to stop.
+    for t in self._all_threads:
+      t.join()
 
   def get_total_concurrent_requests(self) -> int:
     """Returns the total number of concurrent requests the driver can service."""
@@ -338,10 +390,12 @@ class Driver:
     while self.live:
       # We don't want to keep lots of kv caches live in memory on the prefill
       # slice that aren't about to be sent over to a generation slice.
-      if (self._generate_backlogs[idx].qsize() < generate_backpressure):
+      if self._generate_backlogs[idx].qsize() < generate_backpressure:
         # Check if there is anything on the prefill backlog, pop if so.
         try:
           request = self._prefill_backlog.get(block=True)
+          if request is None:
+            break
           # TODO: Implement hot/cold cache for history.
           history = self._load_cache_history(request.history_path)  # pylint: disable = assignment-from-none
           # Tokenize, and introduce a leading dimension
@@ -372,7 +426,8 @@ class Driver:
           # Once prefill is complete, place it on the generation queue.
           self._generate_backlogs[idx].put(request)
           logging.info(
-              f'Placed request on the generate queue, {self._generate_backlogs[idx].qsize()=}'
+              'Placed request on the generate queue,'
+              f' {self._generate_backlogs[idx].qsize()=}'
           )
         except queue.Empty:
           # Otherwise, don't do anything!
@@ -410,13 +465,16 @@ class Driver:
     while self.live:
       if (time.time() - time_of_last_print) > 1:
         logging.info(
-           f'Generate thread making a decision with: prefill_backlog={self._prefill_backlog.qsize()} generate_free_slots={my_slots.qsize()}'
+            'Generate thread making a decision with:'
+            f' prefill_backlog={self._prefill_backlog.qsize()} generate_free_slots={my_slots.qsize()}'
         )
         time_of_last_print = time.time()
       # Check if there are any free my_slots.
       if not my_slots.empty() and not self._generate_backlogs[idx].empty():
         # Only get requests from the backlog corresponding to this engine.
         new_request = self._generate_backlogs[idx].get()
+        if new_request is None:
+          break
         slot = my_slots.get()
         logging.info(
             'Generate slice %d slot %d step %d',
@@ -475,6 +533,8 @@ class Driver:
     while self.live:
       try:
         data = my_detokenize_backlog.get(block=True)
+        if data is None:
+          break
         start_detokenise_time = time.time()
         if isinstance(data[1], engine_api.ResultTokens):
           # We want to detokenise them.

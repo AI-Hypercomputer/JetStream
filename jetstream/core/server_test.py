@@ -20,14 +20,13 @@ response.
 
 from typing import Any, Type
 
+from absl.testing import absltest, parameterized
 import grpc
-import portpicker
-
 from jetstream.core import config_lib
 from jetstream.core import server_lib
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
-from absl.testing import absltest, parameterized
+import portpicker
 
 
 class ServerTest(parameterized.TestCase):
@@ -58,7 +57,7 @@ class ServerTest(parameterized.TestCase):
     print('port: ' + str(port))
     credentials = grpc.local_server_credentials()
 
-    _ = server_lib.run(
+    server = server_lib.run(
         port=port,
         config=config,
         devices=devices,
@@ -83,12 +82,16 @@ class ServerTest(parameterized.TestCase):
     counter = 0
     for token in iterator:
       # Tokens come through as bytes
-      print('actual output: ' + bytes(token.response[0], encoding='utf-8').decode())
+      print(
+          'actual output: '
+          + bytes(token.response[0], encoding='utf-8').decode()
+      )
       assert (
           bytes(token.response[0], encoding='utf-8').decode()
           == expected_tokens[counter]
       )
       counter += 1
+    server.stop()
 
 
 if __name__ == '__main__':
