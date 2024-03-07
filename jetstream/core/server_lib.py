@@ -39,6 +39,8 @@ class JetStreamServer:
     self._server = server
 
   def start(self, port, credentials) -> None:
+    # start jax profiler
+    jax.profiler.start_trace("/tmp/tensorboard")
     self._server.add_secure_port(f'{_HOST}:{port}', credentials)
     self._server.start()
 
@@ -46,6 +48,8 @@ class JetStreamServer:
     # Gracefully clean up threads in the orchestrator.
     self._driver.stop()
     self._server.stop(0)
+    # end jax profiler
+    jax.profiler.stop_trace()
 
   def wait_for_termination(self) -> None:
     self._server.wait_for_termination()
