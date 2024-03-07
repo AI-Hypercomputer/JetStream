@@ -82,12 +82,31 @@ class BenchmarkMetrics:
 
 
 @dataclass
+class InputRequest:
+  prompt: str = ""
+  prompt_len: int = 0
+  output: str = ""
+  output_len: int = 0
+
+@dataclass
 class RequestFuncOutput:
+  input_request: InputRequest = None
   generated_text: str = ""
   success: bool = False
   latency: float = 0
   ttft: float = 0
   prompt_len: int = 0
+
+  # Flatten the structure and return only the necessary results
+  def to_dict(self): 
+    return {
+      "prompt": self.input_request.prompt,
+      "original_output": self.input_request.output,
+      "generated_text": self.generated_text,
+      "success": self.success,
+      "latency": self.latency,
+      "prompt_len": self.prompt_len
+    }  
 
 
 def get_tokenizer(tokenizer_name: str) -> Any:
@@ -105,7 +124,7 @@ def sample_requests(
     dataset_path: str,
     num_requests: int,
     tokenizer: Any,
-) -> List[Tuple[str, int, int]]:
+) -> List[InputRequest]:
   # Load the dataset.
   with open(dataset_path) as f:
     dataset = json.load(f)
@@ -133,11 +152,12 @@ def sample_requests(
   tokenized_dataset = []
   for i in range(len(dataset)):
     output_len = len(completion_token_ids[i])
-    tokenized_dataset.append((prompts[i], prompt_token_ids[i], output_len))
+    tokenized_dataset.append((prompts[i], prompt_token_ids[i], completions[i], output_len))
 
   # Filter out too long sequences.
-  filtered_dataset: List[Tuple[str, int, int]] = []
-  for prompt, prompt_token_ids, output_len in tokenized_dataset:
+  filtered_dataset: List[InputRequest] = []
+
+  for prompt, prompt_token_ids, output, output_len in tokenized_dataset:
     prompt_len = len(prompt_token_ids)
     if prompt_len < 4 or output_len < 4:
       # Prune too short sequences.
@@ -147,7 +167,8 @@ def sample_requests(
     if prompt_len > 1024 or prompt_len + output_len > 2048:
       # Prune too long sequences.
       continue
-    filtered_dataset.append((prompt, prompt_len, output_len))
+    reqeust = InputRequest(prompt, prompt_len, output, output_len)
+    filtered_dataset.append(reqeust)
 
   # Sample the requests.
   sampled_requests = random.sample(filtered_dataset, num_requests)
@@ -155,9 +176,9 @@ def sample_requests(
 
 
 async def get_request(
-    input_requests: List[Tuple[str, int, int]],
+    input_requests: List[InputRequest],
     request_rate: float,
-) -> AsyncGenerator[Tuple[str, int, int], None]:
+) -> AsyncGenerator[InputRequest, None]:
   input_requests = iter(input_requests)
   for request in input_requests:
     yield request
@@ -172,7 +193,7 @@ async def get_request(
 
 
 def calculate_metrics(
-    input_requests: List[Tuple[str, int, int]],
+    input_requests: List[InputRequest],
     outputs: List[RequestFuncOutput],
     dur_s: float,
     tokenizer: Any,
@@ -190,7 +211,7 @@ def calculate_metrics(
           else "ĊŌƟ"
       )
       total_output += output_len
-      total_input += input_requests[i][1]
+      total_input += input_requests[i].prompt_len
       per_token_latencies.append(outputs[i].latency / output_len)
       ttfts.append(outputs[i].ttft)
       completed += 1
@@ -234,12 +255,10 @@ def grpc_sync_request(api_url: str, request: Any) -> tuple[str, float, float]:
 
 async def send_request(
     api_url: str,
-    prompt: str,
-    prompt_len: int,
+    input_request: InputRequest,
     pbar: tqdm,
     session_cache: str,
     priority: int,
-    max_tokens: int,
     threads: int,
 ) -> RequestFuncOutput:
   """Send the request to JetStream server."""
@@ -247,12 +266,13 @@ async def send_request(
   loop.set_default_executor(ThreadPoolExecutor(max_workers=threads))
   request = jetstream_pb2.DecodeRequest(
       session_cache=session_cache,
-      additional_text=prompt,
+      additional_text=input_request.prompt,
       priority=priority,
-      max_tokens=max_tokens,
+      max_tokens=input_request.output_len,
   )
   output = RequestFuncOutput()
-  output.prompt_len = prompt_len
+  output.input_request = input_request
+  output.prompt_len = input_request.prompt_len
   generated_text, ttft, latency = await loop.run_in_executor(
       None, grpc_sync_request, api_url, request
   )
@@ -268,7 +288,7 @@ async def send_request(
 async def benchmark(
     api_url: str,
     tokenizer: Any,
-    input_requests: List[Tuple[str, int, int]],
+    input_requests: List[InputRequest],
     request_rate: float,
     disable_tqdm: bool,
     session_cache: str,
@@ -283,17 +303,14 @@ async def benchmark(
   benchmark_start_time = time.perf_counter()
   tasks = []
   async for request in get_request(input_requests, request_rate):
-    prompt, prompt_len, output_len = request
     tasks.append(
         asyncio.create_task(
             send_request(
                 api_url=api_url,
-                prompt=prompt,
-                prompt_len=prompt_len,
+                input_request=request,
                 pbar=pbar,
                 session_cache=session_cache,
                 priority=priority,
-                max_tokens=output_len,
                 threads=threads,
             )
         )
@@ -341,17 +358,19 @@ async def benchmark(
       "median_tpot_ms": metrics.median_tpot_ms,
       "p99_tpot_ms": metrics.p99_tpot_ms,
   }
-  return result
+  return result, outputs
 
 
 def mock_requests(total_mock_requests: int):
   """Generates a list of mock requests containing mock data."""
   data = []
   for _ in range(total_mock_requests):
-    name = f"Item {random.randint(1, 1000)}"
-    price = random.randint(10, 100)
-    quantity = random.randint(1, 10)
-    data.append((name, price, quantity))
+    reqeust = InputRequest()
+    reqeust.prompt = f"Prompt {random.randint(1, 1000)}"
+    reqeust.prompt_len = random.randint(10, 100)
+    reqeust.out = f"Output {random.randint(1, 1000)}"
+    reqeust.output_len = random.randint(1, 10)
+    data.append(reqeust)
   return data
 
 
@@ -367,11 +386,11 @@ def main(args: argparse.Namespace):
 
   tokenizer = get_tokenizer(tokenizer_id)
   if tokenizer == "test" or args.dataset == "test":
-    input_requests = mock_requests(args.total_mock_requests) # e.g. [("AB", 2, 3)]
+    input_requests = mock_requests(args.total_mock_requests) # e.g. [("AB", 2, "AB", 3)]
   else:
     input_requests = sample_requests(args.dataset, args.num_prompts, tokenizer)
 
-  benchmark_result = asyncio.run(
+  benchmark_result, request_outputs = asyncio.run(
       benchmark(
           api_url=api_url,
           tokenizer=tokenizer,
@@ -410,6 +429,11 @@ def main(args: argparse.Namespace):
     )
     with open(file_name, "w") as outfile:
       json.dump(result_json, outfile)
+
+  if args.save_request_outputs:
+    file_path = args.request_outputs_file_path
+    with open(file_path, "w") as output_file:
+        json.dump([output.to_dict() for output in request_outputs], output_file, indent=4) 
 
 
 if __name__ == "__main__":
@@ -504,6 +528,19 @@ if __name__ == "__main__":
       help=(
           "Location of any pre-cached results. (currently _load_cache_history"
           " not implemented, use default empty str)"
+      ),
+  )
+  parser.add_argument(
+      "--save-request-outputs",
+      action="store_true",
+      help="Specify to store request outputs into a json file",
+  )
+  parser.add_argument(
+      "--request-outputs-file-path",
+      type=str,
+      default="/tmp/request-outputs.json",
+      help=(
+          "File path to store request outputs"
       ),
   )
 
