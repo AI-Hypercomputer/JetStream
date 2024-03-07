@@ -32,6 +32,7 @@ _CONFIG = flags.DEFINE_string(
 
 def main(argv: Sequence[str]):
   del argv
+  jetstream_server = None
   try:
     # No devices for local cpu test. A None for prefill and a None for generate.
     devices = server_lib.get_devices()
@@ -50,7 +51,8 @@ def main(argv: Sequence[str]):
         'NOTE: DO NOT Interrupt again; the profiler is slowly collecting data'
         ' and existing...'
     )
-    jetstream_server.stop()
+    if jetstream_server:
+      jetstream_server.stop()
 
 
 if __name__ == '__main__':
