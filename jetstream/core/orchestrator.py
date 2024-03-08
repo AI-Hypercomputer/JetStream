@@ -407,12 +407,26 @@ class Driver:
     logging.info('---------Generate params %d loaded.---------', idx)
     time_of_last_generate = time.time()
     time_of_last_print = time.time()
+    steps = 0
+    tokens_generated = 0
+
     while self.live:
       if (time.time() - time_of_last_print) > 1:
         logging.info(
-           f'Generate thread making a decision with: prefill_backlog={self._prefill_backlog.qsize()} generate_free_slots={my_slots.qsize()}'
+           f'Generate thread making a decision with: prefill_backlog={self._prefill_backlog.qsize()} generate_free_slots={my_slots.qsize()} {steps=}'
+        )
+        logging.info(
+           f'!!!! Ran {generate_timestep=}, {tokens_generated=}'
         )
         time_of_last_print = time.time()
+        #steps += 1
+        #if steps == 75:
+        #  jax.profiler.start_trace("gs://runner-maxtext-logs/rafi-jet-engine")
+        #if steps == 90:
+        #  jax.profiler.stop_trace()
+        #  os.kill(os.getpid(), signal.SIGKILL)
+
+
       # Check if there are any free my_slots.
       if not my_slots.empty() and not self._generate_backlogs[idx].empty():
         # Only get requests from the backlog corresponding to this engine.
@@ -441,6 +455,7 @@ class Driver:
         sampled_tokens.copy_to_host_async()
         my_detokenize_backlog.put((generate_timestep, sampled_tokens))
         generate_timestep += 1
+        tokens_generated += (generate_engine.max_concurrent_decodes - my_slots.qsize())
         logging.info(
             'Generate engine %d step %d - slots free : %d / %d, took %.2fms',
             idx,
@@ -492,10 +507,19 @@ class Driver:
                   vocab=vocab,
                   complete=request.complete,
               )
+              if not hasattr(request, "num_tokens"):
+                request.num_tokens = 0
+              request.num_tokens += 1
               request.complete = complete
+              if request.prefill_text[:10] == "Can you cr":
+                print(f"TOKEN DUMP {request.complete.all()} {results}")
               # Return some tokens.
               request.enqueue_tokens(results)
               if request.complete.all():
+                #                if request.prefill_text[:10] == "Can you cr":
+                #  print(f"TOKEN DUMP 'terminator"c
+                #  request.enqueue_tokens([' TERMINATOR'])
+                print(f"serverside {request.prefill_text[:10]} -> {request.num_tokens}")
                 # Place the slot back on the free queue.
                 my_live_requests[slot] = None
                 my_slots.put(slot)

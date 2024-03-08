@@ -194,6 +194,7 @@ def calculate_metrics(
       per_token_latencies.append(outputs[i].latency / output_len)
       ttfts.append(outputs[i].ttft)
       completed += 1
+  print( f"slot 158 num tokens {len(tokenizer.tokenize(outputs[158].generated_text))}")
 
   metrics = BenchmarkMetrics(
       completed=completed,
