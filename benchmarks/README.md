@@ -1,13 +1,13 @@
-# JetStream Benchmarks And Eval
+# JetStream Benchmark And Eval
 
 ## Install Dependencies 
 
 ```
-cd ~/JetStream/benchmarks
+cd ~/JetStream/Benchmark
 pip install -r requirements.in
 ```
 
-## Benchmarks 
+## Benchmark 
 
 ### Prepare DataSet
 
@@ -17,22 +17,22 @@ wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/r
 
 ``` 
 
-### Run Benchmarks with maxtext tokenizer
+### Run Benchmark with maxtext tokenizer
 
 ```
-python benchmarks/benchmark_serving.py \
+python Benchmark/benchmark_serving.py \
 --tokenizer /home/{username}/maxtext/assets/tokenizer \
 --num-prompts 10  \
 --dataset ~/data/ShareGPT_V3_unfiltered_cleaned_split.json
 
 ``` 
 
-### Save request outputs in Benchmarks
+### Save request outputs in Benchmark
 
 Please use --save-request-outputs flag to enable this feature.
 
 ```
-python benchmarks/benchmark_serving.py \
+python Benchmark/benchmark_serving.py \
 --tokenizer /home/{username}/maxtext/assets/tokenizer \
 --num-prompts 10  \
 --dataset ~/data/ShareGPT_V3_unfiltered_cleaned_split.json \
@@ -45,6 +45,6 @@ python benchmarks/benchmark_serving.py \
 Evaluate inference genereted output accuracy using saved request outputs.
 
 ```
-python benchmarks/eval_accuracy.py
+python Benchmark/eval_accuracy.py
 
 ```
