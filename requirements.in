@@ -6,6 +6,3 @@ jaxlib
 portpicker
 numpy
 seqio
-nltk
-evaluate
-rouge-score
