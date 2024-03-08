@@ -1,22 +1,25 @@
 # JetStream Benchmarks And Eval
-## Dependencies 
+
+## Install Dependencies 
+
 ```
 cd ~/JetStream/benchmarks
 pip install -r requirements.in
 ```
-pip install -r requirements.in
+
 ## Benchmarks 
-### Data Set
+
+### Prepare DataSet
+
 ```
-# Start a server
 cd ~/data
 wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
 
 ``` 
-### Run Benchmarks with maxtext tokenizer
-```
-cd ~/JetStream/
 
+### Run Benchmarks with maxtext tokenizer
+
+```
 python benchmarks/benchmark_serving.py \
 --tokenizer /home/fanhai/maxtext/assets/tokenizer \
 --num-prompts 10  \
@@ -38,6 +41,7 @@ python benchmarks/benchmark_serving.py \
 ```
 
 ## Eval Accuracy
+
 Evaluate inference genereted output accuracy using saved request outputs.
 
 ```
