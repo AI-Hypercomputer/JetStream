@@ -462,13 +462,21 @@ class Driver:
     logging.info('---------Generate params %d loaded.---------', idx)
     time_of_last_generate = time.time()
     time_of_last_print = time.time()
+    steps = 0
+    tokens_generated = 0
     while self.live:
       if (time.time() - time_of_last_print) > 1:
         logging.info(
             'Generate thread making a decision with:'
-            f' prefill_backlog={self._prefill_backlog.qsize()} generate_free_slots={my_slots.qsize()}'
+            f' prefill_backlog={self._prefill_backlog.qsize()} generate_free_slots={my_slots.qsize()} generate backlog={self._generate_backlogs[idx].qsize()} {tokens_generated=} {steps=}'
         )
         time_of_last_print = time.time()
+        steps += 1
+#        if steps == 90:
+#          jax.profiler.start_trace("gs://vipannalla_maxtext_outputs_3/rwitten/profiles")
+#        if steps == 95:
+#          jax.profiler.stop_trace()
+#          sys.exit(0)
       # Check if there are any free my_slots.
       if not my_slots.empty() and not self._generate_backlogs[idx].empty():
         # Only get requests from the backlog corresponding to this engine.
@@ -476,12 +484,12 @@ class Driver:
         if new_request is None:
           break
         slot = my_slots.get()
-        logging.info(
-            'Generate slice %d slot %d step %d',
-            idx,
-            slot,
-            generate_timestep,
-        )
+        #logging.info(
+        #    'Generate slice %d slot %d step %d',
+        #    idx,
+        #    slot,
+        #    generate_timestep,
+        #)
         decode_state = generate_engine.insert(
             new_request.prefill_result, decode_state, slot=slot
         )
@@ -499,14 +507,15 @@ class Driver:
         sampled_tokens.copy_to_host_async()
         my_detokenize_backlog.put((generate_timestep, sampled_tokens))
         generate_timestep += 1
-        logging.info(
-            'Generate engine %d step %d - slots free : %d / %d, took %.2fms',
-            idx,
-            generate_timestep,
-            my_slots.qsize(),
-            generate_engine.max_concurrent_decodes,
-            (time.time() - time_of_last_generate) * 10**3,
-        )
+#        logging.info(
+#            'Generate engine %d step %d - slots free : %d / %d, took %.2fms',
+#            idx,
+#            generate_timestep,
+#            my_slots.qsize(),
+#            generate_engine.max_concurrent_decodes,
+#            (time.time() - time_of_last_generate) * 10**3,
+#        )
+        tokens_generated += (generate_engine.max_concurrent_decodes - my_slots.qsize())
         time_of_last_generate = time.time()
 
   def _detokenize_thread(
@@ -545,6 +554,10 @@ class Driver:
 
           for slot, request in my_live_requests.items():
             if request is not None:
+              if not hasattr(request, "out_tokens"):
+                request.out_tokens = 1
+              else:
+                request.out_tokens += 1
               results, complete = token_utils.process_result_tokens(
                   slot=slot,
                   slot_max_length=request.max_tokens,
@@ -556,14 +569,15 @@ class Driver:
               # Return some tokens.
               request.enqueue_tokens(results)
               if request.complete.all():
+                print(f"!Completed {request.prefill_text[:10]} for tokens {request.out_tokens} out of {request.max_tokens}")
                 # Place the slot back on the free queue.
                 my_live_requests[slot] = None
                 my_slots.put(slot)
-          logging.info(
-              'Detokenising generate step %d took %.2fms',
-              generate_timestep_added,
-              (time.time() - start_detokenise_time) * 10**3,
-          )
+#          logging.info(
+#              'Detokenising generate step %d took %.2fms',
+#              generate_timestep_added,
+#              (time.time() - start_detokenise_time) * 10**3,
+#          )
         else:
           # We want to update a slot with the new channel.
           slot, active_request = data
