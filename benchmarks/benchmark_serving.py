@@ -250,6 +250,7 @@ def grpc_sync_request(api_url: str, request: Any) -> tuple[str, float, float]:
       token_list.append(token.response[0])
     latency = time.perf_counter() - request_start_time
     generated_text = "".join(token_list)
+    #print(f"Input: '{request.additional_text[:10].strip()}' -> '{generated_text[:20].strip()}'")
     return generated_text, ttft, latency
 
 
