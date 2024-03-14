@@ -366,6 +366,10 @@ class Driver:
   def place_request_on_prefill_queue(self, request: ActiveRequest):
     """Used to place new requests for prefilling and generation."""
     self._prefill_backlog.put(request)
+    logging.info(
+            '[debug] place_request_on_prefill_queue: prefill queue size, %d,',
+            self._prefill_backlog.qsize(),
+        )
 
   def _load_cache_history(self, path: str) -> Union[None, Any]:
     """Loads previous kv cache for a longer conversation."""
@@ -401,7 +405,7 @@ class Driver:
           # Tokenize, and introduce a leading dimension
           is_bos = not bool(request.history_path)
           logging.info(
-              'Prefilling on prefill engine %d : prefill queue size, %d,'
+              '[debug] Prefilling on prefill engine %d : prefill queue size, %d,'
               ' is_bos: %s, history: %s',
               idx,
               self._prefill_backlog.qsize(),
@@ -431,6 +435,9 @@ class Driver:
           )
         except queue.Empty:
           # Otherwise, don't do anything!
+          logging.info(
+              '[debug] prefill queue.Empty.'
+          )
           pass
 
   def _generate_thread(
@@ -465,9 +472,9 @@ class Driver:
     steps = 0
     tokens_generated = 0
     while self.live:
-      if (time.time() - time_of_last_print) > 1:
+      if (time.time() - time_of_last_print) > 3:
         logging.info(
-            'Generate thread making a decision with:'
+            '[debug] Generate thread making a decision with:'
             f' prefill_backlog={self._prefill_backlog.qsize()} generate_free_slots={my_slots.qsize()} generate backlog={self._generate_backlogs[idx].qsize()} {tokens_generated=} {steps=}'
         )
         time_of_last_print = time.time()
@@ -569,7 +576,7 @@ class Driver:
               # Return some tokens.
               request.enqueue_tokens(results)
               if request.complete.all():
-                print(f"!Completed {request.prefill_text[:10]} for tokens {request.out_tokens} out of {request.max_tokens}")
+                print(f"[debug] !Completed {request.prefill_text[:10]} for tokens {request.out_tokens} out of {request.max_tokens}")
                 # Place the slot back on the free queue.
                 my_live_requests[slot] = None
                 my_slots.put(slot)
@@ -628,7 +635,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
           ),
       )
     logging.info(
-        'Placed request on the prefill queue.',
+        '[debug] LLMOrchestrator Decode Placed request on the prefill queue.',
     )
 
     while not (
