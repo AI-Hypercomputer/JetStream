@@ -124,6 +124,7 @@ def sample_requests(
     dataset_path: str,
     num_requests: int,
     tokenizer: Any,
+    max_output_length: int,
 ) -> List[InputRequest]:
   # Load the dataset.
   with open(dataset_path) as f:
@@ -167,7 +168,7 @@ def sample_requests(
     if prompt_len > 1024 or prompt_len + output_len > 2048:
       # Prune too long sequences.
       continue
-    reqeust = InputRequest(prompt, prompt_len, output, output_len)
+    reqeust = InputRequest(prompt, prompt_len, output, max_output_length)
     filtered_dataset.append(reqeust)
 
   # Sample the requests.
@@ -388,7 +389,7 @@ def main(args: argparse.Namespace):
   if tokenizer == "test" or args.dataset == "test":
     input_requests = mock_requests(args.total_mock_requests) # e.g. [("AB", 2, "AB", 3)]
   else:
-    input_requests = sample_requests(args.dataset, args.num_prompts, tokenizer)
+    input_requests = sample_requests(args.dataset, args.num_prompts, tokenizer, args.max_output_length)
 
   benchmark_result, request_outputs = asyncio.run(
       benchmark(
@@ -501,6 +502,14 @@ if __name__ == "__main__":
       default=150,
       help="The maximum number of mock requests to send for benchmark testing.",
   )
+
+  parser.add_argument(
+      "--max-output-length",
+      type=int,
+      default=1024,
+      help="The maximum output length for reference request.",
+  )
+
   parser.add_argument("--seed", type=int, default=0)
   parser.add_argument(
       "--disable-tqdm",
