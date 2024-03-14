@@ -91,7 +91,7 @@ class InputRequest:
 @dataclass
 class RequestFuncOutput:
   input_request: InputRequest = None
-  generated_text: str = ""
+  generated_token_list: list[str] = None
   success: bool = False
   latency: float = 0
   ttft: float = 0
@@ -102,7 +102,7 @@ class RequestFuncOutput:
     return {
       "prompt": self.input_request.prompt,
       "original_output": self.input_request.output,
-      "generated_text": self.generated_text,
+      "generated_token_list": self.generated_token_list,
       "success": self.success,
       "latency": self.latency,
       "prompt_len": self.prompt_len
@@ -207,9 +207,9 @@ def calculate_metrics(
   for i in range(len(outputs)):
     if outputs[i].success:
       output_len = len(
-          tokenizer.tokenize(outputs[i].generated_text)
+          outputs[i].generated_token_list
           if tokenizer != "test"
-          else "ĊŌƟ"
+          else ["Ċ", "Ō", "Ɵ"]
       )
       total_output += output_len
       total_input += input_requests[i].prompt_len
@@ -235,7 +235,7 @@ def calculate_metrics(
   return metrics
 
 
-def grpc_sync_request(api_url: str, request: Any) -> tuple[str, float, float]:
+def grpc_sync_request(api_url: str, request: Any) -> tuple[list[str], float, float]:
   """Send grpc synchronous request since the current grpc server is sync."""
   with grpc.insecure_channel(api_url) as channel:
     grpc.channel_ready_future(channel).result()
@@ -250,8 +250,7 @@ def grpc_sync_request(api_url: str, request: Any) -> tuple[str, float, float]:
         ttft = time.perf_counter() - request_start_time
       token_list.append(token.response[0])
     latency = time.perf_counter() - request_start_time
-    generated_text = "".join(token_list)
-    return generated_text, ttft, latency
+    return token_list, ttft, latency
 
 
 async def send_request(
@@ -274,12 +273,12 @@ async def send_request(
   output = RequestFuncOutput()
   output.input_request = input_request
   output.prompt_len = input_request.prompt_len
-  generated_text, ttft, latency = await loop.run_in_executor(
+  generated_token_list, ttft, latency = await loop.run_in_executor(
       None, grpc_sync_request, api_url, request
   )
   output.ttft = ttft
   output.latency = latency
-  output.generated_text = generated_text
+  output.generated_token_list = generated_token_list
   output.success = True
   if pbar:
     pbar.update(1)

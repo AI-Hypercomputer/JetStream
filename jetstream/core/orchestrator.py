@@ -617,12 +617,15 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
         'Placed request on the prefill queue.',
     )
 
-    while True:
+    while not (
+        active_request.complete and active_request.return_channel.empty()
+    ):
       # When an active request is created a queue is instantiated. New tokens
       # are placed there during the decoding loop, we pop from that queue by
       # using the .next method on the active request.
       # Yielding allows for the response to be a streaming grpc call - which
       # can be called via iterating over a for loop on the other side.
+      # The DecodeResponse stream should consume all generated tokens in
+      # return_channel when complete signal is received. It should check if
+      # return_channel is empty to decide if it should exit the while loop.
       yield jetstream_pb2.DecodeResponse(response=active_request.next())
-      if active_request.complete:
-        break
