@@ -85,12 +85,13 @@ import sys
 import threading
 import time
 import traceback
-from typing import Any, Iterable, Optional, Union
+from typing import Any, AsyncIterator, Optional, Union
 
 import grpc
 import jax
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
+from jetstream.core.utils import async_multifuture
 from jetstream.engine import engine_api
 from jetstream.engine import token_utils
 import numpy as np
@@ -136,13 +137,7 @@ class ActiveRequest:
   # We keep prefill and decode information together in the same object so that
   # there is less indirection about where this return channel is.
   # The return channel returns a list of strings, one per sample for that query.
-  return_channel: queue.Queue[list[str]] = dataclasses.field(
-      default_factory=queue.Queue
-  )
-
-  def next(self: 'ActiveRequest'):
-    """Blocks until the next token is available, call from RPC threads."""
-    return self.return_channel.get()
+  return_channel: async_multifuture.AsyncMultifuture[list[str]] = None
 
   def enqueue_tokens(self, generated_tokens: list[str]):
     """Records information about the step.
@@ -152,7 +147,7 @@ class ActiveRequest:
 
     This should be called only from within the Drivers background thread.
     """
-    self.return_channel.put(generated_tokens)
+    self.return_channel.add_result(generated_tokens)
 
 
 class JetThread(threading.Thread):
@@ -170,14 +165,16 @@ class JetThread(threading.Thread):
       os.kill(os.getpid(), signal.SIGKILL)
 
 
-def _abort_or_raise(
-    context: grpc.ServicerContext | None, code: grpc.StatusCode, details: str
+async def _abort_or_raise(
+    context: grpc.aio.ServicerContext | None,
+    code: grpc.StatusCode,
+    details: str,
 ):
   """Safely aborts a gRPC context if available, or raises an Exception."""
   if context is None:
     raise RuntimeError(details)
 
-  context.abort(code, details)
+  await context.abort(code, details)
 
 
 class Driver:
@@ -529,7 +526,6 @@ class Driver:
     my_live_requests = {
         i: None for i in range(generate_engine.max_concurrent_decodes)
     }
-
     while self.live:
       try:
         data = my_detokenize_backlog.get(block=True)
@@ -556,6 +552,7 @@ class Driver:
               # Return some tokens.
               request.enqueue_tokens(results)
               if request.complete.all():
+                request.return_channel.close()
                 # Place the slot back on the free queue.
                 my_live_requests[slot] = None
                 my_slots.put(slot)
@@ -582,22 +579,25 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
   def __init__(self, driver: Driver):
     self._driver = driver
 
-  def Decode(
+  async def Decode(
       self,
       request: jetstream_pb2.DecodeRequest,
-      context: Optional[grpc.ServicerContext] = None,
-  ) -> Iterable[jetstream_pb2.DecodeResponse]:
+      context: Optional[grpc.aio.ServicerContext] = None,
+  ) -> AsyncIterator[jetstream_pb2.DecodeResponse]:
     """Decode."""
     if context is None:
       logging.warning(
           'LLM orchestrator is being used in offline test mode, and will not'
           ' respond to gRPC queries - only direct function calls.'
       )
+    return_channel = async_multifuture.AsyncMultifuture()
+    context.add_done_callback(return_channel.cancel)
     # Wrap request as an ActiveRequest.
     active_request = ActiveRequest(
         max_tokens=request.max_tokens,
         history_path=request.session_cache,
         prefill_text=request.additional_text,
+        return_channel=return_channel,
     )
     # The first stage is being prefilled, all other stages are handled
     # inside the driver (transfer, generate*N, detokenize).
@@ -605,7 +605,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
       self._driver.place_request_on_prefill_queue(active_request)
     except queue.Full:
       # Safely abort the gRPC server thread with a retriable error.
-      _abort_or_raise(
+      await _abort_or_raise(
           context=context,
           code=grpc.StatusCode.RESOURCE_EXHAUSTED,
           details=(
@@ -616,10 +616,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     logging.info(
         'Placed request on the prefill queue.',
     )
-
-    while not (
-        active_request.complete and active_request.return_channel.empty()
-    ):
+    async for response in active_request.return_channel:
       # When an active request is created a queue is instantiated. New tokens
       # are placed there during the decoding loop, we pop from that queue by
       # using the .next method on the active request.
@@ -628,4 +625,4 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
       # The DecodeResponse stream should consume all generated tokens in
       # return_channel when complete signal is received. It should check if
       # return_channel is empty to decide if it should exit the while loop.
-      yield jetstream_pb2.DecodeResponse(response=active_request.next())
+      yield jetstream_pb2.DecodeResponse(response=response)

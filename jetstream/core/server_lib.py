@@ -17,8 +17,10 @@
 See implementations/*/sever.py for examples.
 """
 
+import asyncio
 from concurrent import futures
 import logging
+import threading
 from typing import Any, Type
 
 import grpc
@@ -34,21 +36,53 @@ _HOST = '[::]'
 class JetStreamServer:
   """JetStream grpc server."""
 
-  def __init__(self, driver: orchestrator.Driver, server: grpc.Server):
-    self._driver = driver
-    self._server = server
+  def __init__(
+      self, driver: orchestrator.Driver, threads: int, port, credentials
+  ):
+    self._executor = futures.ThreadPoolExecutor(max_workers=threads)
 
-  def start(self, port, credentials) -> None:
-    self._server.add_secure_port(f'{_HOST}:{port}', credentials)
-    self._server.start()
+    self._loop = asyncio.new_event_loop()
+    self._loop.set_default_executor(self._executor)
+    self._loop_thread = threading.Thread(target=self._loop.run_forever)
+    self._loop_thread.start()
+
+    async def do_init():
+      self._grpc_server = grpc.aio.server(
+          self._executor,
+      )
+
+    asyncio.run_coroutine_threadsafe(do_init(), loop=self._loop).result()
+    self._driver = driver
+    jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
+        orchestrator.LLMOrchestrator(driver=self._driver), self._grpc_server
+    )
+    self._grpc_server.add_secure_port(f'{_HOST}:{port}', credentials)
+
+  async def _async_start(self) -> None:
+    await self._grpc_server.start()
+
+  def start(self) -> None:
+    asyncio.run_coroutine_threadsafe(
+        self._async_start(), loop=self._loop
+    ).result()
+
+  async def _async_stop(self) -> None:
+    await self._grpc_server.stop(grace=10)
 
   def stop(self) -> None:
     # Gracefully clean up threads in the orchestrator.
     self._driver.stop()
-    self._server.stop(0)
+    asyncio.run_coroutine_threadsafe(self._async_stop(), self._loop).result()
+    self._loop.call_soon_threadsafe(self._loop.stop)
+    self._loop_thread.join()
 
   def wait_for_termination(self) -> None:
-    self._server.wait_for_termination()
+    try:
+      asyncio.run_coroutine_threadsafe(
+          self._grpc_server.wait_for_termination(), self._loop
+      ).result()
+    finally:
+      self.stop()
 
 
 def run(
@@ -86,14 +120,10 @@ def run(
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.
   threads = threads or max(driver.get_total_concurrent_requests(), 64)
-  server = grpc.server(futures.ThreadPoolExecutor(max_workers=threads))  # pytype: disable=wrong-keyword-args
-  jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
-      orchestrator.LLMOrchestrator(driver=driver), server
-  )
+  jetstream_server = JetStreamServer(driver, threads, port, credentials)
   logging.info('Starting server on port %d with %d threads', port, threads)
 
-  jetstream_server = JetStreamServer(driver, server)
-  jetstream_server.start(port, credentials)
+  jetstream_server.start()
   return jetstream_server
 
 

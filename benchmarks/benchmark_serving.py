@@ -235,18 +235,16 @@ def calculate_metrics(
   return metrics
 
 
-def grpc_sync_request(api_url: str, request: Any) -> tuple[list[str], float, float]:
+async def grpc_async_request(api_url: str, request: Any) -> tuple[list[str], float, float]:
   """Send grpc synchronous request since the current grpc server is sync."""
-  options = [("grpc.keepalive_timeout_ms", 10000)]
-  with grpc.insecure_channel(api_url, options=options) as channel:
-    grpc.channel_ready_future(channel).result()
+  async with grpc.aio.insecure_channel(api_url) as channel:
     stub = jetstream_pb2_grpc.OrchestratorStub(channel)
     print("Making request")
     ttft = 0
     token_list = []
     request_start_time = time.perf_counter()
     response = stub.Decode(request)
-    for token in response:
+    async for token in response:
       if ttft == 0:
         ttft = time.perf_counter() - request_start_time
       token_list.append(token.response[0])
@@ -263,8 +261,6 @@ async def send_request(
     threads: int,
 ) -> RequestFuncOutput:
   """Send the request to JetStream server."""
-  loop = asyncio.get_running_loop()
-  loop.set_default_executor(ThreadPoolExecutor(max_workers=threads))
   request = jetstream_pb2.DecodeRequest(
       session_cache=session_cache,
       additional_text=input_request.prompt,
@@ -274,9 +270,7 @@ async def send_request(
   output = RequestFuncOutput()
   output.input_request = input_request
   output.prompt_len = input_request.prompt_len
-  generated_token_list, ttft, latency = await loop.run_in_executor(
-      None, grpc_sync_request, api_url, request
-  )
+  generated_token_list, ttft, latency = await grpc_async_request(api_url, request)
   output.ttft = ttft
   output.latency = latency
   output.generated_token_list = generated_token_list
