@@ -237,7 +237,8 @@ def calculate_metrics(
 
 def grpc_sync_request(api_url: str, request: Any) -> tuple[list[str], float, float]:
   """Send grpc synchronous request since the current grpc server is sync."""
-  with grpc.insecure_channel(api_url) as channel:
+  options = [("grpc.keepalive_timeout_ms", 10000)]
+  with grpc.insecure_channel(api_url, options=options) as channel:
     grpc.channel_ready_future(channel).result()
     stub = jetstream_pb2_grpc.OrchestratorStub(channel)
     print("Making request")
@@ -374,6 +375,24 @@ def mock_requests(total_mock_requests: int):
   return data
 
 
+def sample_warmup_requests(requests):
+  interesting_buckets = [
+        0,
+        16,
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024,]
+  
+  for start, end in zip(interesting_buckets[:-1], interesting_buckets[1:]):
+    for request in requests:
+      if start < request.prompt_len <= end:
+        yield request
+        break
+
+
 def main(args: argparse.Namespace):
   print(args)
   random.seed(args.seed)
@@ -389,6 +408,23 @@ def main(args: argparse.Namespace):
     input_requests = mock_requests(args.total_mock_requests) # e.g. [("AB", 2, "AB", 3)]
   else:
     input_requests = sample_requests(args.dataset, args.num_prompts, tokenizer, args.max_output_length)
+
+  if args.warmup_first:
+    print('Warm up start:' )
+    warmup_requests = list(sample_warmup_requests(input_requests)) * 2
+    benchmark_result, request_outputs = asyncio.run(
+        benchmark(
+            api_url=api_url,
+            tokenizer=tokenizer,
+            input_requests=warmup_requests,
+            request_rate=args.request_rate,
+            disable_tqdm=args.disable_tqdm,
+            session_cache=args.session_cache,
+            priority=args.priority,
+            threads=args.threads,
+        )
+    )
+    print('Warm up done')
 
   benchmark_result, request_outputs = asyncio.run(
       benchmark(
@@ -549,6 +585,14 @@ if __name__ == "__main__":
       default="/tmp/request-outputs.json",
       help=(
           "File path to store request outputs"
+      ),
+  )
+  parser.add_argument(
+      "--warmup-first",
+      type=bool,
+      default=False,
+      help=(
+          "Whether to send warmup req first"
       ),
   )
 
