@@ -237,7 +237,8 @@ def calculate_metrics(
 
 async def grpc_async_request(api_url: str, request: Any) -> tuple[list[str], float, float]:
   """Send grpc synchronous request since the current grpc server is sync."""
-  async with grpc.aio.insecure_channel(api_url) as channel:
+  options = [("grpc.keepalive_timeout_ms", 10000)]
+  async with grpc.aio.insecure_channel(api_url, options=options) as channel:
     stub = jetstream_pb2_grpc.OrchestratorStub(channel)
     print("Making request")
     ttft = 0
