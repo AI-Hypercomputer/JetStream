@@ -137,7 +137,7 @@ class ActiveRequest:
   # We keep prefill and decode information together in the same object so that
   # there is less indirection about where this return channel is.
   # The return channel returns a list of strings, one per sample for that query.
-  return_channel: async_multifuture.AsyncMultifuture[list[str]]
+  return_channel: async_multifuture.AsyncMultifuture[list[str]] = None
 
   def enqueue_tokens(self, generated_tokens: list[str]):
     """Records information about the step.
