@@ -92,6 +92,7 @@ class InputRequest:
 class RequestFuncOutput:
   input_request: InputRequest = None
   generated_token_list: list[str] = None
+  generated_text: str = None
   success: bool = False
   latency: float = 0
   ttft: float = 0
@@ -102,7 +103,7 @@ class RequestFuncOutput:
     return {
       "prompt": self.input_request.prompt,
       "original_output": self.input_request.output,
-      "generated_token_list": self.generated_token_list,
+      "generated_text": self.generated_text,
       "success": self.success,
       "latency": self.latency,
       "prompt_len": self.prompt_len
@@ -280,6 +281,7 @@ async def send_request(
   output.ttft = ttft
   output.latency = latency
   output.generated_token_list = generated_token_list
+  output.generated_text = "".join(generated_token_list)
   output.success = True
   if pbar:
     pbar.update(1)
