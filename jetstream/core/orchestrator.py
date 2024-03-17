@@ -459,6 +459,8 @@ class Driver:
     logging.info('---------Generate params %d loaded.---------', idx)
     time_of_last_generate = time.time()
     time_of_last_print = time.time()
+    steps = 0
+    tokens_generated = 0
     while self.live:
       if (time.time() - time_of_last_print) > 1:
         logging.info(
@@ -466,6 +468,11 @@ class Driver:
             f' prefill_backlog={self._prefill_backlog.qsize()} generate_free_slots={my_slots.qsize()} generate backlog={self._generate_backlogs[idx].qsize()} {tokens_generated=} {steps=} {generate_timestep=}'
         )
         time_of_last_print = time.time()
+        if steps == 90:
+          jax.profiler.start_trace("gs://vipannalla_maxtext_outputs_3/rwitten")
+        if steps == 95:
+          jax.profiler.stop_trace()
+        steps += 1
       # Check if there are any free my_slots.
       if not my_slots.empty() and not self._generate_backlogs[idx].empty():
         # Only get requests from the backlog corresponding to this engine.
@@ -488,6 +495,7 @@ class Driver:
             (generate_engine.samples_per_slot,), dtype=np.bool_
         )
         my_detokenize_backlog.put((slot, new_request))
+        continue
 
       if my_detokenize_backlog.qsize() < backpressure:
         decode_state, sampled_tokens = generate_engine.generate(
@@ -504,6 +512,7 @@ class Driver:
             generate_engine.max_concurrent_decodes,
             (time.time() - time_of_last_generate) * 10**3,
         )
+        tokens_generated += (generate_engine.max_concurrent_decodes - my_slots.qsize())
         time_of_last_generate = time.time()
 
   def _detokenize_thread(
