@@ -463,7 +463,7 @@ class Driver:
       if (time.time() - time_of_last_print) > 1:
         logging.info(
             'Generate thread making a decision with:'
-            f' prefill_backlog={self._prefill_backlog.qsize()} generate_free_slots={my_slots.qsize()}'
+            f' prefill_backlog={self._prefill_backlog.qsize()} generate_free_slots={my_slots.qsize()} generate backlog={self._generate_backlogs[idx].qsize()} {tokens_generated=} {steps=} {generate_timestep=}'
         )
         time_of_last_print = time.time()
       # Check if there are any free my_slots.
