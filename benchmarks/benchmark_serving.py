@@ -91,7 +91,8 @@ class InputRequest:
 @dataclass
 class RequestFuncOutput:
   input_request: InputRequest = None
-  generated_text: str = ""
+  generated_token_list: list[str] = None
+  generated_text: str = None
   success: bool = False
   latency: float = 0
   ttft: float = 0
@@ -124,6 +125,7 @@ def sample_requests(
     dataset_path: str,
     num_requests: int,
     tokenizer: Any,
+    max_output_length: int,
 ) -> List[InputRequest]:
   # Load the dataset.
   with open(dataset_path) as f:
@@ -167,7 +169,7 @@ def sample_requests(
     if prompt_len > 1024 or prompt_len + output_len > 2048:
       # Prune too long sequences.
       continue
-    reqeust = InputRequest(prompt, prompt_len, output, output_len)
+    reqeust = InputRequest(prompt, prompt_len, output, max_output_length)
     filtered_dataset.append(reqeust)
 
   # Sample the requests.
@@ -206,9 +208,9 @@ def calculate_metrics(
   for i in range(len(outputs)):
     if outputs[i].success:
       output_len = len(
-          tokenizer.tokenize(outputs[i].generated_text)
+          outputs[i].generated_token_list
           if tokenizer != "test"
-          else "ĊŌƟ"
+          else ["Ċ", "Ō", "Ɵ"]
       )
       total_output += output_len
       total_input += input_requests[i].prompt_len
@@ -234,9 +236,10 @@ def calculate_metrics(
   return metrics
 
 
-def grpc_sync_request(api_url: str, request: Any) -> tuple[str, float, float]:
+def grpc_sync_request(api_url: str, request: Any) -> tuple[list[str], float, float]:
   """Send grpc synchronous request since the current grpc server is sync."""
-  with grpc.insecure_channel(api_url) as channel:
+  options = [("grpc.keepalive_timeout_ms", 10000)]
+  with grpc.insecure_channel(api_url, options=options) as channel:
     grpc.channel_ready_future(channel).result()
     stub = jetstream_pb2_grpc.OrchestratorStub(channel)
     print("Making request")
@@ -249,8 +252,7 @@ def grpc_sync_request(api_url: str, request: Any) -> tuple[str, float, float]:
         ttft = time.perf_counter() - request_start_time
       token_list.append(token.response[0])
     latency = time.perf_counter() - request_start_time
-    generated_text = "".join(token_list)
-    return generated_text, ttft, latency
+    return token_list, ttft, latency
 
 
 async def send_request(
@@ -273,12 +275,13 @@ async def send_request(
   output = RequestFuncOutput()
   output.input_request = input_request
   output.prompt_len = input_request.prompt_len
-  generated_text, ttft, latency = await loop.run_in_executor(
+  generated_token_list, ttft, latency = await loop.run_in_executor(
       None, grpc_sync_request, api_url, request
   )
   output.ttft = ttft
   output.latency = latency
-  output.generated_text = generated_text
+  output.generated_token_list = generated_token_list
+  output.generated_text = "".join(generated_token_list)
   output.success = True
   if pbar:
     pbar.update(1)
@@ -374,6 +377,24 @@ def mock_requests(total_mock_requests: int):
   return data
 
 
+def sample_warmup_requests(requests):
+  interesting_buckets = [
+        0,
+        16,
+        32,
+        64,
+        128,
+        256,
+        512,
+        1024,]
+  
+  for start, end in zip(interesting_buckets[:-1], interesting_buckets[1:]):
+    for request in requests:
+      if start < request.prompt_len <= end:
+        yield request
+        break
+
+
 def main(args: argparse.Namespace):
   print(args)
   random.seed(args.seed)
@@ -388,7 +409,24 @@ def main(args: argparse.Namespace):
   if tokenizer == "test" or args.dataset == "test":
     input_requests = mock_requests(args.total_mock_requests) # e.g. [("AB", 2, "AB", 3)]
   else:
-    input_requests = sample_requests(args.dataset, args.num_prompts, tokenizer)
+    input_requests = sample_requests(args.dataset, args.num_prompts, tokenizer, args.max_output_length)
+
+  if args.warmup_first:
+    print('Warm up start:' )
+    warmup_requests = list(sample_warmup_requests(input_requests)) * 2
+    benchmark_result, request_outputs = asyncio.run(
+        benchmark(
+            api_url=api_url,
+            tokenizer=tokenizer,
+            input_requests=warmup_requests,
+            request_rate=args.request_rate,
+            disable_tqdm=args.disable_tqdm,
+            session_cache=args.session_cache,
+            priority=args.priority,
+            threads=args.threads,
+        )
+    )
+    print('Warm up done')
 
   benchmark_result, request_outputs = asyncio.run(
       benchmark(
@@ -501,6 +539,14 @@ if __name__ == "__main__":
       default=150,
       help="The maximum number of mock requests to send for benchmark testing.",
   )
+
+  parser.add_argument(
+      "--max-output-length",
+      type=int,
+      default=1024,
+      help="The maximum output length for reference request.",
+  )
+
   parser.add_argument("--seed", type=int, default=0)
   parser.add_argument(
       "--disable-tqdm",
@@ -541,6 +587,14 @@ if __name__ == "__main__":
       default="/tmp/request-outputs.json",
       help=(
           "File path to store request outputs"
+      ),
+  )
+  parser.add_argument(
+      "--warmup-first",
+      type=bool,
+      default=False,
+      help=(
+          "Whether to send warmup req first"
       ),
   )
 
