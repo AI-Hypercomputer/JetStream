@@ -94,6 +94,10 @@ def run(
 
   jetstream_server = JetStreamServer(driver, server)
   jetstream_server.start(port, credentials)
+
+  jax.profiler.start_server(9999)
+  logging.info(f'Starting jax profiler server at {9999}')
+
   return jetstream_server
 
 
