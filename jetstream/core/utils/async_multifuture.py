@@ -1,7 +1,7 @@
 import asyncio
 from concurrent import futures
 import threading
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 ValueType = TypeVar('ValueType')
 
@@ -34,8 +34,10 @@ class AsyncMultifuture(Generic[ValueType]):
     self._loop = asyncio.get_running_loop()
     self._queue = asyncio.Queue[ValueType | _Exception]()
 
-  def cancel(self) -> None:
+  def cancel(self, unused: Any = None) -> None:
     """Cancels the asyncmultifuture."""
+    # Needed for compatibility with grpc.aio.ServicerContext.add_done_callback.
+    del unused
     self._cancelled.set()
     self.set_exception(futures.CancelledError())
 
