@@ -66,7 +66,7 @@ class OrchestratorTest(absltest.TestCase):
     )
     return driver
 
-  def test_orchestrator(self):
+  async def test_orchestrator(self):
     """Test the multithreaded orchestration."""
     driver = self._setup_driver()
     client = orchestrator.LLMOrchestrator(driver=driver)
@@ -85,7 +85,7 @@ class OrchestratorTest(absltest.TestCase):
     # chr of [266, 332, 415].
     expected_tokens = ['Ċ', 'Ō', 'Ɵ', '']
     counter = 0
-    for token in iterator:
+    async for token in iterator:
       # Tokens come through as bytes.
       print(
           'actual output: '

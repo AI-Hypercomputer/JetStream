@@ -124,6 +124,10 @@ class ActiveRequest:
 
   #################### Information relevant for generation #####################
   max_tokens: int
+  # We keep prefill and decode information together in the same object so that
+  # there is less indirection about where this return channel is.
+  # The return channel returns a list of strings, one per sample for that query.
+  return_channel: async_multifuture.AsyncMultifuture[list[str]]
   # [num_samples,] which corresponds to whether each sample is complete for the
   # requests.
   complete: Optional[np.ndarray] = None
@@ -134,10 +138,6 @@ class ActiveRequest:
   ################## Information relevant for detokenization ###################
   # Which generate step this was added at.
   generate_timestep_added: Optional[int] = None
-  # We keep prefill and decode information together in the same object so that
-  # there is less indirection about where this return channel is.
-  # The return channel returns a list of strings, one per sample for that query.
-  return_channel: async_multifuture.AsyncMultifuture[list[str]] = None
 
   def enqueue_tokens(self, generated_tokens: list[str]):
     """Records information about the step.
@@ -184,8 +184,8 @@ class Driver:
   _generate_engines: list[engine_api.Engine]
   # Allows us to pre-load the params, primarily so that we can iterate quickly
   # on the driver in colab without reloading weights.
-  _prefill_params: Optional[dict[int, Any]] = {}
-  _generate_params: Optional[dict[int, Any]] = {}
+  _prefill_params: list[Any]
+  _generate_params: list[Any]
   # Stage 1
   _prefill_backlog: queue.Queue[ActiveRequest | None]
   # Stage 2
@@ -224,8 +224,8 @@ class Driver:
     )
     self._prefill_engines = prefill_engines
     self._generate_engines = generate_engines
-    self._prefill_params = prefill_params if prefill_params else {}
-    self._generate_params = generate_params if generate_params else {}
+    self._prefill_params = prefill_params
+    self._generate_params = generate_params
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
@@ -623,7 +623,8 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
           ' respond to gRPC queries - only direct function calls.'
       )
     return_channel = async_multifuture.AsyncMultifuture()
-    context.add_done_callback(return_channel.cancel)
+    if context:
+      context.add_done_callback(return_channel.cancel)
     # Wrap request as an ActiveRequest.
     active_request = ActiveRequest(
         max_tokens=request.max_tokens,
