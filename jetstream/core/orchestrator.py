@@ -229,20 +229,16 @@ class Driver:
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
-    self._prefill_backlog = queue.Queue(
-        # Shed more requests than what the generate backlogs can take.
-        (len(self._prefill_engines) + len(self._generate_engines))
-        * max(
-            self._generate_engines, key=lambda x: x.max_concurrent_decodes / 2
-        ).max_concurrent_decodes
-    )
+    self._prefill_backlog = queue.Queue()
+    # _ready_to_prefill event will block the prefill thread until there is
+    # available decode slot to insert the prefill result.
+    self._ready_to_prefill = threading.Event()
     # Stage 2
     # Each generate engine accesses its own generate backlog.
     self._generate_backlogs = {
-        # Don't receive more than half the number of concurrent decodes. This is
-        # a reasonable heuristic since it's unlikely than more than half the
-        # batch will finish in batch / 2 steps.
-        idx: queue.Queue(engine.max_concurrent_decodes // 2)
+        # Don't receive more than 1/3 the number of concurrent decodes to avoid 
+        # OOM for single host.
+        idx: queue.Queue(engine.max_concurrent_decodes // 3)
         for idx, engine in enumerate(self._generate_engines)
     }
     # Stage 3
@@ -399,6 +395,18 @@ class Driver:
     logging.info('---------Prefill params %d loaded.---------', idx)
 
     while self.live:
+      # The prefill thread can wait until there is available decode slot to
+      # insert.
+      if self._generate_slots[idx].qsize() == 0:
+        logging.info(
+            'Prefill waits for available slot; prefill queue size %d',
+            self._prefill_backlog.qsize(),
+        )
+        self._ready_to_prefill.wait()
+        logging.info(
+            'Prefill continues; prefill queue size %d',
+            self._prefill_backlog.qsize(),
+        )
       # The prefill thread can just sleep until it has work to do.
       request = self._prefill_backlog.get(block=True)
       if request is None:
@@ -430,7 +438,8 @@ class Driver:
           true_length=true_length,
       )
       request.prefill_result = prefill_result
-      # Once prefill is complete, place it on the generation queue and block if full.
+      # Once prefill is complete, place it on the generation queue and block if
+      # full.
       self._generate_backlogs[idx].put(request, block=True)
       logging.info(
           'Placed request on the generate queue,'
@@ -460,49 +469,80 @@ class Driver:
             f' prefill_backlog={self._prefill_backlog.qsize()} generate_free_slots={my_slots.qsize()}'
         )
         time_of_last_print = time.time()
-      # Check if there are any free my_slots.
-      try:
-        slot = my_slots.get(block=False)
-        # Found a slot, now see if we can fill it.
+
+      max_concurrent_decodes = generate_engine.max_concurrent_decodes
+
+      # Check if there are any free my_slots. We don't want to block here since
+      # we can still generate if we can't insert. We do this in a while loop to
+      # insert as many sequences as possible.
+      while True:
+        my_slots_size = my_slots.qsize()
+
         try:
-          new_request = my_generate_backlog.get(block=False)
-          # Got free slot and new request, use them.
-          logging.info(
-              'Generate slice %d filling slot %d at step %d.',
-              idx,
-              slot,
-              generate_timestep,
-          )
-          decode_state = generate_engine.insert(
-              new_request.prefill_result, decode_state, slot=slot
-          )
-          delete_pytree(new_request.prefill_result)
-          new_request.generate_timestep_added = generate_timestep
-          new_request.complete = np.zeros(
-              (generate_engine.samples_per_slot,), dtype=np.bool_
-          )
-          # Respond to detokenization backpressure.
-          my_detokenize_backlog.put((slot, new_request), block=True)
+          slot = my_slots.get(block=False)
+          # Found a slot, now see if we can fill it.
         except queue.Empty:
-          # No new requests, put back slot.
+          # Exit this while loop as we have no free slots to insert into.
+          break
+
+        # We block when the decode slots are all free since we need to get a
+        # prefilled request to insert. We add timeout for the block to handle
+        # the case when the prefill backlog is cancelled and we end up with no
+        # more useful prefill work to do.
+        block = my_slots_size == max_concurrent_decodes
+        try:
+          new_request = my_generate_backlog.get(block=block, timeout=1.0)
+          # Got free slot and new request, use them.
+        except queue.Empty:
+          # No new requests, we can't insert, so put back slot.
           my_slots.put(slot, block=False)
-      except queue.Empty:
-        # No free slots are available, keep stepping.
-        pass
-      
+          # If we were blocking and hit the timeout, then retry the loop.
+          # Otherwise, we can exit and proceed to generation.
+          if block:
+            continue
+          else:
+            break
+
+        # Signal to kill the thread.
+        if new_request is None:
+          return
+
+        logging.info(
+            'Generate slice %d filling slot %d at step %d.',
+            idx,
+            slot,
+            generate_timestep,
+        )
+        decode_state = generate_engine.insert(
+            new_request.prefill_result, decode_state, slot=slot
+        )
+        delete_pytree(new_request.prefill_result)
+        new_request.generate_timestep_added = generate_timestep
+        new_request.complete = np.zeros(
+            (generate_engine.samples_per_slot,), dtype=np.bool_
+        )
+        # Respond to detokenization backpressure.
+        my_detokenize_backlog.put((slot, new_request), block=True)
+
+      # At this point, we know that we have at least some slots filled.
+      assert (
+          my_slots.qsize() < max_concurrent_decodes
+      ), 'At this point we must have some requests inserted into the slots.'
+
+      # Now we actually take a generate step on requests in the slots.
       decode_state, sampled_tokens = generate_engine.generate(
           generate_params, decode_state
       )
       sampled_tokens.copy_to_host_async()
       # Respond to detokenization backpressure.
-      my_detokenize_backlog.put((generate_timestep, sampled_tokens))
+      my_detokenize_backlog.put((generate_timestep, sampled_tokens), block=True)
       generate_timestep += 1
       logging.info(
           'Generate engine %d step %d - slots free : %d / %d, took %.2fms',
           idx,
           generate_timestep,
-          my_slots.qsize(),
-          generate_engine.max_concurrent_decodes,
+          my_slots_size,
+          max_concurrent_decodes,
           (time.time() - time_of_last_generate) * 10**3,
       )
       time_of_last_generate = time.time()
@@ -551,6 +591,7 @@ class Driver:
               # Place the slot back on the free queue.
               my_live_requests[slot] = None
               my_slots.put(slot, block=False)  # This should always have space.
+              self._ready_to_prefill.set()
         logging.info(
             'Detokenizing generate step %d took %.2fms',
             generate_timestep_added,
