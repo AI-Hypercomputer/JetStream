@@ -472,6 +472,7 @@ class Driver:
 
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
 
+      # TODO: Move insert to prefill thread. 
       # Check if there are any free my_slots. We don't want to block here since
       # we can still generate if we can't insert. We do this in a while loop to
       # insert as many sequences as possible.
