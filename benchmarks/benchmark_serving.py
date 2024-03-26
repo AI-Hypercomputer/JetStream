@@ -127,6 +127,7 @@ def sample_requests(
     tokenizer: Any,
     max_output_length: int,
     conversation_starter: str,
+    oversample_multiplier: float=1.2,
 ) -> List[InputRequest]:
   # Load the dataset.
   with open(dataset_path) as f:
@@ -143,8 +144,16 @@ def sample_requests(
       for data in dataset
   ]
 
+  # Create necessary number of requests even if bigger than dataset size
+  sampled_indices = random.sample(range(len(dataset)),
+                                  min(int(num_requests * oversample_multiplier), len(dataset)))
+  if num_requests > len(sampled_indices):
+    print(f"Number of requests {num_requests} is larger than size of dataset {len(dataset)}.\n",
+          f"Repeating data to meet number of requests.\n")
+    sampled_indices = sampled_indices * int(np.ceil(num_requests / len(sampled_indices)))
+
+  print(f"{len(sampled_indices)=}")
   # some of these will be filtered out, so sample more than we need
-  sampled_indices = random.sample(range(len(dataset)), int(num_requests * 1.2))
   dataset = [dataset[i] for i in sampled_indices]
 
   # Tokenize the prompts and completions.
