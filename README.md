@@ -1,8 +1,8 @@
-# JetStream - A throughput and memory optimized engine for LLM inference on TPU and GPU
+# JetStream - A throughput and memory optimized engine for LLM inference on TPUs
 
 ## About
 
-JetStream is a fast library for LLM inference and serving on TPU and GPU.
+JetStream is a fast library for LLM inference and serving on TPUs.
 
 ## Getting Started
 

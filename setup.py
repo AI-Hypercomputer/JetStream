@@ -26,8 +26,7 @@ setup(
     name='google-jetstream',
     version='0.1.1',
     description=(
-        'A throughput and memory optimized engine for LLM inference on TPU and'
-        ' GPU.'
+        'A throughput and memory optimized engine for LLM inference on TPUs'
     ),
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
