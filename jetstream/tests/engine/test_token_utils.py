@@ -55,7 +55,6 @@ class TokenUtilsTest(unittest.TestCase):
            expeted_sp_output.append(self.sp_tokenizer.decode([t]))
            jt_output.append(self.jt_tokenizer.decode([t]))
 
-       # Please change to equal after fix the tokenizer bug 
        self.assertEqual(jt_output, expeted_sp_output)   
 
           
