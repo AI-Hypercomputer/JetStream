@@ -28,8 +28,7 @@ class JetStreamTokenizer:
     self.vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
 
    def decode(self, t: List[int]) -> str:
-    token = self.vocab.tokenizer.IdToPiece(t)
-    token = token.replace('▁', ' ').replace('_', ' ')
+    token = self.vocab.tokenizer.decode(t)
     return token      
    
 
@@ -54,10 +53,10 @@ class TokenUtilsTest(unittest.TestCase):
        print(f"jt_output: {jt_output}")
        for t in tokens:
            expeted_sp_output.append(self.sp_tokenizer.decode([t]))
-           jt_output.append(self.jt_tokenizer.decode(t))
+           jt_output.append(self.jt_tokenizer.decode([t]))
 
        # Please change to equal after fix the tokenizer bug 
-       self.assertNotEqual(jt_output, expeted_sp_output)   
+       self.assertEqual(jt_output, expeted_sp_output)   
 
           
 if __name__ == '__main__':
