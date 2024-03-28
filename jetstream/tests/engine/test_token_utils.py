@@ -53,7 +53,7 @@ class TokenUtilsTest(unittest.TestCase):
        jt_output = []
        print(f"jt_output: {jt_output}")
        for t in tokens:
-           expeted_sp_output.append(self.sp_tokenizer.decode(t))
+           expeted_sp_output.append(self.sp_tokenizer.decode([t]))
            jt_output.append(self.jt_tokenizer.decode(t))
 
        # Please change to equal after fix the tokenizer bug 
