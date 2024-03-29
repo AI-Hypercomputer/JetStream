@@ -50,22 +50,25 @@ gcloud storage buckets create ${DATASET_PATH} --location=${BUCKET_LOCATION} || t
 # Copy the downloaded checkpoints to `CHKPT_BUCKET`.
 # Gemma example: gsutil -m cp -r 7b ${CHKPT_BUCKET}
 # Llama2 example: gsutil -m cp -r llama-2-7b ${CHKPT_BUCKET}
-gsutil -m cp -r $3 ${CHKPT_BUCKET}
+sudo gsutil -m cp -r $3 ${CHKPT_BUCKET}
 
 # Covert model checkpoints to MaxText compatible checkpoints.
 if [ "$MODEL" == "gemma" ]; then
     CONVERT_CKPT_SCRIPT="convert_gemma_chkpt.py"
+    JAX_PLATFORMS=cpu python MaxText/${CONVERT_CKPT_SCRIPT} \
+    --base_model_path ${CHKPT_BUCKET} \
+    --maxtext_model_path ${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx} \
+    --model_size ${MODEL_VARIATION}
 else
     # We install torch CPU because the checkpoint conversion script MaxText/llama_or_mistral_ckpt.py does not need a TPU/GPU
     pip install torch --index-url https://download.pytorch.org/whl/cpu
     CONVERT_CKPT_SCRIPT="llama_or_mistral_ckpt.py"
+    JAX_PLATFORMS=cpu python MaxText/${CONVERT_CKPT_SCRIPT} \
+    --base-model-path ${CHKPT_BUCKET} \
+    --maxtext-model-path ${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx} \
+    --model-size ${MODEL_VARIATION}
 fi
-
-JAX_PLATFORMS=cpu python MaxText/${CONVERT_CKPT_SCRIPT} \
-  --base-model-path ${CHKPT_BUCKET} \
-  --maxtext-model-path ${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx} \
-  --model-size ${MODEL_VARIATION}
-echo "Writen MaxText compatible checkpoint to ${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx}"
+echo "Written MaxText compatible checkpoint to ${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx}"
 
 # We define `CONVERTED_CHECKPOINT` to refer to the checkpoint subdirectory.
 export CONVERTED_CHECKPOINT=${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx}/0/items
@@ -81,7 +84,7 @@ load_parameters_path=${CONVERTED_CHECKPOINT} \
 run_name=${RUN_NAME} \
 model_name=${MODEL_NAME} \
 force_unroll=true
-echo "Writen MaxText unscanned checkpoint to ${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/checkpoints"
+echo "Written MaxText unscanned checkpoint to ${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/checkpoints"
 
 # We will use the unscanned checkpoints by passing `UNSCANNED_CKPT_PATH` into `LOAD_PARAMETERS_PATH` in the following sections.
 export UNSCANNED_CKPT_PATH=${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/checkpoints/0/items

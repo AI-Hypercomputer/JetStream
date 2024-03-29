@@ -40,6 +40,9 @@ export BASE_OUTPUT_DIRECTORY=gs://${USER}-runner-maxtext-logs
 # Point `DATASET_PATH` to the GCS bucket where you have your training data
 export DATASET_PATH=gs://${USER}-maxtext-dataset
 
+# Prepare C4 dataset for fine tuning: https://github.com/allenai/allennlp/discussions/5056
+sudo gsutil -u $3 -m cp 'gs://allennlp-tensorflow-datasets/c4/en/3.0.1/*' ${DATASET_PATH}/c4/en/3.0.1/
+
 # We define `CONVERTED_CHECKPOINT` to refer to the checkpoint subdirectory.
 export CONVERTED_CHECKPOINT=${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx}/0/items
 
@@ -73,7 +76,7 @@ load_parameters_path=${AQT_CKPT} \
 run_name=${RUN_NAME} \
 model_name=${MODEL_NAME} \
 force_unroll=true
-echo "Writen MaxText unscanned checkpoint to ${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/checkpoints"
+echo "Written MaxText unscanned checkpoint to ${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/checkpoints"
 
 # We will use the unscanned checkpoints by passing `UNSCANNED_CKPT_PATH` into `LOAD_PARAMETERS_PATH` in the following sections.
 export UNSCANNED_CKPT_PATH=${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/checkpoints/0/items
