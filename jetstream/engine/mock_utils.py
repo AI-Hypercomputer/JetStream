@@ -29,9 +29,7 @@ class TestTokenizer:
     return chr(integer)
 
   def decode(self, tokens: np.ndarray):
-    """Converts a numpy array into a string."""
-    # 'We use array methods, not python iterables so we don't
-    # implement this method in the mock vocab.
+    """Converts a numpy array into a string. Use tokens 0 as we are doing streaming decode now"""
     return chr(tokens[0])  
 
 
