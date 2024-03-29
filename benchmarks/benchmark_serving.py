@@ -15,8 +15,8 @@
 """Benchmark JetStream online serving.
 
 On the server side, run one of the following commands:
-    * For real server, you need to pass correct server config (include the model config that 
-      being passed into your engine impl) to the command below. Refer to config_lib.py and 
+    * For real server, you need to pass correct server config (include the model config that
+      being passed into your engine impl) to the command below. Refer to config_lib.py and
       implementations/mock/config.py for config impl detail.
 
     (run with real server)
@@ -28,7 +28,7 @@ On the server side, run one of the following commands:
 
 On the client side, run:
     * For real server and shareGPT dataset, you need to pass the tokenizer, server config, and
-      dataset flags to the command below, and make some changes to the tokenizer logic in the 
+      dataset flags to the command below, and make some changes to the tokenizer logic in the
       benchmark script (get_tokenizer and sample_requests func) to use your tokenizer correctly.
     * Add `--save-result` flag to save the benchmark result to a json file in current folder.
     * Add `--threads` flag to set the maximum number of threads used for request dispatching.
@@ -42,7 +42,7 @@ On the client side, run:
     python -m benchmarks.benchmark_serving \
         --request-rate 1
 
-e2e example: python3 benchmark_serving.py --tokenizer /home/rwitten/maxtext/assets/tokenizer --num-prompts 100  --dataset ~/ShareGPT_V3_unfiltered_cleaned_split.json 
+e2e example: python3 benchmark_serving.py --tokenizer /home/rwitten/maxtext/assets/tokenizer --num-prompts 100  --dataset ~/ShareGPT_V3_unfiltered_cleaned_split.json
 """
 
 
@@ -51,13 +51,13 @@ import tensorflow_text as tftxt
 
 import argparse
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
+
 from dataclasses import dataclass
 from datetime import datetime
 import json
 import random
 import time
-from typing import Any, AsyncGenerator, List, Tuple
+from typing import Any, AsyncGenerator, List, Optional
 import grpc
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
@@ -99,7 +99,7 @@ class RequestFuncOutput:
   prompt_len: int = 0
 
   # Flatten the structure and return only the necessary results
-  def to_dict(self): 
+  def to_dict(self):
     return {
       "prompt": self.input_request.prompt,
       "original_output": self.input_request.output,
@@ -107,7 +107,7 @@ class RequestFuncOutput:
       "success": self.success,
       "latency": self.latency,
       "prompt_len": self.prompt_len
-    }  
+    }
 
 
 def get_tokenizer(tokenizer_name: str) -> Any:
@@ -121,13 +121,11 @@ def get_tokenizer(tokenizer_name: str) -> Any:
         model=sp_model, add_bos=True, add_eos=False, reverse=False)
     return sp_tokenizer
 
-def sample_requests(
+def load_sharegpt_dataset(
     dataset_path: str,
-    num_requests: int,
     tokenizer: Any,
-    max_output_length: int,
     conversation_starter: str,
-    oversample_multiplier: float=1.2,
+    max_output_length: Optional[int] = None,
 ) -> List[InputRequest]:
   # Load the dataset.
   with open(dataset_path) as f:
@@ -144,18 +142,6 @@ def sample_requests(
       for data in dataset
   ]
 
-  # Create necessary number of requests even if bigger than dataset size
-  sampled_indices = random.sample(range(len(dataset)),
-                                  min(int(num_requests * oversample_multiplier), len(dataset)))
-  if num_requests > len(sampled_indices):
-    print(f"Number of requests {num_requests} is larger than size of dataset {len(dataset)}.\n",
-          f"Repeating data to meet number of requests.\n")
-    sampled_indices = sampled_indices * int(np.ceil(num_requests / len(sampled_indices)))
-
-  print(f"{len(sampled_indices)=}")
-  # some of these will be filtered out, so sample more than we need
-  dataset = [dataset[i] for i in sampled_indices]
-
   # Tokenize the prompts and completions.
   prompts = [prompt for prompt, _ in dataset]
   prompt_token_ids = tokenizer.tokenize(
@@ -167,27 +153,104 @@ def sample_requests(
   )  # adjust this code based on tokenizer method
   tokenized_dataset = []
   for i in range(len(dataset)):
-    output_len = len(completion_token_ids[i])
-    tokenized_dataset.append((prompts[i], prompt_token_ids[i], completions[i], output_len))
+    prompt_len = len(prompt_token_ids[i])
+    completion_len = len(completion_token_ids[i])
+    tokenized_dataset.append(
+      (prompts[i], prompt_token_ids[i], completions[i], prompt_len, completion_len)
+    )
 
   # Filter out too long sequences.
   filtered_dataset: List[InputRequest] = []
 
-  for prompt, prompt_token_ids, output, output_len in tokenized_dataset:
-    prompt_len = len(prompt_token_ids)
-    if prompt_len < 4 or output_len < 4:
+  for prompt, prompt_token_ids, completion, prompt_len, completion_len in tokenized_dataset:
+    if prompt_len < 4 or completion_len < 4:
       # Prune too short sequences.
       # This is because TGI causes errors when the input or output length
       # is too short.
       continue
+    if prompt_len > 1024 or prompt_len + completion_len > 2048:
+      # Prune too long sequences.
+      continue
+    request = InputRequest(prompt, prompt_len, completion, max_output_length or completion_len)
+    filtered_dataset.append(request)
+
+  if max_output_length is None:
+    print("In InputRequest, pass in actual output_length for each sample")
+  else:
+    print("In InputRequest, pass in max_output_length: {max_output_length} for each sample")
+
+  print(f"The dataset contains {len(dataset)} samples.")
+  print(f"The filtered dataset contains {len(filtered_dataset)} samples.")
+
+  return filtered_dataset
+
+
+def load_openorca_dataset(
+    dataset_path: str,
+    tokenizer: Any,
+    max_output_length: int = None,
+) -> List[InputRequest]:
+
+  # Load the dataset.
+  with open(dataset_path) as f:
+    dataset = json.load(f)
+
+  # Tokenize the prompts and completions.
+  prompts = dataset["prompts"]
+  outputs = dataset["results"]
+  n = len(prompts)
+  prompt_token_ids = tokenizer.tokenize(prompts)
+  output_token_ids = tokenizer.tokenize(outputs)
+
+  tokenized_dataset = []
+  for i in range(n):
+    prompt_len = len(prompt_token_ids[i])
+    output_len = len(output_token_ids[i])
+    tokenized_dataset.append((prompts[i], prompt_token_ids[i], outputs[i], prompt_len, output_len))
+
+  # Filter out too long sequences.
+  filtered_dataset: List[InputRequest] = []
+
+  for prompt, prompt_token_ids, output, prompt_len, output_len in tokenized_dataset:
     if prompt_len > 1024 or prompt_len + output_len > 2048:
       # Prune too long sequences.
       continue
-    request = InputRequest(prompt, prompt_len, output, max_output_length)
+    request = InputRequest(prompt, prompt_len, output, max_output_length or output_len)
     filtered_dataset.append(request)
 
+  if max_output_length is None:
+    print("In InputRequest, pass in actual output_length for each sample")
+  else:
+    print("In InputRequest, pass in max_output_length: {max_output_length} for each sample")
+
+  print(f"The dataset contains {len(dataset)} samples.")
+  print(f"The filtered dataset contains {len(filtered_dataset)} samples.")
+
+  return filtered_dataset
+
+
+def sample_requests(
+    dataset: List[InputRequest],
+    num_requests: int,
+    oversample_multiplier: float=1.2,
+  ) -> List[InputRequest]:
+
+  # Create necessary number of requests even if bigger than dataset size
+  sampled_indices = random.sample(
+    range(len(dataset)), min(int(num_requests * oversample_multiplier), len(dataset)))
+
+  if num_requests > len(sampled_indices):
+    print(f"Number of requests {num_requests} is larger than size of dataset {len(dataset)}.\n",
+          f"Repeating data to meet number of requests.\n")
+    sampled_indices = sampled_indices * int(np.ceil(num_requests / len(sampled_indices)))
+
+  print(f"{len(sampled_indices)=}")
+  # some of these will be filtered out, so sample more than we need
+  dataset = [dataset[i] for i in sampled_indices]
+
   # Sample the requests.
-  sampled_requests = random.sample(filtered_dataset, num_requests)
+  sampled_requests = random.sample(dataset, num_requests)
+
   return sampled_requests
 
 
@@ -396,7 +459,7 @@ def sample_warmup_requests(requests):
         256,
         512,
         1024,]
-  
+
   for start, end in zip(interesting_buckets[:-1], interesting_buckets[1:]):
     for request in requests:
       if start < request.prompt_len <= end:
@@ -417,14 +480,27 @@ def main(args: argparse.Namespace):
   tokenizer = get_tokenizer(tokenizer_id)
   if tokenizer == "test" or args.dataset == "test":
     input_requests = mock_requests(args.total_mock_requests) # e.g. [("AB", 2, "AB", 3)]
-  else:
-    input_requests = sample_requests(
-      args.dataset, 
-      args.num_prompts, 
-      tokenizer, 
-      args.max_output_length,
+  elif args.dataset == "openorca":
+    dataset = load_openorca_dataset(
+      args.dataset_path,
+      tokenizer,
+    )
+  elif args.dataset == "sharegpt":
+    dataset = load_sharegpt_dataset(
+      args.dataset_path,
+      tokenizer,
       args.conversation_starter,
     )
+
+  filtered_dataset = filter_dataset(dataset)
+  # A given args.max_output_length value is the max generation step,
+  # when the args.max_output_length is default to None, the sample's golden output length
+  # will be used to decide the generation step
+  input_requests = sample_requests(
+    dataset,
+    args.num_prompts,
+    args.max_output_length
+  )
 
   if args.warmup_first:
     print('Warm up start:' )
@@ -486,7 +562,7 @@ def main(args: argparse.Namespace):
   if args.save_request_outputs:
     file_path = args.request_outputs_file_path
     with open(file_path, "w") as output_file:
-        json.dump([output.to_dict() for output in request_outputs], output_file, indent=4) 
+        json.dump([output.to_dict() for output in request_outputs], output_file, indent=4)
 
 
 if __name__ == "__main__":
@@ -501,7 +577,10 @@ if __name__ == "__main__":
   )
   parser.add_argument("--port", type=str, default=9000)
   parser.add_argument(
-      "--dataset", type=str, default="test", help="Path to the dataset."
+      "--dataset", type=str, default="test", choices=["test", "sharegpt", "openorca"], help="The dataset name."
+  )
+  parser.add_argument(
+      "--dataset-path", type=str, help="Path to the dataset."
   )
   parser.add_argument(
       "--model",
@@ -558,7 +637,7 @@ if __name__ == "__main__":
   parser.add_argument(
       "--max-output-length",
       type=int,
-      default=1024,
+      default=None,
       help="The maximum output length for reference request.",
   )
 

@@ -3,3 +3,9 @@ __pycache__
 build/
 dist/
 google_jetstream.egg-info/
+
+# local folders
+data/
+logs/
+tmp/
+venv/
