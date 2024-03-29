@@ -29,7 +29,7 @@ export MODEL_VARIATION=$2
 export MODEL_NAME=${MODEL}-${MODEL_VARIATION}
 
 # After downloading checkpoints, copy them to GCS bucket at $CHKPT_BUCKET \
-# Please use seperate GCS paths for uploading model weights from kaggle ($CHKPT_BUCKET) and MaxText compatible weights ($MODEL_BUCKET).
+# Please use seperate GCS paths for uploading open source model weights ($CHKPT_BUCKET) and MaxText compatible weights ($MODEL_BUCKET).
 # Point these variables to a GCS bucket that you created.
 export CHKPT_BUCKET=gs://${USER}-maxtext/chkpt/${MODEL}/${MODEL_VARIATION}
 export MODEL_BUCKET=gs://${USER}-maxtext
