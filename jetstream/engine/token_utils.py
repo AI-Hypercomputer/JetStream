@@ -36,7 +36,8 @@ def mix_decode(vocab: Vocabulary, tok_id: int):
       utilize IdToPiece to convert it into a string, likely with a space placeholder (' ') for the corresponding tokens.
     """
     p_token = vocab.tokenizer.IdToPiece(tok_id)
-    p_token = p_token.replace('▁', ' ').replace('_', ' ')
+    # SentencePiece escapes the whitespace with a meta symbol "▁" (U+2581)
+    p_token = p_token.replace('▁', ' ')
     d_token = vocab.tokenizer.decode([tok_id])
     return p_token if p_token.lstrip() == d_token else d_token 
 
