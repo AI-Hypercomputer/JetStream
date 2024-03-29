@@ -28,7 +28,7 @@ class JetStreamTokenizer:
 
    def decode(self, t: int) -> str:
     token = self.vocab.tokenizer.IdToPiece(t)
-    token = token.replace('▁', ' ').replace('_', ' ')
+    token = token.replace('▁', ' ')
     return token      
 
 
@@ -76,6 +76,14 @@ class TokenUtilsTest(unittest.TestCase):
           sp_t = self.sp_tokenizer.decode([n])
           seqio_t = self.jt_tokenizer.vocab.tokenizer.decode([n])
           self.assertEqual(sp_t, seqio_t)
+
+    def test_underscore_in_output(self):
+       self.setup()
+       n = 21326
+       mix_output = token_utils.mix_decode(vocab = self.jt_tokenizer.vocab, tok_id = n)
+       decode_output = self.sp_tokenizer.decode([n])  
+       self.assertEqual(mix_output, " `__")  
+       self.assertEqual(mix_output.lstrip(), decode_output)
 
 
 if __name__ == '__main__':
