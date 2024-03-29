@@ -28,6 +28,19 @@ from jetstream.engine import engine_api
 from jetstream.engine import mock_utils
 
 
+def mix_decode(vocab: Vocabulary, tok_id: int):
+    """
+    The IdToPiece and decode results differ for 344 tokens in Llama2. 
+    Use the decode function to generate the correct strings for these 344 tokens. 
+    If IdToPiece returns a hex string (e.g., '<0x0A>') for a token within these 344,
+      utilize IdToPiece to convert it into a string, likely with a space placeholder (' ') for the corresponding tokens.
+    """
+    p_token = vocab.tokenizer.IdToPiece([tok_id])
+    p_token = p_token[0].replace('▁', ' ').replace('_', ' ')
+    d_token = vocab.tokenizer.decode([tok_id])
+    return p_token if p_token.lstrip() == d_token else d_token 
+
+
 def take_nearest_length(lengths: list[int], length: int) -> int:
   """Gets the nearest length to the right in a set of lengths."""
   pos = bisect_left(lengths, length)
@@ -161,9 +174,7 @@ def process_result_tokens(
           break
         else:
           try:
-            token = vocab.tokenizer.IdToPiece(tok_id)  # pytype: disable=attribute-error
-            # ▁ or _ encodes a blank space.
-            token = token.replace('▁', ' ').replace('_', ' ')
+            token = mix_decode(vocab, tok_id)  # pytype: disable=attribute-error
           except ValueError:
             # This error only occurs when using tests where the vocab range is
             # computed via addition and int->char is computed using chr(). Real
