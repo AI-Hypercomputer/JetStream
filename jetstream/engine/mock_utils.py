@@ -28,6 +28,10 @@ class TestTokenizer:
     """In the real version, unlike encode_tf/decode_tf, doesn't strip trailing whitespace."""
     return chr(integer)
 
+  def decode(self, tokens: np.ndarray):
+    """Converts a numpy array into a string. Uses tokens[0] as we are doing streaming decode now"""
+    return chr(tokens[0])  
+
 
 @struct.dataclass
 class TestVocab(Vocabulary):
