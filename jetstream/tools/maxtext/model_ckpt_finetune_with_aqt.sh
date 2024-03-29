@@ -14,6 +14,12 @@
 # limitations under the License.
 
 
+# This script will do the following:
+# - Finetuning the MaxText compatible checkpoint (converted from original checkpoints) with AQT
+# - Convert the AQT-finetuned checkpoints to unscanned checkpoints for inference
+# TPU device requirements:
+# - For llama2-7b, it requires at least a v5e-8 TPU VM.
+# - For llama2-13B/70b, it requires a v4-128 TPU VM.
 set -ex
 
 idx=$(date +%Y-%m-%d-%H-%M)

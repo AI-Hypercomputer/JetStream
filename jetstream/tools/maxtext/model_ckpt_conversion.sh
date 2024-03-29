@@ -14,6 +14,12 @@
 # limitations under the License.
 
 
+# This script will do the following:
+# - Create GCS buckets to store model artifacts for the JetStream Maxtext Inference demo.
+# - Convert the downloaded checkpoints to MaxText compatible checkpoints.
+# - Convert the MaxText compatible checkpoints to unscanned checkpoints for inference.
+# Device requirements:
+# - Both checkpoints conversion only requires CPU (with JAX CPU mode).
 set -ex
 
 idx=$(date +%Y-%m-%d-%H-%M)
