@@ -26,9 +26,9 @@ class JetStreamTokenizer:
     metadata = tokenizer_pb2.TokenizerParameters(path=tokenizer_path)
     self.vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
 
-   def decode(self, t: List[int]) -> str:
+   def decode(self, t: int) -> str:
     token = self.vocab.tokenizer.IdToPiece(t)
-    token = token[0].replace('▁', ' ').replace('_', ' ')
+    token = token.replace('▁', ' ').replace('_', ' ')
     return token      
 
 
@@ -50,7 +50,7 @@ class TokenUtilsTest(unittest.TestCase):
        print(f"jt_output: {jt_output}")
        for t in tokens:
            expeted_sp_output.append(self.sp_tokenizer.decode([t]))
-           jt_output.append(self.jt_tokenizer.decode([t]))
+           jt_output.append(self.jt_tokenizer.decode(t))
 
        self.assertNotEqual(jt_output, expeted_sp_output)   
 
@@ -61,7 +61,7 @@ class TokenUtilsTest(unittest.TestCase):
           #decode
           d_t = self.sp_tokenizer.decode([n])
           #IdToPiece
-          p_t = self.jt_tokenizer.decode([n])
+          p_t = self.jt_tokenizer.decode(n)
           mix_t = token_utils.mix_decode(vocab = self.jt_tokenizer.vocab, tok_id = n)
           if p_t.lstrip() == d_t:
             self.assertEqual(mix_t, p_t)

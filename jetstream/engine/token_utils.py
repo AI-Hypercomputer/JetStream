@@ -35,8 +35,8 @@ def mix_decode(vocab: Vocabulary, tok_id: int):
     If IdToPiece returns a hex string (e.g., '<0x0A>') for a token within these 344,
       utilize IdToPiece to convert it into a string, likely with a space placeholder (' ') for the corresponding tokens.
     """
-    p_token = vocab.tokenizer.IdToPiece([tok_id])
-    p_token = p_token[0].replace('▁', ' ').replace('_', ' ')
+    p_token = vocab.tokenizer.IdToPiece(tok_id)
+    p_token = p_token.replace('▁', ' ').replace('_', ' ')
     d_token = vocab.tokenizer.decode([tok_id])
     return p_token if p_token.lstrip() == d_token else d_token 
 
