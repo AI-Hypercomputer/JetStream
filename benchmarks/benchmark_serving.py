@@ -488,27 +488,28 @@ def main(args: argparse.Namespace):
   tokenizer = get_tokenizer(tokenizer_id)
   if tokenizer == "test" or args.dataset == "test":
     input_requests = mock_requests(args.total_mock_requests) # e.g. [("AB", 2, "AB", 3)]
-  elif args.dataset == "openorca":
-    dataset = load_openorca_dataset(
-      args.dataset_path,
-      tokenizer,
-      args.max_output_length
-    )
-  elif args.dataset == "sharegpt":
-    dataset = load_sharegpt_dataset(
-      args.dataset_path,
-      tokenizer,
-      args.conversation_starter,
-      args.max_output_length
-    )
+  else:
+    if args.dataset == "openorca":
+      dataset = load_openorca_dataset(
+        args.dataset_path,
+        tokenizer,
+        args.max_output_length
+      )
+    elif args.dataset == "sharegpt":
+      dataset = load_sharegpt_dataset(
+        args.dataset_path,
+        tokenizer,
+        args.conversation_starter,
+        args.max_output_length
+      )
 
-  # A given args.max_output_length value is the max generation step,
-  # when the args.max_output_length is default to None, the sample's golden output length
-  # will be used to decide the generation step
-  input_requests = sample_requests(
-    dataset,
-    args.num_prompts,
-  )
+    # A given args.max_output_length value is the max generation step,
+    # when the args.max_output_length is default to None, the sample's golden output length
+    # will be used to decide the generation step
+    input_requests = sample_requests(
+      dataset,
+      args.num_prompts,
+    )
 
   if args.warmup_first:
     print('Warm up start:' )
