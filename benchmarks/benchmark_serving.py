@@ -35,14 +35,22 @@ On the client side, run:
 
     (run with real model and engines)
     python -m benchmarks.benchmark_serving \
-        --tokenizer <your_tokenizer> --dataset <target_dataset_path> \
+        --tokenizer <your_tokenizer> \
+        --dataset <target_dataset_name> \
+        --dataset-path <target_dataset_path> \
         --request-rate <request_rate>
 
     (run with mock)
     python -m benchmarks.benchmark_serving \
         --request-rate 1
 
-e2e example: python3 benchmark_serving.py --tokenizer /home/rwitten/maxtext/assets/tokenizer --num-prompts 100  --dataset ~/ShareGPT_V3_unfiltered_cleaned_split.json
+e2e example:
+python3 benchmark_serving.py \
+    --tokenizer /home/{username}/maxtext/assets/tokenizer \
+    --num-prompts 100 \
+    --dataset sharegpt \
+    --dataset-path ~/ShareGPT_V3_unfiltered_cleaned_split.json
+
 """
 
 
@@ -177,9 +185,9 @@ def load_sharegpt_dataset(
   if max_output_length is None:
     print("In InputRequest, pass in actual output_length for each sample")
   else:
-    print("In InputRequest, pass in max_output_length: {max_output_length} for each sample")
+    print(f"In InputRequest, pass in max_output_length: {max_output_length} for each sample")
 
-  print(f"The dataset contains {len(dataset)} samples.")
+  print(f"The dataset contains {len(tokenized_dataset)} samples.")
   print(f"The filtered dataset contains {len(filtered_dataset)} samples.")
 
   return filtered_dataset
@@ -188,7 +196,7 @@ def load_sharegpt_dataset(
 def load_openorca_dataset(
     dataset_path: str,
     tokenizer: Any,
-    max_output_length: int = None,
+    max_output_length: Optional[int] = None,
 ) -> List[InputRequest]:
 
   # Load the dataset.
@@ -221,9 +229,9 @@ def load_openorca_dataset(
   if max_output_length is None:
     print("In InputRequest, pass in actual output_length for each sample")
   else:
-    print("In InputRequest, pass in max_output_length: {max_output_length} for each sample")
+    print(f"In InputRequest, pass in max_output_length: {max_output_length} for each sample")
 
-  print(f"The dataset contains {len(dataset)} samples.")
+  print(f"The dataset contains {len(tokenized_dataset)} samples.")
   print(f"The filtered dataset contains {len(filtered_dataset)} samples.")
 
   return filtered_dataset
@@ -484,22 +492,22 @@ def main(args: argparse.Namespace):
     dataset = load_openorca_dataset(
       args.dataset_path,
       tokenizer,
+      args.max_output_length
     )
   elif args.dataset == "sharegpt":
     dataset = load_sharegpt_dataset(
       args.dataset_path,
       tokenizer,
       args.conversation_starter,
+      args.max_output_length
     )
 
-  filtered_dataset = filter_dataset(dataset)
   # A given args.max_output_length value is the max generation step,
   # when the args.max_output_length is default to None, the sample's golden output length
   # will be used to decide the generation step
   input_requests = sample_requests(
     dataset,
     args.num_prompts,
-    args.max_output_length
   )
 
   if args.warmup_first:
