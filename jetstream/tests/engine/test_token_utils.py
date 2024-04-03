@@ -48,7 +48,7 @@ class JetStreamTokenizer:
 
 class TokenUtilsTest(unittest.TestCase):
     def setup(self):
-        tokenizer_path = "tokenizer.model"
+        tokenizer_path = "third_party/llama2/tokenizer.model"
         current_dir = os.path.dirname(__file__)
         tokenizer_path = os.path.join(current_dir, tokenizer_path)
         print(f"model_path: {tokenizer_path}")
@@ -61,7 +61,6 @@ class TokenUtilsTest(unittest.TestCase):
        tokens = [304, 13, 2266, 526, 777, 9590, 2020, 29901]
        expeted_sp_output = []
        jt_output = []
-       print(f"jt_output: {jt_output}")
        for t in tokens:
            expeted_sp_output.append(self.sp_tokenizer.decode([t]))
            jt_output.append(self.jt_tokenizer.decode(t))
