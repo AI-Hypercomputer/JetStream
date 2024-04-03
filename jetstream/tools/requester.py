@@ -19,7 +19,6 @@ from typing import Sequence
 from absl import app
 from absl import flags
 import grpc
-
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 
@@ -31,7 +30,9 @@ _SESSION_CACHE = flags.DEFINE_string(
 )
 _TEXT = flags.DEFINE_string('text', 'Today is a good day', 'The message')
 _PRIORITY = flags.DEFINE_integer('priority', 0, 'Message priority')
-_MAX_TOKENS = flags.DEFINE_integer('max_tokens', 3, 'Maximum number of tokens')
+_MAX_TOKENS = flags.DEFINE_integer(
+    'max_tokens', 3, 'Maximum number of output/decode tokens of a sequence'
+)
 
 
 def _GetResponseAsync(
@@ -41,7 +42,7 @@ def _GetResponseAsync(
   """Gets an async response."""
 
   response = stub.Decode(request)
-  output = ""
+  output = ''
   for token_list in response:
     output += token_list.response[0]
   print(f'Prompt: {_TEXT.value}')
@@ -50,11 +51,10 @@ def _GetResponseAsync(
 
 def main(argv: Sequence[str]) -> None:
   del argv
-  # Note: Uses insecure_channel only for local testing. Please add grpc credentials for Production.
+  # Note: Uses insecure_channel only for local testing. Please add grpc 
+  # credentials for Production.
   address = f'{_SERVER.value}:{_PORT.value}'
-  with grpc.insecure_channel(
-      address
-  ) as channel:
+  with grpc.insecure_channel(address) as channel:
     grpc.channel_ready_future(channel).result()
     stub = jetstream_pb2_grpc.OrchestratorStub(channel)
     print(f'Sending request to: {address}')
