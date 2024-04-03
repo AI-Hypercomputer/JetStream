@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 syntax = "proto3";
 
 package jetstream_proto;
@@ -29,6 +28,12 @@ message DecodeRequest {
   // New text from a user or tool.
   string additional_text = 2;
   int32 priority = 3;
+  // The maximum output length of a sequence. It's used in JetStream to control
+  // the output/decode length of a sequence. It would not be used in the engine.
+  // We should always set max_tokens <= (max_target_length -
+  // max_prefill_predict_length). max_target_length is the maximum length of a
+  // sequence; max_prefill_predict_length is the maximum length of the
+  // input/prefill of a sequence.
   int32 max_tokens = 4;
 }
 message DecodeResponse {

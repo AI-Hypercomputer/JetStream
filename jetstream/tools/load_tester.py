@@ -17,12 +17,11 @@
 import concurrent.futures
 import functools
 import time
-from typing import Sequence, Iterator
+from typing import Iterator, Sequence
 
 from absl import app
 from absl import flags
 import grpc
-
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 
@@ -31,7 +30,7 @@ _SERVER = flags.DEFINE_string('server', 'dns:///[::1]', 'server address')
 _PORT = flags.DEFINE_string('port', '9000', 'port to ping')
 _TEXT = flags.DEFINE_string('text', 'AB', 'The message')
 _MAX_TOKENS = flags.DEFINE_integer(
-    'max_tokens', 100, 'Maximum number of tokens'
+    'max_tokens', 100, 'Maximum number of output/decode tokens of a sequence'
 )
 
 
@@ -88,8 +87,7 @@ def load_test(
   number = list(range(len(text)))
   start = time.time()
   ping_partial = functools.partial(ping, stub)
-  with concurrent.futures.ThreadPoolExecutor(
-      max_workers=queries) as executor:
+  with concurrent.futures.ThreadPoolExecutor(max_workers=queries) as executor:
     responses = list(executor.map(ping_partial, text, number))
   time_taken = time.time() - start
   print(f'Time taken: {time_taken}')
@@ -100,10 +98,9 @@ def load_test(
 def main(argv: Sequence[str]):
   del argv
   address = f'{_SERVER.value}:{_PORT.value}'
-  # Note: Uses insecure_channel only for local testing. Please add grpc credentials for Production.
-  with grpc.insecure_channel(
-      address
-  ) as channel:
+  # Note: Uses insecure_channel only for local testing. Please add grpc 
+  # credentials for Production.
+  with grpc.insecure_channel(address) as channel:
     grpc.channel_ready_future(channel).result()
     stub = jetstream_pb2_grpc.OrchestratorStub(channel)
     _ = load_test(stub, text=[_TEXT.value], queries=64)
