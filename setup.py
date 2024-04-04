@@ -26,7 +26,7 @@ setup(
     name="google-jetstream",
     version="0.1.1",
     description=(
-        "A throughput and memory optimized engine for LLM inference on TPUs"
+        "JetStream is a throughput and memory optimized engine for LLM inference on XLA devices, starting with TPUs (and GPUs in future -- PRs welcome)."
     ),
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
