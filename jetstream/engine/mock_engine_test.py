@@ -50,7 +50,7 @@ class EngineTest(absltest.TestCase):
     """Performs prefill and returns a kv cache."""
     engine, params = self._setup()
     # A 2 will be pre-pended as 'bos' token from the vocab.
-    text = 'AB'
+    text = "AB"
     metadata = engine.get_tokenizer()
     vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
     tokens, true_length = token_utils.tokenize_and_pad(text, vocab, is_bos=True)
@@ -93,22 +93,22 @@ class EngineTest(absltest.TestCase):
     # Char for 266
     token_data = sampled_tokens.get_result_at_slot(slot)
     tok = token_data.tokens
-    assert tokenizer.IdToPiece(int(tok.item())) == 'Ċ'
+    assert tokenizer.IdToPiece(int(tok.item())) == "Ċ"
     decode_state, sampled_tokens = engine.generate(
         params=params, decode_state=decode_state
     )
     # Char for 399
     token_data = sampled_tokens.get_result_at_slot(slot)
     tok = token_data.tokens
-    assert tokenizer.IdToPiece(int(tok.item())) == 'Ə'
+    assert tokenizer.IdToPiece(int(tok.item())) == "Ə"
     _, sampled_tokens = engine.generate(
         params=params, decode_state=decode_state
     )
     # Char for 598
     token_data = sampled_tokens.get_result_at_slot(slot)
     tok = token_data.tokens
-    assert tokenizer.IdToPiece(int(tok.item())) == 'ɖ'
+    assert tokenizer.IdToPiece(int(tok.item())) == "ɖ"
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   absltest.main()

@@ -44,9 +44,11 @@ CpuDevices = Any
 @struct.dataclass
 class SlotData:
   """Class to store slot data."""
+
   tokens: Union[jax.Array, np.ndarray]
   valid: Union[jax.Array, np.ndarray]
   lengths: Union[jax.Array, np.ndarray]
+
 
 # pylint: disable=g-doc-args
 @struct.dataclass
@@ -78,11 +80,11 @@ class ResultTokens(abc.ABC):
       pytree_node=False,
   )
 
-  def copy_to_host_async(self: 'ResultTokens') -> None:
+  def copy_to_host_async(self: "ResultTokens") -> None:
     """Copy to host asynchronously."""
     self.data.copy_to_host_async()
 
-  def convert_to_numpy(self: 'ResultTokens') -> 'ResultTokens':
+  def convert_to_numpy(self: "ResultTokens") -> "ResultTokens":
     """Converts to numpy."""
     return ResultTokens(
         np.array(self.data),
@@ -92,9 +94,7 @@ class ResultTokens(abc.ABC):
         self.samples_per_slot,
     )
 
-  def get_result_at_slot(
-      self, slot: int
-  ) -> SlotData:
+  def get_result_at_slot(self, slot: int) -> SlotData:
     """Returns the token at a given slot.
 
     Args:
@@ -108,10 +108,16 @@ class ResultTokens(abc.ABC):
     end_idx = (slot + 1) * self.samples_per_slot
     # Mask out any non valid tokens.
     return SlotData(
-        tokens=self.data[start_idx:end_idx, self.tokens_idx[0]:self.tokens_idx[1]],
-        valid=self.data[start_idx:end_idx, self.valid_idx[0]:self.valid_idx[1]],
+        tokens=self.data[
+            start_idx:end_idx, self.tokens_idx[0] : self.tokens_idx[1]
+        ],
+        valid=self.data[
+            start_idx:end_idx, self.valid_idx[0] : self.valid_idx[1]
+        ],
         # Only get a 1D representation here
-        lengths=self.data[start_idx:end_idx, self.length_idx[0]:self.length_idx[1]][:, 0]
+        lengths=self.data[
+            start_idx:end_idx, self.length_idx[0] : self.length_idx[1]
+        ][:, 0],
     )
 
 
@@ -141,9 +147,7 @@ class Engine(abc.ABC):
 
   @abc.abstractmethod
   def generate(
-      self,
-      params: Params,
-      decode_state: DecodeState
+      self, params: Params, decode_state: DecodeState
   ) -> Tuple[DecodeState, ResultTokens]:
     """Generates tokens for each sequence being decoded in parallel.
 

@@ -23,15 +23,15 @@ from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 
 
-_SERVER = flags.DEFINE_string('server', 'dns:///[::1]', 'server address')
-_PORT = flags.DEFINE_string('port', '9000', 'port to ping')
+_SERVER = flags.DEFINE_string("server", "dns:///[::1]", "server address")
+_PORT = flags.DEFINE_string("port", "9000", "port to ping")
 _SESSION_CACHE = flags.DEFINE_string(
-    'session_cache', '', 'Location of any pre-cached results'
+    "session_cache", "", "Location of any pre-cached results"
 )
-_TEXT = flags.DEFINE_string('text', 'Today is a good day', 'The message')
-_PRIORITY = flags.DEFINE_integer('priority', 0, 'Message priority')
+_TEXT = flags.DEFINE_string("text", "Today is a good day", "The message")
+_PRIORITY = flags.DEFINE_integer("priority", 0, "Message priority")
 _MAX_TOKENS = flags.DEFINE_integer(
-    'max_tokens', 3, 'Maximum number of output/decode tokens of a sequence'
+    "max_tokens", 3, "Maximum number of output/decode tokens of a sequence"
 )
 
 
@@ -42,22 +42,22 @@ def _GetResponseAsync(
   """Gets an async response."""
 
   response = stub.Decode(request)
-  output = ''
+  output = ""
   for token_list in response:
     output += token_list.response[0]
-  print(f'Prompt: {_TEXT.value}')
-  print(f'Response: {output}')
+  print(f"Prompt: {_TEXT.value}")
+  print(f"Response: {output}")
 
 
 def main(argv: Sequence[str]) -> None:
   del argv
-  # Note: Uses insecure_channel only for local testing. Please add grpc 
+  # Note: Uses insecure_channel only for local testing. Please add grpc
   # credentials for Production.
-  address = f'{_SERVER.value}:{_PORT.value}'
+  address = f"{_SERVER.value}:{_PORT.value}"
   with grpc.insecure_channel(address) as channel:
     grpc.channel_ready_future(channel).result()
     stub = jetstream_pb2_grpc.OrchestratorStub(channel)
-    print(f'Sending request to: {address}')
+    print(f"Sending request to: {address}")
     request = jetstream_pb2.DecodeRequest(
         session_cache=_SESSION_CACHE.value,
         additional_text=_TEXT.value,
@@ -67,5 +67,5 @@ def main(argv: Sequence[str]) -> None:
     return _GetResponseAsync(stub, request)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   app.run(main)

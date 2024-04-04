@@ -26,11 +26,11 @@ from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 
 
-_SERVER = flags.DEFINE_string('server', 'dns:///[::1]', 'server address')
-_PORT = flags.DEFINE_string('port', '9000', 'port to ping')
-_TEXT = flags.DEFINE_string('text', 'AB', 'The message')
+_SERVER = flags.DEFINE_string("server", "dns:///[::1]", "server address")
+_PORT = flags.DEFINE_string("port", "9000", "port to ping")
+_TEXT = flags.DEFINE_string("text", "AB", "The message")
 _MAX_TOKENS = flags.DEFINE_integer(
-    'max_tokens', 100, 'Maximum number of output/decode tokens of a sequence'
+    "max_tokens", 100, "Maximum number of output/decode tokens of a sequence"
 )
 
 
@@ -41,7 +41,7 @@ def collect_tokens(
   for token_list in response:
     tok = token_list.response[0]
     if print_interim:
-      print(tok, end='', flush=True)
+      print(tok, end="", flush=True)
     tokens.append(tok)
   return tokens
 
@@ -50,7 +50,7 @@ def api_call(
     stub: jetstream_pb2_grpc.OrchestratorStub,
     text: str,
     max_tokens: int,
-    session_cache: str = '',
+    session_cache: str = "",
     print_interim: bool = True,
 ) -> str:
   """Sends a request to server and returns text."""
@@ -61,17 +61,17 @@ def api_call(
       max_tokens=max_tokens,
   )
   response = stub.Decode(request)
-  print('---------------------- Sent!!!----------------------')
+  print("---------------------- Sent!!!----------------------")
   tokens = collect_tokens(response, print_interim=print_interim)
 
-  return ''.join(tokens)
+  return "".join(tokens)
 
 
 def ping(
     stub: jetstream_pb2_grpc.OrchestratorStub, text: str, number: int
 ) -> str:
   response = api_call(stub, text, _MAX_TOKENS.value, print_interim=False)
-  print(f'Completed {number}')
+  print(f"Completed {number}")
   return response
 
 
@@ -90,15 +90,15 @@ def load_test(
   with concurrent.futures.ThreadPoolExecutor(max_workers=queries) as executor:
     responses = list(executor.map(ping_partial, text, number))
   time_taken = time.time() - start
-  print(f'Time taken: {time_taken}')
-  print(f'QPS: {queries/time_taken}')
+  print(f"Time taken: {time_taken}")
+  print(f"QPS: {queries/time_taken}")
   return responses
 
 
 def main(argv: Sequence[str]):
   del argv
-  address = f'{_SERVER.value}:{_PORT.value}'
-  # Note: Uses insecure_channel only for local testing. Please add grpc 
+  address = f"{_SERVER.value}:{_PORT.value}"
+  # Note: Uses insecure_channel only for local testing. Please add grpc
   # credentials for Production.
   with grpc.insecure_channel(address) as channel:
     grpc.channel_ready_future(channel).result()
@@ -106,5 +106,5 @@ def main(argv: Sequence[str]):
     _ = load_test(stub, text=[_TEXT.value], queries=64)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   app.run(main)

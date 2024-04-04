@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Orchestrates the engines for the inference workflow with performance optimization.
+"""Orchestrates the engines with performance optimization for inference.
 
 1. A client sends a DecodeRequest via gRPC to the server, an 'LLMOrchestrator'.
 2. This gets wrapped as an 'ActiveRequest' inside the orchestrator, with a
@@ -103,7 +103,7 @@ root.setLevel(logging.DEBUG)
 handler = logging.StreamHandler(sys.stdout)
 handler.setLevel(logging.DEBUG)
 formatter = logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 handler.setFormatter(formatter)
 root.addHandler(handler)
@@ -160,7 +160,7 @@ class JetThread(threading.Thread):
     try:
       super().run()
     except Exception as e:  # pylint: disable=broad-exception-caught
-      print(f'Thread {self.name} encountered an error: {e}')
+      print(f"Thread {self.name} encountered an error: {e}")
       traceback.print_exc()
       os.kill(os.getpid(), signal.SIGKILL)
 
@@ -218,7 +218,7 @@ class Driver:
       generate_params = []
 
     logging.info(
-        'Initialising driver with %d prefill engines and %d generate engines.',
+        "Initialising driver with %d prefill engines and %d generate engines.",
         len(prefill_engines),
         len(generate_engines),
     )
@@ -236,7 +236,7 @@ class Driver:
     # Stage 2
     # Each generate engine accesses its own generate backlog.
     self._generate_backlogs = {
-        # Don't receive more than 1/3 the number of concurrent decodes to avoid 
+        # Don't receive more than 1/3 the number of concurrent decodes to avoid
         # OOM for single host.
         idx: queue.Queue(engine.max_concurrent_decodes // 3)
         for idx, engine in enumerate(self._generate_engines)
@@ -287,7 +287,7 @@ class Driver:
     self._prefill_threads = [
         JetThread(
             target=functools.partial(self._prefill_thread, idx),
-            name=f'prefill-{idx}',
+            name=f"prefill-{idx}",
         )
         for idx in range(len(self._prefill_engines))
     ]
@@ -297,7 +297,7 @@ class Driver:
                 self._generate_thread,
                 idx,
             ),
-            name=f'generate-{idx}',
+            name=f"generate-{idx}",
         )
         for idx in range(len(self._generate_engines))
     ]
@@ -307,7 +307,7 @@ class Driver:
                 self._detokenize_thread,
                 idx,
             ),
-            name=f'detokenize-{idx}',
+            name=f"detokenize-{idx}",
         )
         for idx in range(len(self._generate_engines))
     ]
@@ -365,7 +365,7 @@ class Driver:
       t.join()
 
   def get_total_concurrent_requests(self) -> int:
-    """Returns the total number of concurrent requests the driver can service."""
+    """Gets the total number of concurrent requests the driver can handle."""
     # We don't support filling all backlogs at once because it can cause GIL
     # contention.
     total_max_concurrent_decodes = sum(
@@ -387,24 +387,24 @@ class Driver:
 
   def _prefill_thread(self, idx: int):
     """Thread which runs in the background performing prefills."""
-    logging.info('---------Spinning up prefill thread %d.---------', idx)
+    logging.info("---------Spinning up prefill thread %d.---------", idx)
     prefill_engine = self._prefill_engines[idx]
     prefill_params = self._prefill_params[idx]
     metadata = prefill_engine.get_tokenizer()
     vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
-    logging.info('---------Prefill params %d loaded.---------', idx)
+    logging.info("---------Prefill params %d loaded.---------", idx)
 
     while self.live:
       # The prefill thread can wait until there is available decode slot to
       # insert.
       if self._generate_slots[idx].qsize() == 0:
         logging.info(
-            'Prefill waits for available slot; prefill queue size %d',
+            "Prefill waits for available slot; prefill queue size %d",
             self._prefill_backlog.qsize(),
         )
         self._ready_to_prefill.wait()
         logging.info(
-            'Prefill continues; prefill queue size %d',
+            "Prefill continues; prefill queue size %d",
             self._prefill_backlog.qsize(),
         )
       # The prefill thread can just sleep until it has work to do.
@@ -416,13 +416,13 @@ class Driver:
       # Tokenize, and introduce a leading dimension
       is_bos = not bool(request.history_path)
       logging.info(
-          'Prefilling on prefill engine %d : prefill queue size, %d,'
-          ' is_bos: %s, history: %s',
+          "Prefilling on prefill engine %d : prefill queue size, %d,"
+          " is_bos: %s, history: %s",
           idx,
           self._prefill_backlog.qsize(),
           is_bos,
           request.history_path,
-      )  # pylint: disable = line-too-long
+      )
       padded_tokens, true_length = token_utils.tokenize_and_pad(
           request.prefill_text,
           vocab,
@@ -442,13 +442,13 @@ class Driver:
       # full.
       self._generate_backlogs[idx].put(request, block=True)
       logging.info(
-          'Placed request on the generate queue,'
-          f' {self._generate_backlogs[idx].qsize()=}'
+          "Placed request on the generate queue, generate_backlogs=%d",
+          self._generate_backlogs[idx].qsize(),
       )
 
   def _generate_thread(self, idx: int):
     """Step token generation and insert prefills from backlog."""
-    logging.info('---------Spinning up generate thread %d.---------', idx)
+    logging.info("---------Spinning up generate thread %d.---------", idx)
     generate_engine = self._generate_engines[idx]
     my_slots = self._generate_slots[idx]
     my_generate_backlog = self._generate_backlogs[idx]
@@ -459,20 +459,23 @@ class Driver:
     # State to store things like running kv cache in.
     decode_state = generate_engine.init_decode_state()
     generate_params = self._generate_params[idx]
-    logging.info('---------Generate params %d loaded.---------', idx)
+    logging.info("---------Generate params %d loaded.---------", idx)
     time_of_last_generate = time.time()
     time_of_last_print = time.time()
     while self.live:
       if (time.time() - time_of_last_print) > 1:
         logging.info(
-            'Generate thread making a decision with:'
-            f' prefill_backlog={self._prefill_backlog.qsize()} generate_free_slots={my_slots.qsize()}'
+            "Generate thread making a decision with:"
+            " prefill_backlog=%d"
+            " generate_free_slots=%d",
+            self._prefill_backlog.qsize(),
+            my_slots.qsize(),
         )
         time_of_last_print = time.time()
 
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
 
-      # TODO: Move insert to prefill thread. 
+      # TODO: Move insert to prefill thread.
       # Check if there are any free my_slots. We don't want to block here since
       # we can still generate if we can't insert. We do this in a while loop to
       # insert as many sequences as possible.
@@ -509,7 +512,7 @@ class Driver:
           return
 
         logging.info(
-            'Generate slice %d filling slot %d at step %d.',
+            "Generate slice %d filling slot %d at step %d.",
             idx,
             slot,
             generate_timestep,
@@ -528,7 +531,7 @@ class Driver:
       # At this point, we know that we have at least some slots filled.
       assert (
           my_slots.qsize() < max_concurrent_decodes
-      ), 'At this point we must have some requests inserted into the slots.'
+      ), "At this point we must have some requests inserted into the slots."
 
       # Now we actually take a generate step on requests in the slots.
       decode_state, sampled_tokens = generate_engine.generate(
@@ -539,7 +542,7 @@ class Driver:
       my_detokenize_backlog.put((generate_timestep, sampled_tokens), block=True)
       generate_timestep += 1
       logging.info(
-          'Generate engine %d step %d - slots free : %d / %d, took %.2fms',
+          "Generate engine %d step %d - slots free : %d / %d, took %.2fms",
           idx,
           generate_timestep,
           my_slots_size,
@@ -573,7 +576,7 @@ class Driver:
         generate_timestep_added, result_tokens = data
         # Disable attribute error because pytype doesn't know this
         # is a result tokens, and we can't annotate the tuple.
-        result_tokens = result_tokens.convert_to_numpy()  # pytype: disable=attribute-error
+        result_tokens = result_tokens.convert_to_numpy()
 
         for slot, request in my_live_requests.items():
           if request is not None:
@@ -594,7 +597,7 @@ class Driver:
               my_slots.put(slot, block=False)  # This should always have space.
               self._ready_to_prefill.set()
         logging.info(
-            'Detokenizing generate step %d took %.2fms',
+            "Detokenizing generate step %d took %.2fms",
             generate_timestep_added,
             (time.time() - start_detokenize_time) * 10**3,
         )
@@ -612,7 +615,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
   def __init__(self, driver: Driver):
     self._driver = driver
 
-  async def Decode(
+  async def Decode(  # pylint: disable=invalid-overridden-method
       self,
       request: jetstream_pb2.DecodeRequest,
       context: Optional[grpc.aio.ServicerContext] = None,
@@ -620,8 +623,8 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     """Decode."""
     if context is None:
       logging.warning(
-          'LLM orchestrator is being used in offline test mode, and will not'
-          ' respond to gRPC queries - only direct function calls.'
+          "LLM orchestrator is being used in offline test mode, and will not"
+          " respond to gRPC queries - only direct function calls."
       )
     return_channel = async_multifuture.AsyncMultifuture()
     if context:
@@ -643,12 +646,12 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
           context=context,
           code=grpc.StatusCode.RESOURCE_EXHAUSTED,
           details=(
-              'The driver prefill queue is full and more requests cannot be'
-              ' handled. You may retry this request.'
+              "The driver prefill queue is full and more requests cannot be"
+              " handled. You may retry this request."
           ),
       )
     logging.info(
-        'Placed request on the prefill queue.',
+        "Placed request on the prefill queue.",
     )
     async for response in active_request.return_channel:
       # When an active request is created a queue is instantiated. New tokens

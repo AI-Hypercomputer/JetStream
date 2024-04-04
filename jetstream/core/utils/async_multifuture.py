@@ -12,41 +12,45 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""AsyncMultifuture is a data structure utility.
+
+It is a data structure that returns multiple futures asynchronously.
+"""
+
 import asyncio
 from concurrent import futures
 import threading
 from typing import Any, Generic, TypeVar
 
-ValueType = TypeVar('ValueType')
+V = TypeVar("V")
 
 
 class _Exception:
   """A class for propagating exceptions through a queue.
 
   By wrapping them with a custom private class we ensure that any type
-  (including Exception) can be used as a ValueType.
+  (including Exception) can be used as a V.
   """
 
   def __init__(self, exception: Exception) -> None:
     self.exception = exception
 
 
-class AsyncMultifuture(Generic[ValueType]):
+class AsyncMultifuture(Generic[V]):
   """AsyncMultifuture is like concurrent.futures.Future but supports returning
 
   multiple results. It provides an unidirectional stream with buffering and
   exception propagation.
 
   Supports delivering results to an async Python event loop. Must be
-  constructed
-  inside of the event loop.
+  constructed inside of the event loop.
   """
 
   def __init__(self) -> None:
     self._cancelled = threading.Event()
     self._done = threading.Event()
     self._loop = asyncio.get_running_loop()
-    self._queue = asyncio.Queue[ValueType | _Exception]()
+    self._queue = asyncio.Queue[V | _Exception]()
 
   def cancel(self, unused: Any = None) -> None:
     """Cancels the asyncmultifuture."""
@@ -60,7 +64,10 @@ class AsyncMultifuture(Generic[ValueType]):
     return self._cancelled.is_set()
 
   def done(self) -> bool:
-    """AsyncMultifuture is done when it is finalized with close() or set_exception()."""
+    """AsyncMultifuture is done when it is finalized with close() or
+
+    set_exception().
+    """
     return self._done.is_set()
 
   def set_exception(self, exception: Exception) -> None:
@@ -78,7 +85,7 @@ class AsyncMultifuture(Generic[ValueType]):
     )
     self._loop.call_soon_threadsafe(self._done.set)
 
-  def add_result(self, result: ValueType) -> None:
+  def add_result(self, result: V) -> None:
     """Adds the result to the asyncmultifuture.
 
     Caller must call .close() once all results are added.
@@ -92,10 +99,10 @@ class AsyncMultifuture(Generic[ValueType]):
     """Notifies the receiver that no more results would be added."""
     self.set_exception(StopAsyncIteration())
 
-  def __aiter__(self) -> 'AsyncMultifuture':
+  def __aiter__(self) -> "AsyncMultifuture":
     return self
 
-  async def __anext__(self) -> ValueType:
+  async def __anext__(self) -> V:
     """Returns the next value."""
     value = await self._queue.get()
     if isinstance(value, _Exception):

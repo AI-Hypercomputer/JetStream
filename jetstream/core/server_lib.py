@@ -30,7 +30,7 @@ from jetstream.core import orchestrator
 from jetstream.core.proto import jetstream_pb2_grpc
 
 
-_HOST = '[::]'
+_HOST = "[::]"
 
 
 class JetStreamServer:
@@ -56,7 +56,7 @@ class JetStreamServer:
     jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
         orchestrator.LLMOrchestrator(driver=self._driver), self._grpc_server
     )
-    self._grpc_server.add_secure_port(f'{_HOST}:{port}', credentials)
+    self._grpc_server.add_secure_port(f"{_HOST}:{port}", credentials)
 
   async def _async_start(self) -> None:
     await self._grpc_server.start()
@@ -105,12 +105,12 @@ def run(
   Returns:
     JetStreamServer that wraps the grpc server and orchestrator driver.
   """
-  logging.info('Kicking off gRPC server.')
+  logging.info("Kicking off gRPC server.")
   engines = config_lib.get_engines(config, devices=devices)
   prefill_params = [pe.load_params() for pe in engines.prefill_engines]
   generate_params = [ge.load_params() for ge in engines.generate_engines]
   shared_params = [ie.load_params() for ie in engines.interleaved_engines]
-  logging.info('Loaded all weights.')
+  logging.info("Loaded all weights.")
   driver = orchestrator.Driver(
       prefill_engines=engines.prefill_engines + engines.interleaved_engines,
       generate_engines=engines.generate_engines + engines.interleaved_engines,
@@ -121,7 +121,7 @@ def run(
   # to make sure we can fully saturate the model. Set default minimum to 64.
   threads = threads or max(driver.get_total_concurrent_requests(), 64)
   jetstream_server = JetStreamServer(driver, threads, port, credentials)
-  logging.info('Starting server on port %d with %d threads', port, threads)
+  logging.info("Starting server on port %d with %d threads", port, threads)
 
   jetstream_server.start()
   return jetstream_server
@@ -131,5 +131,5 @@ def get_devices() -> Any:
   """Gets devices locally."""
   # Run interleaved engine on local device.
   devices = jax.devices()
-  logging.info('Using local devices for interleaved serving: %d', len(devices))
+  logging.info("Using local devices for interleaved serving: %d", len(devices))
   return devices

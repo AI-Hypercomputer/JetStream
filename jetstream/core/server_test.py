@@ -35,13 +35,13 @@ class ServerTest(parameterized.TestCase):
       # Uses weight 2 for prefill, 4 for decode.
       (
           config_lib.CPUTestServer,
-          ['Ċ', 'Ō', 'Ɵ', ''],
+          ["Ċ", "Ō", "Ɵ", ""],
           [None, None],
       ),
       # Uses the same prefill / generate weights (2).
       (
           config_lib.InterleavedCPUTestServer,
-          ['Ċ', 'Ə', 'ɖ', ''],
+          ["Ċ", "Ə", "ɖ", ""],
           [None],
       ),
   )
@@ -54,7 +54,7 @@ class ServerTest(parameterized.TestCase):
     """Sets up a server and requests token responses."""
     ######################### Server side ######################################
     port = portpicker.pick_unused_port()
-    print('port: ' + str(port))
+    print("port: " + str(port))
     credentials = grpc.local_server_credentials()
 
     server = server_lib.run(
@@ -65,15 +65,15 @@ class ServerTest(parameterized.TestCase):
     )
     ###################### Requester side ######################################
     channel = grpc.secure_channel(
-        f'localhost:{port}', grpc.local_channel_credentials()
+        f"localhost:{port}", grpc.local_channel_credentials()
     )
     stub = jetstream_pb2_grpc.OrchestratorStub(channel)
 
     # The string representation of np.array([[65, 66]]), [2] will be prependd
     # as BOS
-    text = 'AB'
+    text = "AB"
     request = jetstream_pb2.DecodeRequest(
-        session_cache='',
+        session_cache="",
         additional_text=text,
         priority=1,
         max_tokens=3,
@@ -83,16 +83,16 @@ class ServerTest(parameterized.TestCase):
     for token in iterator:
       # Tokens come through as bytes
       print(
-          'actual output: '
-          + bytes(token.response[0], encoding='utf-8').decode()
+          "actual output: "
+          + bytes(token.response[0], encoding="utf-8").decode()
       )
       assert (
-          bytes(token.response[0], encoding='utf-8').decode()
+          bytes(token.response[0], encoding="utf-8").decode()
           == expected_tokens[counter]
       )
       counter += 1
     server.stop()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   absltest.main()

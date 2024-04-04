@@ -28,7 +28,7 @@ on:
 
 jobs:
   py:
-    name: "Python type check"
+    name: "Python type/lint/format checks"
     strategy:
       matrix:
         os: [ubuntu-20.04]
@@ -43,10 +43,18 @@ jobs:
     - name: Install Dependencies
       run: |
         pip install pytype
+        pip install pylint
+        pip install pyink
         pip install -r requirements.txt
     - name: Typecheck the code with pytype
       run: |
         pytype --jobs auto --disable import-error --disable module-attr jetstream/
+    - name: Analysing the code with pylint
+      run: |
+        pylint jetstream/ benchmarks/
+    - name: Format check with pyink
+      run: |
+        pyink --pyink-indentation 2 --line-length 80 --check --verbose .
 
   cpu:
     name: "JetStream unit tests"
