@@ -25,19 +25,25 @@ class TestTokenizer:
   """Tokenizer used for testing purposes."""
 
   def IdToPiece(self, integer: int) -> str:  # pylint: disable=invalid-name
-    """In the real version, unlike encode_tf/decode_tf, doesn't strip trailing whitespace."""
+    """In the real version, unlike encode_tf/decode_tf, doesn't strip trailing
+
+    whitespace.
+    """
     return chr(integer)
 
-  def decode(self, tokens: np.ndarray):
-    """Converts a numpy array into a string. Uses tokens[0] as we are doing streaming decode now"""
-    return chr(tokens[0])  
+  def decode(self, tokens: np.ndarray):  # pylint: disable=invalid-name
+    """Converts a numpy array into a string.
+
+    Uses tokens[0] as we are doing streaming decode now
+    """
+    return chr(tokens[0])
 
 
 @struct.dataclass
 class TestVocab(Vocabulary):
   """Mock vocabulary used for tests.
 
-  These methods are duplicative on the test vocab, but required to fit 
+  These methods are duplicative on the test vocab, but required to fit
   the seqio.Vocabulary interface.
   """
 
@@ -54,28 +60,28 @@ class TestVocab(Vocabulary):
     # implement this method in the mock vocab.
     raise NotImplementedError
 
-  def _decode(self, tokens: np.ndarray):
+  def _decode(self, ids: np.ndarray):
     """Converts a numpy array into a string."""
     # 'We use array methods, not python iterables so we don't
     # implement this method in the mock vocab.
     raise NotImplementedError
 
-  def _encode_tf(self, text: str) -> np.ndarray:
+  def _encode_tf(self, s: str) -> np.ndarray:
     """Converts a string into a numpy array."""
     # We mock using numpy to avoid propagating tf dependencies.
-    chars = np.array([ord(c) for c in text]).astype(np.int32)
+    chars = np.array([ord(c) for c in s]).astype(np.int32)
     return chars
 
-  def _decode_tf(self, tokens: np.ndarray) -> List[str]:
+  def _decode_tf(self, ids: np.ndarray) -> List[str]:
     """Converts a numpy array into a string."""
     # We mock using numpy to avoid propagating tf dependencies.
-    results = np.split(tokens, tokens.shape[0])
-    return [''.join([chr(r) for r in list(line[0])]) for line in results]
+    results = np.split(ids, ids.shape[0])
+    return ["".join([chr(r) for r in list(line[0])]) for line in results]
 
-  def encode_tf(self, text: str) -> np.ndarray:
+  def encode_tf(self, s: str) -> np.ndarray:
     """Converts a string into a numpy array."""
-    return self._encode_tf(text)
+    return self._encode_tf(s)
 
-  def decode_tf(self, tokens: np.ndarray) -> List[str]:
+  def decode_tf(self, ids: np.ndarray) -> List[str]:
     """Converts a numpy array into a string."""
-    return self._decode_tf(tokens)
+    return self._decode_tf(ids)

@@ -23,19 +23,21 @@ from jetstream.core.implementations.mock import config as mock_config
 from jetstream.core import server_lib
 
 
-_PORT = flags.DEFINE_integer('port', 9000, 'port to listen on')
+_PORT = flags.DEFINE_integer("port", 9000, "port to listen on")
 _CONFIG = flags.DEFINE_string(
-    'config',
-    'InterleavedCPUTestServer',
-    'available servers',
+    "config",
+    "InterleavedCPUTestServer",
+    "available servers",
 )
+
 
 def main(argv: Sequence[str]):
   del argv
   # No devices for local cpu test. A None for prefill and a None for generate.
   devices = server_lib.get_devices()
   server_config = mock_config.get_server_config(_CONFIG.value)
-  # We separate credential from run so that we can unit test it with local credentials.
+  # We separate credential from run so that we can unit test it with local
+  # credentials.
   # TODO: Add grpc credentials for OSS.
   jetstream_server = server_lib.run(
       port=_PORT.value,
@@ -45,5 +47,5 @@ def main(argv: Sequence[str]):
   jetstream_server.wait_for_termination()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   app.run(main)

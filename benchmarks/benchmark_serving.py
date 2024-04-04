@@ -15,9 +15,10 @@
 """Benchmark JetStream online serving.
 
 On the server side, run one of the following commands:
-    * For real server, you need to pass correct server config (include the model config that
-      being passed into your engine impl) to the command below. Refer to config_lib.py and
-      implementations/mock/config.py for config impl detail.
+    * For real server, you need to pass correct server config (include the
+      model config that being passed into your engine impl) to the command
+      below. Refer to config_lib.py and implementations/mock/config.py for
+      config impl detail.
 
     (run with real server)
     python -m jetstream.core.implementations.<your_impl>.server \
@@ -27,11 +28,12 @@ On the server side, run one of the following commands:
     python -m jetstream.core.implementations.mock.server
 
 On the client side, run:
-    * For real server and shareGPT dataset, you need to pass the tokenizer, server config, and
-      dataset flags to the command below, and make some changes to the tokenizer logic in the
-      benchmark script (get_tokenizer and sample_requests func) to use your tokenizer correctly.
-    * Add `--save-result` flag to save the benchmark result to a json file in current folder.
-    * Add `--threads` flag to set the maximum number of threads used for request dispatching.
+    * For real server and shareGPT dataset, you need to pass the tokenizer,
+      server config, and dataset flags to the command below, and make some
+      changes to the tokenizer logic in the benchmark script (get_tokenizer
+      and sample_requests func) to use your tokenizer correctly.
+    * Add `--save-result` flag to save the benchmark result to a json file in
+      current folder.
 
     (run with real model and engines)
     python -m benchmarks.benchmark_serving \
@@ -74,6 +76,8 @@ from tqdm.asyncio import tqdm
 
 @dataclass
 class BenchmarkMetrics:
+  """Data class to store benchmark metrics."""
+
   completed: int
   total_input: int
   total_output: int
@@ -136,7 +140,7 @@ def load_sharegpt_dataset(
     conversation_starter: str,
 ) -> List[tuple[str]]:
   # Load the dataset.
-  with open(dataset_path) as f:
+  with open(dataset_path, "r", encoding="utf-8") as f:
     dataset = json.load(f)
   # Filter out the conversations with less than 2 turns.
   dataset = [data for data in dataset if len(data["conversations"]) >= 2]
@@ -159,7 +163,7 @@ def load_sharegpt_dataset(
 
 def load_openorca_dataset(dataset_path: str) -> List[tuple[str]]:
   # Load the dataset.
-  with open(dataset_path) as f:
+  with open(dataset_path, "r", encoding="utf-8") as f:
     dataset = json.load(f)
 
   # Tokenize the prompts and completions.
@@ -211,7 +215,7 @@ def filter_dataset(
   filtered_dataset: List[InputRequest] = []
   for (
       prompt,
-      prompt_token_ids,
+      _,
       output,
       prompt_len,
       output_len,
@@ -255,7 +259,7 @@ def sample_requests(
     print(
         f"Number of requests {num_requests} is larger than size of dataset"
         f" {n}.\n",
-        f"Repeating data to meet number of requests.\n",
+        "Repeating data to meet number of requests.\n",
     )
     sampled_indices = sampled_indices * int(
         np.ceil(num_requests / len(sampled_indices))
@@ -361,7 +365,6 @@ async def send_request(
     pbar: tqdm,
     session_cache: str,
     priority: int,
-    threads: int,
 ) -> RequestFuncOutput:
   """Send the request to JetStream server."""
   request = jetstream_pb2.DecodeRequest(
@@ -394,7 +397,6 @@ async def benchmark(
     disable_tqdm: bool,
     session_cache: str,
     priority: int,
-    threads: int,
 ):
   """Benchmark the online serving performance."""
   pbar = None if disable_tqdm else tqdm(total=len(input_requests))
@@ -412,7 +414,6 @@ async def benchmark(
                 pbar=pbar,
                 session_cache=session_cache,
                 priority=priority,
-                threads=threads,
             )
         )
     )
@@ -519,8 +520,8 @@ def main(args: argparse.Namespace):
       )
 
     # A given args.max_output_length value is the max generation step,
-    # when the args.max_output_length is default to None, the sample's golden output length
-    # will be used to decide the generation step
+    # when the args.max_output_length is default to None, the sample's golden
+    # output length will be used to decide the generation step.
     input_requests = sample_requests(
         dataset=dataset,
         tokenizer=tokenizer,
@@ -540,7 +541,6 @@ def main(args: argparse.Namespace):
             disable_tqdm=args.disable_tqdm,
             session_cache=args.session_cache,
             priority=args.priority,
-            threads=args.threads,
         )
     )
     print("Warm up done")
@@ -554,7 +554,6 @@ def main(args: argparse.Namespace):
           disable_tqdm=args.disable_tqdm,
           session_cache=args.session_cache,
           priority=args.priority,
-          threads=args.threads,
       )
   )
 
@@ -582,12 +581,12 @@ def main(args: argparse.Namespace):
     file_name = (
         f"JetStream-{args.request_rate}qps-{base_model_id}-{current_dt}.json"
     )
-    with open(file_name, "w") as outfile:
+    with open(file_name, "w", encoding="utf-8") as outfile:
       json.dump(result_json, outfile)
 
   if args.save_request_outputs:
     file_path = args.request_outputs_file_path
-    with open(file_path, "w") as output_file:
+    with open(file_path, "w", encoding="utf-8") as output_file:
       json.dump(
           [output.to_dict() for output in request_outputs],
           output_file,
@@ -652,12 +651,6 @@ if __name__ == "__main__":
           "Otherwise, we use Poisson process to synthesize "
           "the request arrival times."
       ),
-  )
-  parser.add_argument(
-      "--threads",
-      type=int,
-      default=110,
-      help="The maximum number of threads used for request dispatching.",
   )
   parser.add_argument(
       "--total-mock-requests",
@@ -736,5 +729,5 @@ if __name__ == "__main__":
       help="What entity should be the one starting the conversations.",
   )
 
-  args = parser.parse_args()
-  main(args)
+  parsed_args = parser.parse_args()
+  main(parsed_args)

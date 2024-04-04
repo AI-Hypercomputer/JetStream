@@ -39,9 +39,9 @@ class ServerConfig:
   generate_engine_create_fns: Tuple[CreateEngineFn, ...] = ()
   interleaved_engine_create_fns: Tuple[CreateEngineFn, ...] = ()
 
-  def get_slices_to_launch(self: 'ServerConfig') -> str:
+  def get_slices_to_launch(self: "ServerConfig") -> str:
     """Used when launching this config via xm config."""
-    return ','.join(
+    return ",".join(
         self.prefill_slices + self.generate_slices + self.interleaved_slices
     )
 
@@ -53,7 +53,7 @@ class InstantiatedEngines:
   interleaved_engines: List[engine_api.Engine]
 
 
-# ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼#
+# ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼#
 
 
 def get_test_engine(devices: Devices, weight: int) -> engine_api.Engine:
@@ -67,28 +67,28 @@ def get_test_engine(devices: Devices, weight: int) -> engine_api.Engine:
 
 @dataclasses.dataclass
 class CPUTestServer(ServerConfig):
-  prefill_slices = ('cpu=1',)
-  generate_slices = ('cpu=1',)
+  prefill_slices = ("cpu=1",)
+  generate_slices = ("cpu=1",)
   prefill_engine_create_fns = (functools.partial(get_test_engine, weight=2),)
   generate_engine_create_fns = (functools.partial(get_test_engine, weight=4),)
 
 
 @dataclasses.dataclass
 class InterleavedCPUTestServer(ServerConfig):
-  interleaved_slices = ('cpu=1',)
+  interleaved_slices = ("cpu=1",)
   interleaved_engine_create_fns = (
       functools.partial(get_test_engine, weight=2),
   )
 
 
-# ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼#
+# ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼#
 
 
 def slice_to_num_chips(s: str) -> int:
   """Converts a TPU spec like v5e=4x2 to the number of chips, 8."""
   # Account for the case where it is written 'v5e:4x2'.
-  delim = '=' if '=' in s else ':'
-  i = math.prod([int(c) for c in s.split(delim)[1].split('x')])
+  delim = "=" if "=" in s else ":"
+  i = math.prod([int(c) for c in s.split(delim)[1].split("x")])
   return i
 
 
@@ -96,7 +96,7 @@ def _split_devices_by_slices(
     devices: list[Devices], slices: list[int]
 ) -> List[List[Devices]]:
   """Converts an ordered list of devices into slices."""
-  assert sum(slices) == len(devices), f'{sum(slices)} != {len(devices)}'
+  assert sum(slices) == len(devices), f"{sum(slices)} != {len(devices)}"
   cumsum = 0
   slice_split_devices = []
   for sl in slices:
@@ -128,15 +128,15 @@ def get_engines(
   ]
   if sum(slices) != len(devices):
     raise ValueError(
-        f'The number of available devices ({len(devices)}) do not match the '
-        f'expected number of devices on all the slices ({sum(slices)}) '
-        'specified in the server_config:\n'
-        f'{server_config.prefill_slices=}\n'
-        f'{server_config.generate_slices=}\n'
-        f'{server_config.interleaved_slices=}\n'
+        f"The number of available devices ({len(devices)}) do not match the "
+        f"expected number of devices on all the slices ({sum(slices)}) "
+        "specified in the server_config:\n"
+        f"{server_config.prefill_slices=}\n"
+        f"{server_config.generate_slices=}\n"
+        f"{server_config.interleaved_slices=}\n"
     )
   # e.g. [[tpu_0], [tpu_1]] corresponding to prefill: v5e=1x1
-  # generate = v5e=1x1; or [[tpu_0, tpu_1, tpu_2, tpu_3]] corresponding to 
+  # generate = v5e=1x1; or [[tpu_0, tpu_1, tpu_2, tpu_3]] corresponding to
   # interleaved: v5e=2x2
   split_devices = _split_devices_by_slices(devices, slices)
   prefill_engines = [

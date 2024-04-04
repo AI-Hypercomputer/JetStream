@@ -49,6 +49,7 @@ Prefix = jax.Array  # [batch,] of strings with different lengths.
 @struct.dataclass
 class DecodeState:
   """The inputs into a generation step."""
+
   prefill_cache: jax.Array
   generate_cache: jax.Array
   generate_cache_index: int
@@ -68,7 +69,7 @@ class TestEngine(engine_api.Engine):
     self.cache_length = cache_length
     self.weight = weight
     self._mesh = jax.sharding.Mesh(
-        mesh_utils.create_device_mesh((1, 1, 1), jax.devices()), ('x', 'y', 'z')
+        mesh_utils.create_device_mesh((1, 1, 1), jax.devices()), ("x", "y", "z")
     )
 
   def load_params(self) -> Params:
@@ -156,7 +157,8 @@ class TestEngine(engine_api.Engine):
     new_lengths = generate_lengths + 1
     speculations = new_timestep.shape[1]
     # Concatenates the tokens, their validity and the lengths of each sequence
-    # into one tensor so that copy operations are faster on Cloud TPU infrastructure.
+    # into one tensor so that copy operations are faster on Cloud TPU
+    # infrastructure.
     token_data = jnp.concatenate(
         [new_timestep, jnp.ones_like(new_timestep), new_lengths[:, None]],
         axis=-1,
@@ -192,8 +194,10 @@ class TestEngine(engine_api.Engine):
         decode_state.prefill_cache, prefix, slot, axis=0
     )
     generate_cache = jax.lax.dynamic_update_slice_in_dim(
-        decode_state.generate_cache, jnp.zeros((1, self.cache_length)),
-        slot, axis=0
+        decode_state.generate_cache,
+        jnp.zeros((1, self.cache_length)),
+        slot,
+        axis=0,
     )
     samples_per_slot = self.generate_cache_batch // self.prefill_cache_batch
     generate_lengths = jax.lax.dynamic_update_slice_in_dim(
@@ -215,7 +219,7 @@ class TestEngine(engine_api.Engine):
 
   def get_tokenizer(self) -> tokenizer_pb2.TokenizerParameters:
     """Return a protobuf of tokenizer info, callable from Py or C++."""
-    return tokenizer_pb2.TokenizerParameters(path='test', extra_ids=0)
+    return tokenizer_pb2.TokenizerParameters(path="test", extra_ids=0)
 
   def init_decode_state(self) -> DecodeState:
     """Initialises any state which a generation step transforms."""

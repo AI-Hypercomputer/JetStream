@@ -73,31 +73,31 @@ class OrchestratorTest(absltest.TestCase):
 
     # The string representation of np.array([[65, 66]]), [2] will be prepend
     # as BOS.
-    text = 'AB'
+    text = "AB"
 
     request = jetstream_pb2.DecodeRequest(
-        session_cache='',
+        session_cache="",
         additional_text=text,
         priority=1,
         max_tokens=3,
     )
     iterator = client.Decode(request)
     # chr of [266, 332, 415].
-    expected_tokens = ['Ċ', 'Ō', 'Ɵ', '']
+    expected_tokens = ["Ċ", "Ō", "Ɵ", ""]
     counter = 0
     async for token in iterator:
       # Tokens come through as bytes.
       print(
-          'actual output: '
-          + bytes(token.response[0], encoding='utf-8').decode()
+          "actual output: "
+          + bytes(token.response[0], encoding="utf-8").decode()
       )
       assert (
-          bytes(token.response[0], encoding='utf-8').decode()
+          bytes(token.response[0], encoding="utf-8").decode()
           == expected_tokens[counter]
       )
       counter += 1
     driver.stop()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   absltest.main()

@@ -19,11 +19,12 @@ from typing import Type
 
 from jetstream.core import config_lib
 
+
 def get_server_config(config_str: str) -> Type[config_lib.ServerConfig]:
   match config_str:
-    case 'InterleavedCPUTestServer':
+    case "InterleavedCPUTestServer":
       server_config = config_lib.InterleavedCPUTestServer
-    case 'CPUTestServer':
+    case "CPUTestServer":
       server_config = config_lib.CPUTestServer
     case _:
       raise NotImplementedError

@@ -29,17 +29,18 @@ from jetstream.engine import mock_utils
 
 
 def mix_decode(vocab: Vocabulary, tok_id: int):
-    """
-    The IdToPiece and decode results differ for 344 tokens in Llama2. 
-    Use the decode function to generate the correct strings for these 344 tokens. 
-    If IdToPiece returns a hex string (e.g., '<0x0A>') for a token within these 344,
-      utilize IdToPiece to convert it into a string, likely with a space placeholder (' ') for the corresponding tokens.
-    """
-    p_token = vocab.tokenizer.IdToPiece(tok_id)
-    # SentencePiece escapes the whitespace with a meta symbol "▁" (U+2581)
-    p_token = p_token.replace('▁', ' ')
-    d_token = vocab.tokenizer.decode([tok_id])
-    return p_token if p_token.lstrip() == d_token else d_token 
+  """
+  The IdToPiece and decode results differ for 344 tokens in Llama2.
+  Use the decode function to generate the correct strings for these 344 tokens.
+  If IdToPiece returns a hex string (e.g., '<0x0A>') for a token within these
+    344, utilize IdToPiece to convert it into a string, likely with a space
+    placeholder (' ') for the corresponding tokens.
+  """
+  p_token = vocab.tokenizer.IdToPiece(tok_id)
+  # SentencePiece escapes the whitespace with a meta symbol "▁" (U+2581)
+  p_token = p_token.replace("▁", " ")
+  d_token = vocab.tokenizer.decode([tok_id])
+  return p_token if p_token.lstrip() == d_token else d_token
 
 
 def take_nearest_length(lengths: list[int], length: int) -> int:
@@ -97,9 +98,11 @@ def tokenize_and_pad(
   if is_bos:
     tokens = np.concatenate(
         [
-            np.array([
-                vocab.bos_id,
-            ]),
+            np.array(
+                [
+                    vocab.bos_id,
+                ]
+            ),
             tokens,
         ],
         axis=-1,
@@ -107,9 +110,9 @@ def tokenize_and_pad(
   true_length = tokens.shape[-1]
   padded_length = take_nearest_length(prefill_lengths, true_length)
   padding = padded_length - true_length
-  assert vocab.pad_id == 0, 'Further logic required if pad_id not 0.'
+  assert vocab.pad_id == 0, "Further logic required if pad_id not 0."
   if padding < 0:
-    logging.warning('Provided sequence longer than available.')
+    logging.warning("Provided sequence longer than available.")
     # Take the last N tokens if we have too many.
     padded_tokens = tokens[-padded_length:]
   else:
@@ -125,7 +128,8 @@ def process_result_tokens(
     complete: np.ndarray,
     debug: bool = False,
 ) -> Tuple[List[str], np.ndarray]:
-  """Processes a result tokens into a list of strings, handling multiple samples.
+  """Processes a result tokens into a list of strings, handling multiple
+    samples.
 
   Args:
     slot: The slot at which to draw tokens from.
@@ -151,21 +155,21 @@ def process_result_tokens(
   complete = complete | (slot_lengths > slot_max_length)
   if debug:
     logging.info(
-        'Complete %s, slot_tokens: %s, slot_lengths: %s',
-        complete.__str__(),
-        slot_tokens.__str__(),
-        slot_lengths.__str__(),
+        "Complete %s, slot_tokens: %s, slot_lengths: %s",
+        str(complete),
+        str(slot_tokens),
+        str(slot_lengths),
     )
   sample_return = []
   for idx in range(samples):
-    string_so_far = ''
+    string_so_far = ""
     if not complete[idx].item():
       for spec_idx in range(speculations):
         tok_id = slot_tokens[idx, spec_idx].item()
         valid = slot_valid[idx, spec_idx].item()
         if debug:
           logging.info(
-              'Sample idx: %d Speculation idx: %d Token: %d',
+              "Sample idx: %d Speculation idx: %d Token: %d",
               idx,
               spec_idx,
               tok_id,
@@ -180,12 +184,12 @@ def process_result_tokens(
             # This error only occurs when using tests where the vocab range is
             # computed via addition and int->char is computed using chr(). Real
             # models have vocab logits which are at max the size of the vocab.
-            logging.warning('%d exceeded vocab range', tok_id)
-            token = '<sampled_outside_vocab>'
+            logging.warning("%d exceeded vocab range", tok_id)
+            token = "<sampled_outside_vocab>"
           string_so_far += token
     sample_return.append(string_so_far)
     if debug:
-      logging.info('Sampled return %s', sample_return.__str__())
+      logging.info("Sampled return %s", str(sample_return))
   return sample_return, complete
 
 
@@ -199,7 +203,7 @@ def load_vocab(path: str, extra_ids: int = 0) -> Vocabulary:
   Returns:
     A seqio Vocabulary.
   """
-  if path == 'test':
+  if path == "test":
     return mock_utils.TestVocab()
   else:
     vocab = SentencePieceVocabulary(

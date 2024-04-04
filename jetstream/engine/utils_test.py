@@ -25,14 +25,16 @@ class UtilsTest(absltest.TestCase):
 
   def test_speculations_with_multi_sample_slots(self, samples_per_slot=2):
     # [4, 1]
-    mock_tokens = np.array([
-        [0, ord('A')],
-        [ord('A'), ord('D')],
-        [ord('T'), ord('3')],
-        [ord('A'), 1],
-    ]).astype(np.int32)
+    mock_tokens = np.array(
+        [
+            [0, ord("A")],
+            [ord("A"), ord("D")],
+            [ord("T"), ord("3")],
+            [ord("A"), 1],
+        ]
+    ).astype(np.int32)
     mock_valid_tokens = np.ones_like(mock_tokens, dtype=np.int32)
-    mock_lengths = np.ones(mock_tokens.shape[0], dtype=np.int32)*2
+    mock_lengths = np.ones(mock_tokens.shape[0], dtype=np.int32) * 2
     # completion is 'per slot' because we track it for a given request.
     mock_complete = np.zeros(
         (mock_tokens.shape[0] // samples_per_slot), dtype=np.int32
@@ -63,7 +65,7 @@ class UtilsTest(absltest.TestCase):
     np.testing.assert_equal(complete, np.array([1, 0]))
 
     assert not per_channel[0]  # i.e. == '', because of the pad.
-    assert per_channel[1] == 'AD'
+    assert per_channel[1] == "AD"
     mock_complete = np.zeros(
         (mock_tokens.shape[0] // samples_per_slot), dtype=np.int32
     )
@@ -74,10 +76,10 @@ class UtilsTest(absltest.TestCase):
         vocab=mock_utils.TestVocab(),
         complete=mock_complete,
     )
-    assert per_channel[0] == 'T3'
-    assert per_channel[1] == 'A'  # second token is padded.
+    assert per_channel[0] == "T3"
+    assert per_channel[1] == "A"  # second token is padded.
     np.testing.assert_equal(complete, np.array([0, 1]))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
   absltest.main()
