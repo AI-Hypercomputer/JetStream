@@ -28,7 +28,7 @@ on:
 
 jobs:
   py:
-    name: "Python type check"
+    name: "Python type/lint/format checks"
     strategy:
       matrix:
         os: [ubuntu-20.04]
