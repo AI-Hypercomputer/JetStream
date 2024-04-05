@@ -65,6 +65,8 @@ You can run the JetStream MaxText Server with Gemma and Llama2 models. This sect
 
 ```bash
 # bash ../JetStream/jetstream/tools/maxtext/model_ckpt_conversion.sh ${MODEL} ${MODEL_VARIATION} ${CHKPT_BUCKET}
+
+# For gemma-7b
 bash ../JetStream/jetstream/tools/maxtext/model_ckpt_conversion.sh gemma 7b ${CHKPT_BUCKET}
 ```
 
@@ -165,18 +167,18 @@ export PER_DEVICE_BATCH_SIZE=2
 ```bash
 cd ~/maxtext
 python MaxText/maxengine_server.py \
-MaxText/configs/base.yml \
-tokenizer_path=${TOKENIZER_PATH} \
-load_parameters_path=${LOAD_PARAMETERS_PATH} \
-max_prefill_predict_length=${MAX_PREFILL_PREDICT_LENGTH} \
-max_target_length=${MAX_TARGET_LENGTH} \
-model_name=${MODEL_NAME} \
-ici_fsdp_parallelism=${ICI_FSDP_PARALLELISM} \
-ici_autoregressive_parallelism=${ICI_AUTOREGRESSIVE_PARALLELISM} \
-ici_tensor_parallelism=${ICI_TENSOR_PARALLELISM} \
-scan_layers=${SCAN_LAYERS} \
-weight_dtype=${WEIGHT_DTYPE} \
-per_device_batch_size=${PER_DEVICE_BATCH_SIZE}
+  MaxText/configs/base.yml \
+  tokenizer_path=${TOKENIZER_PATH} \
+  load_parameters_path=${LOAD_PARAMETERS_PATH} \
+  max_prefill_predict_length=${MAX_PREFILL_PREDICT_LENGTH} \
+  max_target_length=${MAX_TARGET_LENGTH} \
+  model_name=${MODEL_NAME} \
+  ici_fsdp_parallelism=${ICI_FSDP_PARALLELISM} \
+  ici_autoregressive_parallelism=${ICI_AUTOREGRESSIVE_PARALLELISM} \
+  ici_tensor_parallelism=${ICI_TENSOR_PARALLELISM} \
+  scan_layers=${SCAN_LAYERS} \
+  weight_dtype=${WEIGHT_DTYPE} \
+  per_device_batch_size=${PER_DEVICE_BATCH_SIZE}
 ```
 
 ### JetStream MaxText Server flag descriptions:
@@ -184,7 +186,7 @@ per_device_batch_size=${PER_DEVICE_BATCH_SIZE}
 
 
 *   tokenizer\_path: file path to a tokenizer (should match your model)
-*   load\_parameters\_path: Loads a just parameters from a specific directory
+*   load\_parameters\_path: Loads the parameters (no optimizer states) from a specific directory
 *   per\_device\_batch\_size: decoding batch size per device (1 TPU chip = 1 device)
 *   max\_prefill\_predict\_length: Maximum length for the prefill when doing autoregression
 *   max\_target\_length: Maximum sequence length
@@ -245,8 +247,12 @@ quantize_kvcache=${QUANTIZE_KVCACHE}
 
 ### Benchmarking Gemma-7b
 
+Instructions
+- Download the ShareGPT dataset
+- Make sure to use the Gemma tokenizer (tokenizer.gemma) when running Gemma 7b.
+- Add `--warmup-first` flag for your 1st run to warmup the server
+
 ```bash
-# For Gemma 7b, plz use Gemma tokenizer (must use a tokenizer that matches your model; double check if you are using tokenizer.gemma) and ShareGPT dataset; add `--warmup-first` flag for your 1st run to warmup the server.
 # Activate the python virtual environment we created in Step 2.
 cd ~
 source .env/bin/activate
@@ -269,7 +275,7 @@ python JetStream/benchmarks/benchmark_serving.py \
 ### Benchmarking Llama2-\*b
 
 ```bash
-# Same as Gemma-7b except for tokenizer (must use a tokenizer that matches your model). 
+# Same as Gemma-7b except for the tokenizer (must use a tokenizer that matches your model, which should now be tokenizer.llama2). 
 
 python JetStream/benchmarks/benchmark_serving.py \
 --tokenizer maxtext/assets/tokenizer.llama2 \
