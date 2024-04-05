@@ -99,7 +99,7 @@ Note: For more information about the Llama2 model and checkpoints, see [About Ll
 
 You can export the following environment variables based on the model you used.
 
-*   You can copy and export the `UNSCANNED\_CKPT\_PATH` from the model\_ckpt\_conversion.sh output.
+*   You can copy and export the `UNSCANNED_CKPT_PATH` from the model\_ckpt\_conversion.sh output.
 
 
 #### Create Gemma-7b environment variables for server flags
