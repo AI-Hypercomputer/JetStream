@@ -68,7 +68,7 @@ You can run the JetStream MaxText Server with Gemma and Llama2 models. This sect
 bash ../JetStream/jetstream/tools/maxtext/model_ckpt_conversion.sh gemma 7b ${CHKPT_BUCKET}
 ```
 
-Note: For more information about the Gemma model and checkpoints, see [About Gemma](https://github.com/google/maxtext/blob/main/getting_started/Run_Gemma.md#about-gemma).
+Note: For more information about the Gemma model and checkpoints, see [About Gemma](https://github.com/google/maxtext/blob/main/end_to_end/gemma/Run_Gemma.md).
 
 
 ### Use a Llama2 model checkpoint
