@@ -8,6 +8,7 @@ JetStream is a fast library for LLM inference and serving on TPUs (and GPUs in f
 
 - [Online Inference with MaxText on v5e Cloud TPU VM](#jetstream-maxtext-inference-on-v5e-cloud-tpu-vm-user-guide)
 - [JetStream Standalone Local Setup](#jetstream-standalone-local-setup)
+- [Serve Gemma using TPUs on GKE with JetStream](https://cloud.google.com/kubernetes-engine/docs/tutorials/serve-gemma-tpu-jetstream)
 
 ---
 
