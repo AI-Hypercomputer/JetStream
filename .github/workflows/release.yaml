@@ -31,7 +31,6 @@ jobs:
   release:
     name: Create Release with tag
     runs-on: ${{ matrix.os }}
-    needs: release
     strategy:
       matrix:
         os: [ubuntu-20.04]
