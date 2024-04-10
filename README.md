@@ -1,8 +1,8 @@
-# JetStream is a throughput and memory optimized engine for LLM inference on XLA devices, starting with TPUs (and GPUs in future -- PRs welcome).
+# JetStream is a throughput and memory optimized engine for LLM inference on XLA devices.
 
 ## About
 
-JetStream is a fast library for LLM inference and serving on TPUs (and GPUs in future -- PRs welcome).
+JetStream is a throughput and memory optimized engine for LLM inference on XLA devices, starting with TPUs (and GPUs in future -- PRs welcome).
 
 ## Documentation
 
