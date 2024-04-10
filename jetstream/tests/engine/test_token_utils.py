@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Tests functionality of the tokenizer with supported models."""
+
 import os
 import unittest
 from typing import List
@@ -24,7 +26,8 @@ class SPTokenizer:
   """Tokenier used in original llama2 git"""
 
   def __init__(self, tokenizer_path: str):
-    self.tokenizer = SentencePieceProcessor(model_file=tokenizer_path)
+    self.tokenizer = SentencePieceProcessor()
+    self.tokenizer.Load(model_file=tokenizer_path)
     assert self.tokenizer.vocab_size() == self.tokenizer.get_piece_size()
 
   def decode(self, t: List[int]) -> str:

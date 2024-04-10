@@ -74,15 +74,9 @@ jobs:
     - name: Install Dependencies
       run: |
         pip install -r requirements.txt
-    - name: Test mock JetStream token utils
+    - name: Run all unit tests in JetStream (jetstream/tests)
       run: |
-        python -m jetstream.engine.utils_test
-    - name: Test mock JetStream engine implementation
+        coverage run -m unittest -v
+    - name: Create test coverage report
       run: |
-        python -m jetstream.engine.mock_engine_test
-    - name: Test JetStream core orchestrator
-      run: |
-        python -m jetstream.core.orchestrator_test
-    - name: Test JetStream core server library
-      run: |
-        python -m jetstream.core.server_test
+        coverage report -m
