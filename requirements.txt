@@ -37,6 +37,8 @@ clu==0.0.10
     # via seqio
 contextlib2==21.6.0
     # via ml-collections
+coverage==7.4.4
+    # via -r requirements.in
 dm-tree==0.1.8
     # via
     #   chex
@@ -49,7 +51,6 @@ etils[array-types,enp,epath,epy,etqdm,etree]==1.6.0
     # via
     #   array-record
     #   clu
-    #   etils
     #   orbax-checkpoint
     #   tfds-nightly
 flatbuffers==23.5.26

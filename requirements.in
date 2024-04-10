@@ -1,4 +1,5 @@
 absl-py
+coverage
 flax
 grpcio
 jax
