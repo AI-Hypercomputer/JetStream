@@ -22,6 +22,7 @@ from typing import Any, Type
 
 from absl.testing import absltest, parameterized
 import grpc
+import pytest
 from jetstream.core import config_lib
 from jetstream.core import server_lib
 from jetstream.core.proto import jetstream_pb2
@@ -45,7 +46,8 @@ class ServerTest(parameterized.TestCase):
           [None],
       ),
   )
-  def test_server(
+  @pytest.mark.asyncio
+  async def test_server(
       self,
       config: Type[config_lib.ServerConfig],
       expected_tokens: list[str],
@@ -64,34 +66,34 @@ class ServerTest(parameterized.TestCase):
         credentials=credentials,
     )
     ###################### Requester side ######################################
-    channel = grpc.secure_channel(
+    async with grpc.aio.secure_channel(
         f"localhost:{port}", grpc.local_channel_credentials()
-    )
-    stub = jetstream_pb2_grpc.OrchestratorStub(channel)
+    ) as channel:
+      stub = jetstream_pb2_grpc.OrchestratorStub(channel)
 
-    # The string representation of np.array([[65, 66]]), [2] will be prependd
-    # as BOS
-    text = "AB"
-    request = jetstream_pb2.DecodeRequest(
-        session_cache="",
-        additional_text=text,
-        priority=1,
-        max_tokens=3,
-    )
-    iterator = stub.Decode(request)
-    counter = 0
-    for token in iterator:
-      # Tokens come through as bytes
-      print(
-          "actual output: "
-          + bytes(token.response[0], encoding="utf-8").decode()
+      # The string representation of np.array([[65, 66]]), [2] will be prependd
+      # as BOS
+      text = "AB"
+      request = jetstream_pb2.DecodeRequest(
+          session_cache="",
+          additional_text=text,
+          priority=1,
+          max_tokens=3,
       )
-      assert (
-          bytes(token.response[0], encoding="utf-8").decode()
-          == expected_tokens[counter]
-      )
-      counter += 1
-    server.stop()
+      iterator = stub.Decode(request)
+      counter = 0
+      async for token in iterator:
+        # Tokens come through as bytes
+        output_token = await token.response[0].token_id[0]
+        print(
+            "actual output: " + bytes(output_token, encoding="utf-8").decode()
+        )
+        assert (
+            bytes(output_token, encoding="utf-8").decode()
+            == expected_tokens[counter]
+        )
+        counter += 1
+      server.stop()
 
 
 if __name__ == "__main__":
