@@ -583,41 +583,31 @@ def main(args: argparse.Namespace):
 
   # Save config and results to json
   if args.save_result:
+    # dimensions values are strings
     dimensions_json = {}
+    # metrics values are numerical
+    metrics_json = {}
 
     # Setup
     current_dt = datetime.now().strftime("%Y%m%d-%H%M%S")
     dimensions_json["date"] = current_dt
     dimensions_json["model_id"] = model_id
     dimensions_json["tokenizer_id"] = tokenizer_id
-    dimensions_json["num_prompts"] = args.num_prompts
-    dimensions_json["accelerator"] = args.accelerator
+    metrics_json["num_prompts"] = args.num_prompts
 
     # Traffic
-    dimensions_json["request_rate"] = (
+    metrics_json["request_rate"] = (
         args.request_rate if args.request_rate < float("inf") else "inf"
     )
 
-    metrics_json = {**benchmark_result}
+    metrics_json = {**metrics_json, **benchmark_result}
     if args.run_eval:
       eval_json = eval_accuracy(output)
-      for k, v in eval_json.items():
-        print(f"k: {k}, v: {v}, {type(k)}, {type(v)}")
-      print("done0")
       metrics_json = {**metrics_json, **eval_json}
 
     final_json = {}
-    if True:
-      for k, v in metrics_json.items():
-        print(f"k: {k}, v: {v}, {type(k)}, {type(v)}")
-      print("done1")
-      for k, v in dimensions_json.items():
-        print(f"k: {k}, v: {v}, {type(k)}, {type(v)}")
-      print("done2")
-      final_json['metrics'] = metrics_json
-      final_json['dimensions'] = dimensions_json
-
-    print(f"final_json: {final_json}")
+    final_json['metrics'] = metrics_json
+    final_json['dimensions'] = dimensions_json
 
     # Save to file
     base_model_id = model_id.split("/")[-1]
@@ -664,14 +654,6 @@ if __name__ == "__main__":
           "Name of the model. (it's just used to label the benchmark, the model"
           " config is defined in config_lib, and passed as the server config"
           " flag when we run the JetStream server)"
-      ),
-  )
-  parser.add_argument(
-      "--accelerator",
-      type=str,
-      default="no_accelerator",
-      help=(
-          "Name of the the accelerator"
       ),
   )
   parser.add_argument(
@@ -787,5 +769,4 @@ if __name__ == "__main__":
   )
 
   parsed_args = parser.parse_args()
-  print(parsed_args)
   main(parsed_args)
