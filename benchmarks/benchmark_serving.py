@@ -72,6 +72,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_text as tftxt
 from tqdm.asyncio import tqdm
+from eval_accuracy import eval_accuracy
 
 
 @dataclass
@@ -577,24 +578,35 @@ def main(args: argparse.Namespace):
       )
   )
 
+  # Process output
+  output = [output.to_dict() for output in request_outputs]
+
   # Save config and results to json
   if args.save_result:
-    result_json = {}
+    dimensions_json = {}
 
     # Setup
     current_dt = datetime.now().strftime("%Y%m%d-%H%M%S")
-    result_json["date"] = current_dt
-    result_json["model_id"] = model_id
-    result_json["tokenizer_id"] = tokenizer_id
-    result_json["num_prompts"] = args.num_prompts
+    dimensions_json["date"] = current_dt
+    dimensions_json["model_id"] = model_id
+    dimensions_json["tokenizer_id"] = tokenizer_id
+    dimensions_json["num_prompts"] = args.num_prompts
+    dimensions_json["accelerator"] = args.accelerator
 
     # Traffic
-    result_json["request_rate"] = (
+    dimensions_json["request_rate"] = (
         args.request_rate if args.request_rate < float("inf") else "inf"
     )
 
-    # Merge with benchmark result
-    result_json = {**result_json, **benchmark_result}
+    metrics_json = {**benchmark_result}
+    if args.run_eval:
+      eval_json = eval_accuracy(output)
+      metrics_json = {**metrics_json, **eval_json}
+
+    final_json = {}
+    if True:
+      final_json['metrics'] = metrics_json
+      final_json['dimensions'] = dimensions_json
 
     # Save to file
     base_model_id = model_id.split("/")[-1]
@@ -602,13 +614,13 @@ def main(args: argparse.Namespace):
         f"JetStream-{args.request_rate}qps-{base_model_id}-{current_dt}.json"
     )
     with open(file_name, "w", encoding="utf-8") as outfile:
-      json.dump(result_json, outfile)
+      json.dump(final_json, outfile)
 
   if args.save_request_outputs:
     file_path = args.request_outputs_file_path
     with open(file_path, "w", encoding="utf-8") as output_file:
       json.dump(
-          [output.to_dict() for output in request_outputs],
+          output,
           output_file,
           indent=4,
       )
@@ -641,6 +653,14 @@ if __name__ == "__main__":
           "Name of the model. (it's just used to label the benchmark, the model"
           " config is defined in config_lib, and passed as the server config"
           " flag when we run the JetStream server)"
+      ),
+  )
+  parser.add_argument(
+      "--accelerator",
+      type=str,
+      default="no_accelerator",
+      help=(
+          "Name of the the accelerator"
       ),
   )
   parser.add_argument(
@@ -736,6 +756,12 @@ if __name__ == "__main__":
       help="File path to store request outputs",
   )
   parser.add_argument(
+      "--run-eval",
+      type=bool,
+      default=False,
+      help="Whether to run evaluation script on the saved outputs",
+  )
+  parser.add_argument(
       "--warmup-first",
       type=bool,
       default=False,
@@ -750,4 +776,5 @@ if __name__ == "__main__":
   )
 
   parsed_args = parser.parse_args()
+  print(parsed_args)
   main(parsed_args)

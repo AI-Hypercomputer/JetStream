@@ -55,6 +55,7 @@ def eval_accuracy(request_outputs_dict):
   result["gen_num"] = len(preds)
   print("\nResults\n")
   print(result)
+  return result
 
 
 def main(args):
