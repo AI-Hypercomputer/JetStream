@@ -349,12 +349,12 @@ def calculate_metrics(
       request_throughput=completed / dur_s,
       input_throughput=total_input / dur_s,
       output_throughput=total_output / dur_s,
-      mean_ttft_ms=np.mean(ttfts) * 1000,
-      median_ttft_ms=np.median(ttfts) * 1000,
-      p99_ttft_ms=np.percentile(ttfts, 99) * 1000,
-      mean_tpot_ms=np.mean(per_token_latencies) * 1000,
-      median_tpot_ms=np.median(per_token_latencies) * 1000,
-      p99_tpot_ms=np.percentile(per_token_latencies, 99) * 1000,
+      mean_ttft_ms=float(np.mean(ttfts) * 1000),
+      median_ttft_ms=float(np.median(ttfts) * 1000),
+      p99_ttft_ms=float(np.percentile(ttfts, 99) * 1000),
+      mean_tpot_ms=float(np.mean(per_token_latencies) * 1000),
+      median_tpot_ms=float(np.median(per_token_latencies) * 1000),
+      p99_tpot_ms=float(np.percentile(per_token_latencies, 99) * 1000),
   )
 
   return metrics
