@@ -601,17 +601,17 @@ def main(args: argparse.Namespace):
     metrics_json = {**benchmark_result}
     if args.run_eval:
       eval_json = eval_accuracy(output)
-      for k, v in eval_json:
+      for k, v in eval_json.items():
         print(f"k: {k}, v: {v}, {type(k)}, {type(v)}")
       print("done0")
       metrics_json = {**metrics_json, **eval_json}
 
     final_json = {}
     if True:
-      for k, v in metrics_json:
+      for k, v in metrics_json.items():
         print(f"k: {k}, v: {v}, {type(k)}, {type(v)}")
       print("done1")
-      for k, v in dimensions_json:
+      for k, v in dimensions_json.items():
         print(f"k: {k}, v: {v}, {type(k)}, {type(v)}")
       print("done2")
       final_json['metrics'] = metrics_json
