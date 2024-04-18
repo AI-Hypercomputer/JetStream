@@ -15,13 +15,13 @@ There are two engine implementation - Jax and Pytorch.
 
 ### Jax
 
-- Git repo: https://github.com/google/maxtext
-- Readme: https://github.com/google/jetstream/blob/main/max_text/README.md
+- Git: https://github.com/google/maxtext
+- README: https://github.com/google/jetstream/blob/main/max_text/README.md
 
 ### Pytorch
 
-- Git repo: https://github.com/google/jetstream-pytorch 
-- Readme: https://github.com/google/jetstream-pytorch/blob/main/README.md 
+- Git: https://github.com/google/jetstream-pytorch 
+- README: https://github.com/google/jetstream-pytorch/blob/main/README.md 
 
 ## Documentation
 
