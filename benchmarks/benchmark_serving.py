@@ -637,7 +637,7 @@ if __name__ == "__main__":
   parser.add_argument(
       "--server",
       type=str,
-      default="dns:///[::1]",
+      default="0.0.0.0",
       help="Server address.",
   )
   parser.add_argument("--port", type=str, default=9000)

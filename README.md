@@ -217,7 +217,7 @@ python JetStream/jetstream/tools/requester.py
 The output will be similar to the following:
 
 ```bash
-Sending request to: dns:///[::1]:9000
+Sending request to: 0.0.0.0:9000
 Prompt: Today is a good day
 Response:  to be a fan
 ```
