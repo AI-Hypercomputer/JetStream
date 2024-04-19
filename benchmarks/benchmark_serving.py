@@ -34,6 +34,8 @@ On the client side, run:
       and sample_requests func) to use your tokenizer correctly.
     * Add `--save-result` flag to save the benchmark result to a json file in
       current folder.
+    * You can also add `--run_eval true` if you want to calculate ROUGE score
+      on the predicted outputs.
 
     (run with real model and engines)
     python -m benchmarks.benchmark_serving \
@@ -471,7 +473,7 @@ async def benchmark(
       "completed": metrics.completed,
       "total_input_tokens": metrics.total_input,
       "total_output_tokens": metrics.total_output,
-      "request_inthroughput": metrics.request_throughput,
+      "request_throughput": metrics.request_throughput,
       "input_throughput": metrics.input_throughput,
       "output_throughput": metrics.output_throughput,
       "mean_ttft_ms": metrics.mean_ttft_ms,
@@ -580,6 +582,8 @@ def main(args: argparse.Namespace):
 
   # Process output
   output = [output.to_dict() for output in request_outputs]
+  if args.run_eval:
+    eval_json = eval_accuracy(output)
 
   # Save config and results to json
   if args.save_result:
@@ -602,12 +606,11 @@ def main(args: argparse.Namespace):
 
     metrics_json = {**metrics_json, **benchmark_result}
     if args.run_eval:
-      eval_json = eval_accuracy(output)
       metrics_json = {**metrics_json, **eval_json}
 
     final_json = {}
-    final_json['metrics'] = metrics_json
-    final_json['dimensions'] = dimensions_json
+    final_json["metrics"] = metrics_json
+    final_json["dimensions"] = dimensions_json
 
     # Save to file
     base_model_id = model_id.split("/")[-1]
