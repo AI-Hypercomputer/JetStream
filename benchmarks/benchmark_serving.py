@@ -34,6 +34,8 @@ On the client side, run:
       and sample_requests func) to use your tokenizer correctly.
     * Add `--save-result` flag to save the benchmark result to a json file in
       current folder.
+    * You can also add `--run_eval true` if you want to calculate ROUGE score
+      on the predicted outputs.
 
     (run with real model and engines)
     python -m benchmarks.benchmark_serving \
@@ -73,7 +75,11 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_text as tftxt
 from tqdm.asyncio import tqdm
+<<<<<<< HEAD
 import pandas
+=======
+from eval_accuracy import eval_accuracy
+>>>>>>> 1b1d93f (Reformat benchmark metrics (#42))
 
 
 @dataclass
@@ -364,12 +370,12 @@ def calculate_metrics(
       request_throughput=completed / dur_s,
       input_throughput=total_input / dur_s,
       output_throughput=total_output / dur_s,
-      mean_ttft_ms=np.mean(ttfts) * 1000,
-      median_ttft_ms=np.median(ttfts) * 1000,
-      p99_ttft_ms=np.percentile(ttfts, 99) * 1000,
-      mean_tpot_ms=np.mean(per_token_latencies) * 1000,
-      median_tpot_ms=np.median(per_token_latencies) * 1000,
-      p99_tpot_ms=np.percentile(per_token_latencies, 99) * 1000,
+      mean_ttft_ms=float(np.mean(ttfts) * 1000),
+      median_ttft_ms=float(np.median(ttfts) * 1000),
+      p99_ttft_ms=float(np.percentile(ttfts, 99) * 1000),
+      mean_tpot_ms=float(np.mean(per_token_latencies) * 1000),
+      median_tpot_ms=float(np.median(per_token_latencies) * 1000),
+      p99_tpot_ms=float(np.percentile(per_token_latencies, 99) * 1000),
   )
 
   return metrics
@@ -486,7 +492,7 @@ async def benchmark(
       "completed": metrics.completed,
       "total_input_tokens": metrics.total_input,
       "total_output_tokens": metrics.total_output,
-      "request_inthroughput": metrics.request_throughput,
+      "request_throughput": metrics.request_throughput,
       "input_throughput": metrics.input_throughput,
       "output_throughput": metrics.output_throughput,
       "mean_ttft_ms": metrics.mean_ttft_ms,
@@ -594,24 +600,37 @@ def main(args: argparse.Namespace):
       )
   )
 
+  # Process output
+  output = [output.to_dict() for output in request_outputs]
+  if args.run_eval:
+    eval_json = eval_accuracy(output)
+
   # Save config and results to json
   if args.save_result:
-    result_json = {}
+    # dimensions values are strings
+    dimensions_json = {}
+    # metrics values are numerical
+    metrics_json = {}
 
     # Setup
     current_dt = datetime.now().strftime("%Y%m%d-%H%M%S")
-    result_json["date"] = current_dt
-    result_json["model_id"] = model_id
-    result_json["tokenizer_id"] = tokenizer_id
-    result_json["num_prompts"] = args.num_prompts
+    dimensions_json["date"] = current_dt
+    dimensions_json["model_id"] = model_id
+    dimensions_json["tokenizer_id"] = tokenizer_id
+    metrics_json["num_prompts"] = args.num_prompts
 
     # Traffic
-    result_json["request_rate"] = (
+    metrics_json["request_rate"] = (
         args.request_rate if args.request_rate < float("inf") else "inf"
     )
 
-    # Merge with benchmark result
-    result_json = {**result_json, **benchmark_result}
+    metrics_json = {**metrics_json, **benchmark_result}
+    if args.run_eval:
+      metrics_json = {**metrics_json, **eval_json}
+
+    final_json = {}
+    final_json["metrics"] = metrics_json
+    final_json["dimensions"] = dimensions_json
 
     # Save to file
     base_model_id = model_id.split("/")[-1]
@@ -619,13 +638,13 @@ def main(args: argparse.Namespace):
         f"JetStream-{args.request_rate}qps-{base_model_id}-{current_dt}.json"
     )
     with open(file_name, "w", encoding="utf-8") as outfile:
-      json.dump(result_json, outfile)
+      json.dump(final_json, outfile)
 
   if args.save_request_outputs:
     file_path = args.request_outputs_file_path
     with open(file_path, "w", encoding="utf-8") as output_file:
       json.dump(
-          [output.to_dict() for output in request_outputs],
+          output,
           output_file,
           indent=4,
       )
@@ -751,6 +770,12 @@ if __name__ == "__main__":
       type=str,
       default="/tmp/request-outputs.json",
       help="File path to store request outputs",
+  )
+  parser.add_argument(
+      "--run-eval",
+      type=bool,
+      default=False,
+      help="Whether to run evaluation script on the saved outputs",
   )
   parser.add_argument(
       "--warmup-first",

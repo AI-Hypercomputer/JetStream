@@ -31,7 +31,7 @@ python benchmark_serving.py \
 
 ### Save request outputs in Benchmark
 
-Please use --save-request-outputs flag to enable this feature.
+Please use `--save-request-outputs` flag to save predictions to a file.
 
 ```
 python benchmark_serving.py \
@@ -55,11 +55,30 @@ python JetStream/benchmarks/benchmark_serving.py   \
 --num-prompts 1000   \
 --max-output-length 1024   \
 --dataset openorca
+
 ```
 
 ## Eval Accuracy
+### Automatically run evaluation after Benchmark
 
-Evaluate inference genereted output accuracy using saved request outputs.
+To automatically evaluate the outputs against the ROUGE evaluation metric, add the `--run-eval true` flag.
+Note: If `--save-result` is used, the evaluation scores will be saved as well.
+
+```
+python benchmark_serving.py \
+--tokenizer /home/{username}/maxtext/assets/tokenizer \
+--num-prompts 10  \
+--dataset sharegpt \
+--dataset-path ~/data/ShareGPT_V3_unfiltered_cleaned_split.json \
+--max-output-length 1024  \
+--save-request-outputs \
+--run-eval true
+
+```
+
+## Standalone Evaluation Run
+
+If you used `--save-request-outputs`, you can separately evaluate against the generated outputs.
 
 ```
 python eval_accuracy.py --output_path outputs.json 
