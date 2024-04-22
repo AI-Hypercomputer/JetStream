@@ -26,7 +26,7 @@ from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 
 
-_SERVER = flags.DEFINE_string("server", "dns:///[::1]", "server address")
+_SERVER = flags.DEFINE_string("server", "0.0.0.0", "server address")
 _PORT = flags.DEFINE_string("port", "9000", "port to ping")
 _TEXT = flags.DEFINE_string("text", "AB", "The message")
 _MAX_TOKENS = flags.DEFINE_integer(
