@@ -129,6 +129,8 @@ class RequestFuncOutput:
 
 def get_tokenizer(tokenizer_name: str) -> Any:
   """Return a tokenizer or a tokenizer placholder."""
+  from jetstream_pt.third_party.llama2 import llama3_tokenizer
+  return llama3_tokenizer.Tokenizer(tokenizer_name)
   if tokenizer_name == "test":
     return "test"
   else:
@@ -193,21 +195,28 @@ def tokenize_dataset(
     prompts.append(prompt)
     outputs.append(output)
     indices.append(idx)
+  
 
-  prompt_token_ids = tokenizer.tokenize(
-      prompts
+  prompt_token_ids = tokenizer.encode(
+      ' '.join(prompts), bos=True, eos=False,
   )  # adjust this code based on tokenizer method
-  outputs_token_ids = tokenizer.tokenize(
-      outputs
+  outputs_token_ids = tokenizer.encode(
+      ' '.join(outputs), bos=False, eos=False,
   )  # adjust this code based on tokenizer method
 
   tokenized_dataset = []
   for i in range(n):
-    prompt_len = len(prompt_token_ids[i])
-    output_len = len(outputs_token_ids[i])
+    prompt_token_ids = tokenizer.encode(
+        prompts[i], bos=True, eos=False,
+    )  # adjust this code based on tokenizer method
+    outputs_token_ids = tokenizer.encode(
+        outputs[i], bos=False, eos=False,
+    )  # adjust this code based on tokenizer method
+    prompt_len = len(prompt_token_ids)
+    output_len = len(outputs_token_ids)
     tokenized_data = (
         prompts[i],
-        prompt_token_ids[i],
+        prompt_token_ids,
         outputs[i],
         prompt_len,
         output_len,

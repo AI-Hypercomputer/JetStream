@@ -390,8 +390,8 @@ class Driver:
     logging.info("---------Spinning up prefill thread %d.---------", idx)
     prefill_engine = self._prefill_engines[idx]
     prefill_params = self._prefill_params[idx]
-    metadata = prefill_engine.get_tokenizer()
-    vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
+    vocab= prefill_engine.get_tokenizer()
+    #vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
     logging.info("---------Prefill params %d loaded.---------", idx)
 
     while self.live:
@@ -560,8 +560,9 @@ class Driver:
     my_generate_engine = self._generate_engines[idx]
     my_slots = self._generate_slots[idx]
 
-    metadata = my_generate_engine.get_tokenizer()
-    vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
+    vocab = my_generate_engine.get_tokenizer()
+    #vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
+
 
     my_live_requests = {
         i: None for i in range(my_generate_engine.max_concurrent_decodes)
