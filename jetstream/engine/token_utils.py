@@ -183,7 +183,8 @@ def process_result_tokens(
           break
         else:
           try:
-            token = mix_decode(vocab, tok_id)  # pytype: disable=attribute-error
+            # pytype: disable=attribute-error
+            token = mix_decode(vocab, tok_id)
           except ValueError:
             # This error only occurs when using tests where the vocab range is
             # computed via addition and int->char is computed using chr(). Real

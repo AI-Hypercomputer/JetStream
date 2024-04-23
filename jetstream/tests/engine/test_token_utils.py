@@ -101,7 +101,8 @@ class TokenUtilsTest(unittest.TestCase):
   def test_underscore_in_output(self):
     self.setup()
     n = 21326
-    mix_output = token_utils.mix_decode(vocab=self.jt_tokenizer.vocab, tok_id=n)
+    mix_output = token_utils.mix_decode(
+        vocab=self.jt_tokenizer.vocab, tok_id=n)
     decode_output = self.sp_tokenizer.decode([n])
     self.assertEqual(mix_output, " `__")
     self.assertEqual(mix_output.lstrip(), decode_output)
@@ -113,16 +114,16 @@ class TokenUtilsTest(unittest.TestCase):
     vocab = self.jt_tokenizer.vocab
     max_prefill_length = 1024
     padded_tokens, true_length = token_utils.tokenize_and_pad(
-      s=s,
-      vocab=vocab,
-      max_prefill_length=max_prefill_length,
-      )
+        s=s,
+        vocab=vocab,
+        max_prefill_length=max_prefill_length,
+    )
     expected_padded_tokens = jnp.array([1, 306, 4658, 278, 6593, 310, 2834, 338,
                                         0, 0, 0, 0, 0, 0, 0, 0])
     expected_true_length = 8
     self.assertTrue(
-      jnp.allclose(padded_tokens, expected_padded_tokens, atol=1e-7)
-      )
+        jnp.allclose(padded_tokens, expected_padded_tokens, atol=1e-7)
+    )
     self.assertEqual(true_length, expected_true_length)
 
   def test_tokenize_and_pad_np(self):
@@ -131,17 +132,17 @@ class TokenUtilsTest(unittest.TestCase):
     vocab = self.jt_tokenizer.vocab
     max_prefill_length = 1024
     padded_tokens, true_length = token_utils.tokenize_and_pad(
-      s=s,
-      vocab=vocab,
-      max_prefill_length=max_prefill_length,
-      jax_padding=False
-      )
+        s=s,
+        vocab=vocab,
+        max_prefill_length=max_prefill_length,
+        jax_padding=False
+    )
     expected_padded_tokens = np.array([1, 306, 4658, 278, 6593, 310, 2834, 338,
-                                        0, 0, 0, 0, 0, 0, 0, 0])
+                                       0, 0, 0, 0, 0, 0, 0, 0])
     expected_true_length = 8
     self.assertTrue(
-      np.allclose(padded_tokens, expected_padded_tokens, atol=1e-7)
-      )
+        np.allclose(padded_tokens, expected_padded_tokens, atol=1e-7)
+    )
     self.assertEqual(true_length, expected_true_length)
 
 
