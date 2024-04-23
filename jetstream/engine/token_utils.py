@@ -16,7 +16,7 @@
 
 from bisect import bisect_left
 import logging
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import jax
 import jax.numpy as jnp
@@ -57,7 +57,8 @@ def tokenize_and_pad(
     is_bos: bool = True,
     prefill_lengths: Optional[List[int]] = None,
     max_prefill_length: Optional[int] = None,
-) -> Tuple[jax.Array, int]:
+    jax_padding: bool = True,
+) -> Tuple[Union[jax.Array, np.ndarray], int]:
   """Tokenize and pads a string.
 
   Args:
@@ -67,6 +68,7 @@ def tokenize_and_pad(
       as prefill is typically used when beginning sequences.
     prefill_lengths: Buckets to pad the sequence to for static compilation.
     max_prefill_length: Maximum bucket to use.
+    jax_padding: convert to JAX padded tokens if True. 
 
   Returns:
     tokens: Tokenized into integers.
@@ -117,7 +119,9 @@ def tokenize_and_pad(
     padded_tokens = tokens[-padded_length:]
   else:
     padded_tokens = np.pad(tokens, (0, padding))
-  return jnp.array(padded_tokens), true_length
+  if jax_padding:
+    padded_tokens = jnp.array(padded_tokens)
+  return padded_tokens, true_length
 
 
 def process_result_tokens(
