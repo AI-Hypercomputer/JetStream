@@ -11,7 +11,7 @@ JetStream is a throughput and memory optimized engine for LLM inference on XLA d
 
 ## JetStream Engine Implementation 
 
-There are two engine implementation - Jax and Pytorch.
+Currently, there are two reference engine implementations available -- one for Jax models and another for Pytorch models.
 
 ### Jax
 
