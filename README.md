@@ -16,7 +16,7 @@ Currently, there are two reference engine implementations available -- one for J
 ### Jax
 
 - Git: https://github.com/google/maxtext
-- README: https://github.com/google/jetstream/blob/main/max_text/README.md
+- README: https://github.com/google/JetStream/blob/main/jetstream/max_text/README.md
 
 ### Pytorch
 
