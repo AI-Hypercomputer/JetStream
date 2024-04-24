@@ -201,12 +201,16 @@ class Driver:
   _generate_slots: list[queue.Queue[int]] = []
   _active_requests: list[queue.Queue[tuple[int, ActiveRequest | None]]] = []
 
+  # todo: remove jax_padding after all then engine migrate to np padding
+  _jax_padding = True
+
   def __init__(
       self,
       prefill_engines: Optional[list[engine_api.Engine]] = None,
       generate_engines: Optional[list[engine_api.Engine]] = None,
       prefill_params: Optional[list[Any]] = None,
       generate_params: Optional[list[Any]] = None,
+      jax_padding: bool = True,
   ):
     if prefill_engines is None:
       prefill_engines = []
@@ -282,6 +286,8 @@ class Driver:
         ]
         for idx, engine in enumerate(self._generate_engines)
     ]
+
+    self._jax_padding = jax_padding
 
     # Create all threads
     self._prefill_threads = [
@@ -428,6 +434,7 @@ class Driver:
           vocab,
           is_bos=is_bos,
           max_prefill_length=prefill_engine.max_prefill_length,
+          jax_padding=self._jax_padding,
       )
       # Compute new kv cache for the prefill_text, conditional on
       # history.
