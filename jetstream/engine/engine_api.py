@@ -122,13 +122,9 @@ class ResultTokens(abc.ABC):
     )
 
 class Tokenizer(abc.ABC):
-  """Tokenizer to convert strings to token ids and vice-versa
+  """Tokenizer to convert strings to token ids and vice-versa."""
 
-  The default implementation assumes a SentencePience tokenizer.
-  """
-  def __init__(self, metadata: tokenizer_pb2.TokenizerParameters):
-    self.vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
-
+  @abc.abstractmethod
   def encode(self, s: str, **kwargs):
     """Tokenize a string.
 
@@ -140,25 +136,15 @@ class Tokenizer(abc.ABC):
         tokens: Tokenized into integers.
         true_length: Actual length of the non-padded sequence if padding is used.
     """
-    is_bos = kwargs.pop('is_bos', True)
-    prefill_length = kwargs.pop('prefill_length', None)
-    max_prefill_length = kwargs.pop('max_prefill_length', None)
 
-    tokens, true_length = token_utils.tokenizer_and_pad(
-        s, self.vocab, is_bos=is_bos,
-        prefill_length=prefill_length,
-        max_prefill_length=max_prefill_length
-    )
-    return tokens, true_length
-
-
+  @abc.abstractmethod
   def decode(
       self,
       slot: int,
       slot_max_length: int,
       result_tokens: ResultTokens,
       complete: np.ndarray,
-      debug: bool = False,
+      **kwargs,
   ) -> Tuple[List[str], np.ndarray]:
     """Processes a result tokens into a list of strings, handling multiple
     samples.
@@ -169,29 +155,22 @@ class Tokenizer(abc.ABC):
       result_tokens: The tokens to access by slot.
       complete: Array representing the completion status of each sample in the
         slot.
-      debug: Whether to log step by step detokenisation.
+      **kwards: Additional keyword arguments.
 
     Returns:
       sample_return: List of strings, one per sample.
       complete: Updated complete.
     """
-    results, complete = token_utils.process_result_tokens(
-        slot=slot,
-        slot_max_length=slot_max_length,
-        result_tokens=result_tokens,
-        vocab=self.vocab,
-        complete=complete,
-        debug=debug,
-    )
-    return results, complete
 
   @property
+  @abc.abstractmethod
   def pad_id(self) -> int:
-    return self.vocab.pad_id
+    """ID of the pad token."""
 
   @property
+  @abc.abstractmethod
   def eos_id(self) -> int:
-    return self.vocab.eos_id
+    """ID of EOS token."""
 
 class Engine(abc.ABC):
   """The computational core of the generative model server.
@@ -269,11 +248,14 @@ class Engine(abc.ABC):
   def get_tokenizer(
       self,
   ) -> tokenizer_pb2.TokenizerParameters:
-    """Returns the info to construct a sentencepiece tokenizer in py/c++."""
+    """Returns the info to construct a tokenizer in py/c++."""
 
   def build_tokenizer(self, metadata: tokenizer_pb2.TokenizerParameters) -> Tokenizer:
-    """Returns the Tokenizer object."""
-    return Tokenizer(metadata)
+    """Returns the Tokenizer object.
+    
+    The default implementation assumes the SentencePiece tokenizer.
+    """
+    return token_utils.SentencePieceTokenizer(metadata)
 
   @abc.abstractmethod
   def init_decode_state(self, *args, **kwargs) -> DecodeState:
