@@ -252,7 +252,7 @@ class SentencePieceTokenizer(engine_api.Tokenizer):
       slot_max_length: int,
       result_tokens: engine_api.ResultTokens,
       complete: np.ndarray,
-      debug: bool = False,
+      **kwargs,
   ) -> Tuple[List[str], np.ndarray]:
     """Processes a result tokens into a list of strings, handling multiple
     samples.
@@ -263,12 +263,13 @@ class SentencePieceTokenizer(engine_api.Tokenizer):
       result_tokens: The tokens to access by slot.
       complete: Array representing the completion status of each sample in the
         slot.
-      debug: Whether to log step by step detokenisation.
+      kwargs: Additional keyword arguments.
 
     Returns:
       sample_return: List of strings, one per sample.
       complete: Updated complete.
     """
+    debug = kwargs.pop('debug', False)
     results, complete = process_result_tokens(
         slot=slot,
         slot_max_length=slot_max_length,
