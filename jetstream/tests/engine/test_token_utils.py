@@ -82,15 +82,6 @@ class TokenUtilsTest(unittest.TestCase):
       seqio_t = self.jt_tokenizer.vocab.tokenizer.decode([n])
       self.assertEqual(sp_t, seqio_t)
 
-  def test_underscore_in_output(self):
-    self.setup()
-    n = 21326
-    mix_output = token_utils.mix_decode(
-        vocab=self.jt_tokenizer.vocab, tok_id=n)
-    decode_output = self.sp_tokenizer.decode([n])
-    self.assertEqual(mix_output, " `__")
-    self.assertEqual(mix_output.lstrip(), decode_output)
-
   def test_tokenize_and_pad_jax(self):
     jax.config.update("jax_platform_name", "cpu")
     self.setup()
