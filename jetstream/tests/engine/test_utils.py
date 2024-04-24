@@ -64,8 +64,9 @@ class UtilsTest(absltest.TestCase):
     )
     np.testing.assert_equal(complete, np.array([1, 0]))
 
-    assert not per_channel[0]  # i.e. == '', because of the pad.
-    assert per_channel[1] == "AD"
+    text_output = [mock_utils.TestVocab().decode(row) for row in per_channel]
+    assert not text_output[0]  # i.e. == '', because of the pad.
+    assert text_output[1] == "AD"
     mock_complete = np.zeros(
         (mock_tokens.shape[0] // samples_per_slot), dtype=np.int32
     )
@@ -76,8 +77,9 @@ class UtilsTest(absltest.TestCase):
         vocab=mock_utils.TestVocab(),
         complete=mock_complete,
     )
-    assert per_channel[0] == "T3"
-    assert per_channel[1] == "A"  # second token is padded.
+    text_output = [mock_utils.TestVocab().decode(row) for row in per_channel]
+    assert text_output[0] == "T3"
+    assert text_output[1] == "A"  # second token is padded.
     np.testing.assert_equal(complete, np.array([0, 1]))
 
 

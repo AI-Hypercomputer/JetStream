@@ -53,6 +53,8 @@ etils[array-types,enp,epath,epy,etqdm,etree]==1.6.0
     #   clu
     #   orbax-checkpoint
     #   tfds-nightly
+exceptiongroup==1.2.0
+    # via pytest
 flatbuffers==23.5.26
     # via tensorflow
 flax==0.8.0
@@ -84,6 +86,8 @@ idna==3.7
     # via requests
 importlib-resources==6.1.1
     # via etils
+iniconfig==2.0.0
+    # via pytest
 jax==0.4.23
     # via
     #   -r requirements.in
@@ -160,8 +164,11 @@ orbax-checkpoint==0.5.2
 packaging==23.2
     # via
     #   clu
+    #   pytest
     #   seqio
     #   tensorflow
+pluggy==1.4.0
+    # via pytest
 portpicker==1.6.0
     # via -r requirements.in
 promise==2.3
@@ -190,6 +197,8 @@ pyglove==0.4.4
     # via seqio
 pygments==2.17.2
     # via rich
+pytest==8.1.1
+    # via -r requirements.in
 pyyaml==6.0.1
     # via
     #   flax
@@ -251,6 +260,8 @@ tfds-nightly==4.9.2.dev202308090034
     # via seqio
 toml==0.10.2
     # via tfds-nightly
+tomli==2.0.1
+    # via pytest
 toolz==0.12.1
     # via chex
 tqdm==4.66.1

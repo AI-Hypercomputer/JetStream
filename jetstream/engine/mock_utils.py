@@ -62,9 +62,7 @@ class TestVocab(Vocabulary):
 
   def _decode(self, ids: np.ndarray):
     """Converts a numpy array into a string."""
-    # 'We use array methods, not python iterables so we don't
-    # implement this method in the mock vocab.
-    raise NotImplementedError
+    return "".join([chr(r) for r in list(ids)])
 
   def _encode_tf(self, s: str) -> np.ndarray:
     """Converts a string into a numpy array."""
@@ -77,6 +75,10 @@ class TestVocab(Vocabulary):
     # We mock using numpy to avoid propagating tf dependencies.
     results = np.split(ids, ids.shape[0])
     return ["".join([chr(r) for r in list(line[0])]) for line in results]
+
+  def decode(self, ids: np.ndarray):
+    """Converts a numpy array into a string."""
+    return self._decode(ids)
 
   def encode_tf(self, s: str) -> np.ndarray:
     """Converts a string into a numpy array."""

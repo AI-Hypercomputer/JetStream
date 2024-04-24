@@ -37,6 +37,10 @@ message DecodeRequest {
   int32 max_tokens = 4;
 }
 message DecodeResponse {
-  // List of responses, one per sample.
-  repeated string response = 1;
+  // List of responses, one per sample. The list size depends on text generation strategy the engine used.
+  repeated RepeatedTokenIds response = 1;
+}
+message RepeatedTokenIds {
+  // List of token ids, one list per sample. When speculative decoding is disabled, the list size should be 1; When speculative decoding is enabled, the list size should be >= 1.
+  repeated int32 token_ids = 1;
 }
