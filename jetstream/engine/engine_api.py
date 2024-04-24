@@ -26,7 +26,6 @@ import jax
 import numpy as np
 
 from jetstream.engine import tokenizer_pb2
-from jetstream.engine import token_utils
 
 
 # The model parameters - their partitioning will be unique for different prefill
@@ -254,11 +253,8 @@ class Engine(abc.ABC):
     """Returns the info to construct a tokenizer in py/c++."""
 
   def build_tokenizer(self, metadata: tokenizer_pb2.TokenizerParameters) -> Tokenizer:
-    """Returns the Tokenizer object.
-    
-    The default implementation assumes the SentencePiece tokenizer.
-    """
-    return token_utils.SentencePieceTokenizer(metadata)
+    """Builds a new tokenizer object and returns it."""
+    return None
 
   @abc.abstractmethod
   def init_decode_state(self, *args, **kwargs) -> DecodeState:

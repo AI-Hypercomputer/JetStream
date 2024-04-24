@@ -93,6 +93,7 @@ from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.engine import engine_api
+from jetstream.engine import token_utils
 import numpy as np
 
 
@@ -397,6 +398,8 @@ class Driver:
     prefill_params = self._prefill_params[idx]
     metadata = prefill_engine.get_tokenizer()
     tokenizer = prefill_engine.build_tokenizer(metadata)
+    if not tokenizer:
+      tokenizer = token_utils.SentencePieceTokenizer(metadata)
     logging.info("---------Prefill params %d loaded.---------", idx)
 
     while self.live:
@@ -567,7 +570,8 @@ class Driver:
 
     metadata = my_generate_engine.get_tokenizer()
     tokenizer = my_generate_engine.build_tokenizer(metadata)
-
+    if not tokenizer:
+      tokenizer = token_utils.SentencePieceTokenizer(metadata)
     my_live_requests = {
         i: None for i in range(my_generate_engine.max_concurrent_decodes)
     }
