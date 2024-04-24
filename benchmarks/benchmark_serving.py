@@ -65,15 +65,14 @@ from datetime import datetime
 import json
 import random
 import time
-from typing import Any, AsyncGenerator, List, Optional
+from typing import Any, AsyncGenerator, Optional
 
 import grpc
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
+from jetstream.engine.token_utils import load_vocab
 import numpy as np
-import tensorflow as tf
-import tensorflow_text as tftxt
-from tqdm.asyncio import tqdm
+from tqdm.asyncio import tqdm  # pytype: disable=pyi-error
 from eval_accuracy import eval_accuracy
 
 
@@ -106,9 +105,9 @@ class InputRequest:
 
 @dataclass
 class RequestFuncOutput:
-  input_request: InputRequest = None
-  generated_token_list: list[str] = None
-  generated_text: str = None
+  input_request: Optional[InputRequest] = None
+  generated_token_list: list[str] = []
+  generated_text: str = ""
   success: bool = False
   latency: float = 0
   ttft: float = 0
@@ -132,18 +131,16 @@ def get_tokenizer(tokenizer_name: str) -> Any:
   if tokenizer_name == "test":
     return "test"
   else:
-    with tf.io.gfile.GFile(tokenizer_name, "rb") as model_fp:
-      sp_model = model_fp.read()
-    sp_tokenizer = tftxt.SentencepieceTokenizer(
-        model=sp_model, add_bos=True, add_eos=False, reverse=False
-    )
-    return sp_tokenizer
+    # Use JetStream tokenizer util. It's using the sentencepiece wrapper in
+    # seqio library.
+    vocab = load_vocab(tokenizer_name)
+    return vocab.tokenizer
 
 
 def load_sharegpt_dataset(
     dataset_path: str,
     conversation_starter: str,
-) -> List[tuple[str]]:
+) -> list[tuple[Any, Any]]:
   # Load the dataset.
   with open(dataset_path, "r", encoding="utf-8") as f:
     dataset = json.load(f)
@@ -166,7 +163,7 @@ def load_sharegpt_dataset(
   return dataset
 
 
-def load_openorca_dataset(dataset_path: str) -> List[tuple[str]]:
+def load_openorca_dataset(dataset_path: str) -> list[tuple[Any, Any]]:
   # Load the dataset.
   with open(dataset_path, "r", encoding="utf-8") as f:
     dataset = json.load(f)
@@ -179,9 +176,9 @@ def load_openorca_dataset(dataset_path: str) -> List[tuple[str]]:
 
 
 def tokenize_dataset(
-    dataset: List[tuple[str]],
+    dataset: list[tuple[Any, Any, Any]],
     tokenizer: Any,
-) -> List[tuple[Any]]:
+) -> list[tuple[str, Any, str, int, int, int]]:
 
   n = len(dataset)
 
@@ -194,10 +191,10 @@ def tokenize_dataset(
     outputs.append(output)
     indices.append(idx)
 
-  prompt_token_ids = tokenizer.tokenize(
+  prompt_token_ids = tokenizer.encode(
       prompts
   )  # adjust this code based on tokenizer method
-  outputs_token_ids = tokenizer.tokenize(
+  outputs_token_ids = tokenizer.encode(
       outputs
   )  # adjust this code based on tokenizer method
 
@@ -218,8 +215,9 @@ def tokenize_dataset(
 
 
 def filter_dataset(
-    tokenized_dataset: List[tuple[Any]], max_output_length: Optional[int] = None
-) -> List[InputRequest]:
+    tokenized_dataset: list[tuple[str, Any, str, int, int, int]],
+    max_output_length: Optional[int] = None,
+) -> list[InputRequest]:
   if max_output_length is None:
     print("In InputRequest, pass in actual output_length for each sample")
   else:
@@ -229,7 +227,7 @@ def filter_dataset(
     )
 
   # Filter out too long sequences.
-  filtered_dataset: List[InputRequest] = []
+  filtered_dataset: list[InputRequest] = []
   for (
       prompt,
       _,
@@ -258,12 +256,12 @@ def filter_dataset(
 
 
 def sample_requests(
-    dataset: List[tuple[str]],
+    dataset: list[tuple[Any, Any]],
     tokenizer: Any,
     num_requests: int,
     max_output_length: Optional[int] = None,
     oversample_multiplier: float = 1.2,
-) -> List[InputRequest]:
+) -> list[InputRequest]:
 
   # Original dataset size
   n = len(dataset)
@@ -304,7 +302,7 @@ def sample_requests(
 
 
 async def get_request(
-    input_requests: List[InputRequest],
+    input_requests: list[InputRequest],
     request_rate: float,
 ) -> AsyncGenerator[InputRequest, None]:
   input_requests = iter(input_requests)
@@ -321,8 +319,8 @@ async def get_request(
 
 
 def calculate_metrics(
-    input_requests: List[InputRequest],
-    outputs: List[RequestFuncOutput],
+    input_requests: list[InputRequest],
+    outputs: list[RequestFuncOutput],
     dur_s: float,
     tokenizer: Any,
 ) -> BenchmarkMetrics:
@@ -374,16 +372,17 @@ async def grpc_async_request(
     token_list = []
     request_start_time = time.perf_counter()
     response = stub.Decode(request)
-    async for token in response:
+    async for sample_list in response:
       if ttft == 0:
         ttft = time.perf_counter() - request_start_time
-      token_list.append(token.response[0])
+      token_list.extend(sample_list.response[0].token_ids)
     latency = time.perf_counter() - request_start_time
     return token_list, ttft, latency
 
 
 async def send_request(
     api_url: str,
+    tokenizer: Any,
     input_request: InputRequest,
     pbar: tqdm,
     session_cache: str,
@@ -405,7 +404,8 @@ async def send_request(
   output.ttft = ttft
   output.latency = latency
   output.generated_token_list = generated_token_list
-  output.generated_text = "".join(generated_token_list)
+  # generated_token_list is a list of token ids, decode it to generated_text.
+  output.generated_text = tokenizer.decode(generated_token_list)
   output.success = True
   if pbar:
     pbar.update(1)
@@ -415,7 +415,7 @@ async def send_request(
 async def benchmark(
     api_url: str,
     tokenizer: Any,
-    input_requests: List[InputRequest],
+    input_requests: list[InputRequest],
     request_rate: float,
     disable_tqdm: bool,
     session_cache: str,
@@ -433,6 +433,7 @@ async def benchmark(
         asyncio.create_task(
             send_request(
                 api_url=api_url,
+                tokenizer=tokenizer,
                 input_request=request,
                 pbar=pbar,
                 session_cache=session_cache,
@@ -442,7 +443,7 @@ async def benchmark(
     )
   outputs = await asyncio.gather(*tasks)
 
-  if not disable_tqdm:
+  if not disable_tqdm and pbar:
     pbar.close()
 
   benchmark_duration = time.perf_counter() - benchmark_start_time

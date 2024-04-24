@@ -18,6 +18,9 @@ import os
 import unittest
 from typing import List
 
+import jax
+import jax.numpy as jnp
+import numpy as np
 from sentencepiece import SentencePieceProcessor
 from jetstream.engine import tokenizer_pb2, token_utils
 
@@ -72,22 +75,6 @@ class TokenUtilsTest(unittest.TestCase):
 
     self.assertNotEqual(jt_output, expeted_sp_output)
 
-  def test_mix_decode(self):
-    self.setup()
-    for n in range(0, self.sp_tokenizer.tokenizer.vocab_size()):
-      # From decode function
-      decode_output = self.sp_tokenizer.decode([n])
-      # From IdToPiece function
-      piece_output = self.jt_tokenizer.decode(n)
-      # Mix output from decode and IdToPiece
-      mix_output = token_utils.mix_decode(
-          vocab=self.jt_tokenizer.vocab, tok_id=n
-      )
-      if piece_output.lstrip() == decode_output:
-        self.assertEqual(mix_output, piece_output)
-      else:
-        self.assertEqual(mix_output, decode_output)
-
   def test_sp_vs_seqio(self):
     self.setup()
     for n in range(0, self.sp_tokenizer.tokenizer.vocab_size()):
@@ -95,13 +82,45 @@ class TokenUtilsTest(unittest.TestCase):
       seqio_t = self.jt_tokenizer.vocab.tokenizer.decode([n])
       self.assertEqual(sp_t, seqio_t)
 
-  def test_underscore_in_output(self):
+  def test_tokenize_and_pad_jax(self):
+    jax.config.update("jax_platform_name", "cpu")
     self.setup()
-    n = 21326
-    mix_output = token_utils.mix_decode(vocab=self.jt_tokenizer.vocab, tok_id=n)
-    decode_output = self.sp_tokenizer.decode([n])
-    self.assertEqual(mix_output, " `__")
-    self.assertEqual(mix_output.lstrip(), decode_output)
+    s = "I believe the meaning of life is"
+    vocab = self.jt_tokenizer.vocab
+    max_prefill_length = 1024
+    padded_tokens, true_length = token_utils.tokenize_and_pad(
+        s=s,
+        vocab=vocab,
+        max_prefill_length=max_prefill_length,
+    )
+    expected_padded_tokens = jnp.array(
+        [1, 306, 4658, 278, 6593, 310, 2834, 338, 0, 0, 0, 0, 0, 0, 0, 0]
+    )
+    expected_true_length = 8
+    self.assertTrue(
+        jnp.allclose(padded_tokens, expected_padded_tokens, atol=1e-7)
+    )
+    self.assertEqual(true_length, expected_true_length)
+
+  def test_tokenize_and_pad_np(self):
+    self.setup()
+    s = "I believe the meaning of life is"
+    vocab = self.jt_tokenizer.vocab
+    max_prefill_length = 1024
+    padded_tokens, true_length = token_utils.tokenize_and_pad(
+        s=s,
+        vocab=vocab,
+        max_prefill_length=max_prefill_length,
+        jax_padding=False,
+    )
+    expected_padded_tokens = np.array(
+        [1, 306, 4658, 278, 6593, 310, 2834, 338, 0, 0, 0, 0, 0, 0, 0, 0]
+    )
+    expected_true_length = 8
+    self.assertTrue(
+        np.allclose(padded_tokens, expected_padded_tokens, atol=1e-7)
+    )
+    self.assertEqual(true_length, expected_true_length)
 
 
 if __name__ == "__main__":

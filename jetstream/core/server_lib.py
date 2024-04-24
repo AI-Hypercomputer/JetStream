@@ -91,6 +91,7 @@ def run(
     devices: Any,
     credentials: Any = grpc.insecure_server_credentials(),
     threads: int | None = None,
+    jax_padding: bool = True,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
@@ -116,6 +117,7 @@ def run(
       generate_engines=engines.generate_engines + engines.interleaved_engines,
       prefill_params=prefill_params + shared_params,
       generate_params=generate_params + shared_params,
+      jax_padding=jax_padding,
   )
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.

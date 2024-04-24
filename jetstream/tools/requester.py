@@ -21,6 +21,7 @@ from absl import flags
 import grpc
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
+from jetstream.engine.token_utils import load_vocab
 
 
 _SERVER = flags.DEFINE_string("server", "0.0.0.0", "server address")
@@ -33,6 +34,12 @@ _PRIORITY = flags.DEFINE_integer("priority", 0, "Message priority")
 _MAX_TOKENS = flags.DEFINE_integer(
     "max_tokens", 3, "Maximum number of output/decode tokens of a sequence"
 )
+_TOKENIZER = flags.DEFINE_string(
+    "tokenizer",
+    "",
+    "Name or path of the tokenizer (matched to the model)",
+    required=True,
+)
 
 
 def _GetResponseAsync(
@@ -42,11 +49,13 @@ def _GetResponseAsync(
   """Gets an async response."""
 
   response = stub.Decode(request)
-  output = ""
-  for token_list in response:
-    output += token_list.response[0]
+  output = []
+  for sample_list in response:
+    output.extend(sample_list.response[0].token_ids)
+  vocab = load_vocab(_TOKENIZER.value)
+  text_output = vocab.tokenizer.decode(output)
   print(f"Prompt: {_TEXT.value}")
-  print(f"Response: {output}")
+  print(f"Response: {text_output}")
 
 
 def main(argv: Sequence[str]) -> None:

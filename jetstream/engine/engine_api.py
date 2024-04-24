@@ -83,6 +83,9 @@ class ResultTokens(abc.ABC):
 
   def copy_to_host_async(self: "ResultTokens") -> None:
     """Copy to host asynchronously."""
+    # Do nothing for np array
+    if isinstance(self.data, np.ndarray):
+      return
     self.data.copy_to_host_async()
 
   def convert_to_numpy(self: "ResultTokens") -> "ResultTokens":

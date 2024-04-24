@@ -126,7 +126,7 @@ class ActiveRequest:
   # We keep prefill and decode information together in the same object so that
   # there is less indirection about where this return channel is.
   # The return channel returns a list of strings, one per sample for that query.
-  return_channel: async_multifuture.AsyncMultifuture[list[str]]
+  return_channel: async_multifuture.AsyncMultifuture[list[list[int]]]
   # [num_samples,] which corresponds to whether each sample is complete for the
   # requests.
   complete: Optional[np.ndarray] = None
@@ -138,7 +138,7 @@ class ActiveRequest:
   # Which generate step this was added at.
   generate_timestep_added: Optional[int] = None
 
-  def enqueue_tokens(self, generated_tokens: list[str]):
+  def enqueue_tokens(self, generated_tokens: list[list[int]]):
     """Records information about the step.
 
     Args:
@@ -200,12 +200,16 @@ class Driver:
   _generate_slots: list[queue.Queue[int]] = []
   _active_requests: list[queue.Queue[tuple[int, ActiveRequest | None]]] = []
 
+  # todo: remove jax_padding after all then engine migrate to np padding
+  _jax_padding = True
+
   def __init__(
       self,
       prefill_engines: Optional[list[engine_api.Engine]] = None,
       generate_engines: Optional[list[engine_api.Engine]] = None,
       prefill_params: Optional[list[Any]] = None,
       generate_params: Optional[list[Any]] = None,
+      jax_padding: bool = True,
   ):
     if prefill_engines is None:
       prefill_engines = []
@@ -281,6 +285,8 @@ class Driver:
         ]
         for idx, engine in enumerate(self._generate_engines)
     ]
+
+    self._jax_padding = jax_padding
 
     # Create all threads
     self._prefill_threads = [
@@ -426,6 +432,7 @@ class Driver:
           request.prefill_text,
           is_bos=is_bos,
           max_prefill_length=prefill_engine.max_prefill_length,
+          jax_padding=self._jax_padding,
       )
       # Compute new kv cache for the prefill_text, conditional on
       # history.
@@ -659,4 +666,9 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
       # The DecodeResponse stream should consume all generated tokens in
       # return_channel when complete signal is received. It should check if
       # return_channel is empty to decide if it should exit the while loop.
-      yield jetstream_pb2.DecodeResponse(response=response)
+      repeated_token_ids = []
+      for token_ids in response:
+        repeated_token_ids.append(
+            jetstream_pb2.RepeatedTokenIds(token_ids=token_ids)
+        )
+      yield jetstream_pb2.DecodeResponse(response=repeated_token_ids)

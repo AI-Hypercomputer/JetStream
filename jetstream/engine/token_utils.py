@@ -16,7 +16,7 @@
 
 from bisect import bisect_left
 import logging
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import jax
 import jax.numpy as jnp
@@ -27,21 +27,6 @@ from seqio.vocabularies import Vocabulary
 from jetstream.engine import engine_api
 from jetstream.engine import mock_utils
 from jetstream.engine import tokenizer_pb2
-
-
-def mix_decode(vocab: Vocabulary, tok_id: int):
-  """
-  The IdToPiece and decode results differ for 344 tokens in Llama2.
-  Use the decode function to generate the correct strings for these 344 tokens.
-  If IdToPiece returns a hex string (e.g., '<0x0A>') for a token within these
-    344, utilize IdToPiece to convert it into a string, likely with a space
-    placeholder (' ') for the corresponding tokens.
-  """
-  p_token = vocab.tokenizer.IdToPiece(tok_id)
-  # SentencePiece escapes the whitespace with a meta symbol "▁" (U+2581)
-  p_token = p_token.replace("▁", " ")
-  d_token = vocab.tokenizer.decode([tok_id])
-  return p_token if p_token.lstrip() == d_token else d_token
 
 
 def take_nearest_length(lengths: list[int], length: int) -> int:
@@ -58,7 +43,8 @@ def tokenize_and_pad(
     is_bos: bool = True,
     prefill_lengths: Optional[List[int]] = None,
     max_prefill_length: Optional[int] = None,
-) -> Tuple[jax.Array, int]:
+    jax_padding: bool = True,
+) -> Tuple[Union[jax.Array, np.ndarray], int]:
   """Tokenize and pads a string.
 
   Args:
@@ -68,6 +54,7 @@ def tokenize_and_pad(
       as prefill is typically used when beginning sequences.
     prefill_lengths: Buckets to pad the sequence to for static compilation.
     max_prefill_length: Maximum bucket to use.
+    jax_padding: convert to JAX padded tokens if True.
 
   Returns:
     tokens: Tokenized into integers.
@@ -118,7 +105,9 @@ def tokenize_and_pad(
     padded_tokens = tokens[-padded_length:]
   else:
     padded_tokens = np.pad(tokens, (0, padding))
-  return jnp.array(padded_tokens), true_length
+  if jax_padding:
+    padded_tokens = jnp.array(padded_tokens)
+  return padded_tokens, true_length
 
 
 def process_result_tokens(
@@ -128,7 +117,7 @@ def process_result_tokens(
     vocab: Vocabulary,
     complete: np.ndarray,
     debug: bool = False,
-) -> Tuple[List[str], np.ndarray]:
+) -> Tuple[List[List[int]], np.ndarray]:
   """Processes a result tokens into a list of strings, handling multiple
     samples.
 
@@ -142,7 +131,7 @@ def process_result_tokens(
     debug: Whether to log step by step detokenisation.
 
   Returns:
-    sample_return: List of strings, one per sample.
+    sample_return: List of tok_id list, one list per sample.
     complete: Updated complete.
   """
   # tokens: [samples, speculations]
@@ -163,7 +152,7 @@ def process_result_tokens(
     )
   sample_return = []
   for idx in range(samples):
-    string_so_far = ""
+    tok_id_so_far = []
     if not complete[idx].item():
       for spec_idx in range(speculations):
         tok_id = slot_tokens[idx, spec_idx].item()
@@ -179,16 +168,8 @@ def process_result_tokens(
           complete[idx] = True
           break
         else:
-          try:
-            token = mix_decode(vocab, tok_id)  # pytype: disable=attribute-error
-          except ValueError:
-            # This error only occurs when using tests where the vocab range is
-            # computed via addition and int->char is computed using chr(). Real
-            # models have vocab logits which are at max the size of the vocab.
-            logging.warning("%d exceeded vocab range", tok_id)
-            token = "<sampled_outside_vocab>"
-          string_so_far += token
-    sample_return.append(string_so_far)
+          tok_id_so_far.append(tok_id)
+    sample_return.append(tok_id_so_far)
     if debug:
       logging.info("Sampled return %s", str(sample_return))
   return sample_return, complete
