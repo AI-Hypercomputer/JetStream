@@ -217,12 +217,12 @@ class SentencePieceTokenizer(engine_api.Tokenizer):
         true_length: Actual length of the non-padded sequence if padding is used.
     """
     is_bos = kwargs.pop('is_bos', True)
-    prefill_length = kwargs.pop('prefill_length', None)
+    prefill_lengths = kwargs.pop('prefill_lengths', None)
     max_prefill_length = kwargs.pop('max_prefill_length', None)
 
     tokens, true_length = tokenize_and_pad(
         s, self.vocab, is_bos=is_bos,
-        prefill_length=prefill_length,
+        prefill_lengths=prefill_lengths,
         max_prefill_length=max_prefill_length
     )
     return tokens, true_length
@@ -234,7 +234,7 @@ class SentencePieceTokenizer(engine_api.Tokenizer):
       result_tokens: engine_api.ResultTokens,
       complete: np.ndarray,
       **kwargs,
-  ) -> Tuple[List[str], np.ndarray]:
+  ) -> Tuple[List[List[int]], np.ndarray]:
     """Processes a result tokens into a list of strings, handling multiple
     samples.
 
