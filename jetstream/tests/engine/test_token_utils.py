@@ -93,8 +93,9 @@ class TokenUtilsTest(unittest.TestCase):
         vocab=vocab,
         max_prefill_length=max_prefill_length,
     )
-    expected_padded_tokens = jnp.array([1, 306, 4658, 278, 6593, 310, 2834, 338,
-                                        0, 0, 0, 0, 0, 0, 0, 0])
+    expected_padded_tokens = jnp.array(
+        [1, 306, 4658, 278, 6593, 310, 2834, 338, 0, 0, 0, 0, 0, 0, 0, 0]
+    )
     expected_true_length = 8
     self.assertTrue(
         jnp.allclose(padded_tokens, expected_padded_tokens, atol=1e-7)
@@ -110,10 +111,11 @@ class TokenUtilsTest(unittest.TestCase):
         s=s,
         vocab=vocab,
         max_prefill_length=max_prefill_length,
-        jax_padding=False
+        jax_padding=False,
     )
-    expected_padded_tokens = np.array([1, 306, 4658, 278, 6593, 310, 2834, 338,
-                                       0, 0, 0, 0, 0, 0, 0, 0])
+    expected_padded_tokens = np.array(
+        [1, 306, 4658, 278, 6593, 310, 2834, 338, 0, 0, 0, 0, 0, 0, 0, 0]
+    )
     expected_true_length = 8
     self.assertTrue(
         np.allclose(padded_tokens, expected_padded_tokens, atol=1e-7)
