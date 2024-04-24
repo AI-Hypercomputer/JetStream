@@ -200,8 +200,8 @@ def load_vocab(path: str, extra_ids: int = 0) -> Vocabulary:
 
 
 class SentencePieceTokenizer(engine_api.Tokenizer):
-  """Tokenizer to convert strings to token ids and vice-versa.
-  """
+  """Tokenizer to convert strings to token ids and vice-versa."""
+
   def __init__(self, metadata: tokenizer_pb2.TokenizerParameters):
     self.vocab = load_vocab(metadata.path, metadata.extra_ids)
 
@@ -214,7 +214,7 @@ class SentencePieceTokenizer(engine_api.Tokenizer):
 
     Returns:
         tokens: Tokenized into integers.
-        true_length: Actual length of the non-padded sequence 
+        true_length: Actual length of the non-padded sequence
           if padding is used.
     """
     is_bos = kwargs.pop("is_bos", True)
@@ -222,9 +222,11 @@ class SentencePieceTokenizer(engine_api.Tokenizer):
     max_prefill_length = kwargs.pop("max_prefill_length", None)
 
     tokens, true_length = tokenize_and_pad(
-        s, self.vocab, is_bos=is_bos,
+        s,
+        self.vocab,
+        is_bos=is_bos,
         prefill_lengths=prefill_lengths,
-        max_prefill_length=max_prefill_length
+        max_prefill_length=max_prefill_length,
     )
     return tokens, true_length
 

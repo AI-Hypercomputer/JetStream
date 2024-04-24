@@ -593,7 +593,7 @@ class Driver:
                 slot=slot,
                 slot_max_length=request.max_tokens,
                 result_tokens=result_tokens,
-                complete=request.complete
+                complete=request.complete,
             )
             request.complete = complete
             # Return some tokens.

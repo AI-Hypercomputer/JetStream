@@ -123,6 +123,7 @@ class ResultTokens(abc.ABC):
         ][:, 0],
     )
 
+
 class Tokenizer(abc.ABC):
   """Tokenizer to convert strings to token ids and vice-versa."""
 
@@ -174,6 +175,7 @@ class Tokenizer(abc.ABC):
   @abc.abstractmethod
   def eos_id(self) -> int:
     """ID of EOS token."""
+
 
 class Engine(abc.ABC):
   """The computational core of the generative model server.
