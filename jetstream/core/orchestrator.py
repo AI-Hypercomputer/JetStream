@@ -127,7 +127,7 @@ class ActiveRequest:
   # We keep prefill and decode information together in the same object so that
   # there is less indirection about where this return channel is.
   # The return channel returns a list of strings, one per sample for that query.
-  return_channel: async_multifuture.AsyncMultifuture[list[str]]
+  return_channel: async_multifuture.AsyncMultifuture[list[list[int]]]
   # [num_samples,] which corresponds to whether each sample is complete for the
   # requests.
   complete: Optional[np.ndarray] = None
@@ -139,7 +139,7 @@ class ActiveRequest:
   # Which generate step this was added at.
   generate_timestep_added: Optional[int] = None
 
-  def enqueue_tokens(self, generated_tokens: list[str]):
+  def enqueue_tokens(self, generated_tokens: list[list[int]]):
     """Records information about the step.
 
     Args:
@@ -662,4 +662,9 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
       # The DecodeResponse stream should consume all generated tokens in
       # return_channel when complete signal is received. It should check if
       # return_channel is empty to decide if it should exit the while loop.
-      yield jetstream_pb2.DecodeResponse(response=response)
+      repeated_token_ids = []
+      for token_ids in response:
+        repeated_token_ids.append(
+            jetstream_pb2.RepeatedTokenIds(token_ids=token_ids)
+        )
+      yield jetstream_pb2.DecodeResponse(response=repeated_token_ids)

@@ -47,9 +47,10 @@ jobs:
         pip install pylint
         pip install pyink
         pip install -r requirements.txt
+        pip install -r benchmarks/requirements.in
     - name: Typecheck the code with pytype
       run: |
-        pytype --jobs auto --disable import-error --disable module-attr jetstream/
+        pytype --jobs auto --disable import-error --disable module-attr jetstream/ benchmarks/
     - name: Analysing the code with pylint
       run: |
         pylint jetstream/ benchmarks/

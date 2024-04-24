@@ -41,6 +41,7 @@ decoded (these are the ascii chars at those indices which is what the test
 tokenizer returns).
 """
 
+import pytest
 from absl.testing import absltest
 from jetstream.core import orchestrator
 from jetstream.core.proto import jetstream_pb2
@@ -66,6 +67,7 @@ class OrchestratorTest(absltest.TestCase):
     )
     return driver
 
+  @pytest.mark.asyncio
   async def test_orchestrator(self):
     """Test the multithreaded orchestration."""
     driver = self._setup_driver()
@@ -87,12 +89,10 @@ class OrchestratorTest(absltest.TestCase):
     counter = 0
     async for token in iterator:
       # Tokens come through as bytes.
-      print(
-          "actual output: "
-          + bytes(token.response[0], encoding="utf-8").decode()
-      )
+      output_token = await token.response[0].token_id[0]
+      print("actual output: " + bytes(output_token, encoding="utf-8").decode())
       assert (
-          bytes(token.response[0], encoding="utf-8").decode()
+          bytes(output_token, encoding="utf-8").decode()
           == expected_tokens[counter]
       )
       counter += 1

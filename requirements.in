@@ -4,6 +4,7 @@ flax
 grpcio
 jax
 jaxlib
-portpicker
 numpy
+portpicker
+pytest
 seqio
