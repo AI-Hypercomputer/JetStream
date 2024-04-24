@@ -136,7 +136,8 @@ class Tokenizer(abc.ABC):
 
     Returns:
         tokens: Tokenized into integers.
-        true_length: Actual length of the non-padded sequence if padding is used.
+        true_length: Actual length of the non-padded sequence
+          if padding is used.
     """
 
   @abc.abstractmethod
@@ -252,7 +253,11 @@ class Engine(abc.ABC):
   ) -> tokenizer_pb2.TokenizerParameters:
     """Returns the info to construct a tokenizer in py/c++."""
 
-  def build_tokenizer(self, metadata: tokenizer_pb2.TokenizerParameters) -> Tokenizer:
+  # pylint: disable=unused-argument
+  def build_tokenizer(
+      self,
+      metadata: tokenizer_pb2.TokenizerParameters,
+  ) -> Tokenizer:
     """Builds a new tokenizer object and returns it."""
     return None
 
