@@ -24,7 +24,7 @@ from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine.token_utils import load_vocab
 
 
-_SERVER = flags.DEFINE_string("server", "dns:///[::1]", "server address")
+_SERVER = flags.DEFINE_string("server", "0.0.0.0", "server address")
 _PORT = flags.DEFINE_string("port", "9000", "port to ping")
 _SESSION_CACHE = flags.DEFINE_string(
     "session_cache", "", "Location of any pre-cached results"
