@@ -68,7 +68,7 @@ def tokenize_and_pad(
       as prefill is typically used when beginning sequences.
     prefill_lengths: Buckets to pad the sequence to for static compilation.
     max_prefill_length: Maximum bucket to use.
-    jax_padding: convert to JAX padded tokens if True. 
+    jax_padding: convert to JAX padded tokens if True.
 
   Returns:
     tokens: Tokenized into integers.
