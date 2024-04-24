@@ -59,6 +59,21 @@ class EngineTest(absltest.TestCase):
     )
     return engine, params, prefill_result, true_length
 
+  def _prefill_np(self):
+    """Performs prefill and returns a kv cache."""
+    engine, params = self._setup()
+    # A 2 will be pre-pended as 'bos' token from the vocab.
+    text = "AB"
+    metadata = engine.get_tokenizer()
+    vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
+    tokens, true_length = token_utils.tokenize_and_pad(
+        text, vocab, is_bos=True, jax_padding=False
+    )
+    prefill_result = engine.prefill(
+        params=params, padded_tokens=tokens, true_length=3
+    )
+    return engine, params, prefill_result, true_length
+
   def _generate(self, slot=1):
     """Performs a single generation step."""
     engine, params, prefill_result, _ = self._prefill()
@@ -79,6 +94,13 @@ class EngineTest(absltest.TestCase):
   def test_prefill(self):
     """Tests prefill with weight = 2."""
     _, _, prefill_result, true_length = self._prefill()
+    np.testing.assert_array_equal(
+        prefill_result[:, :true_length], np.array([[4.0, 130.0, 132.0]])
+    )
+
+  def test_prefill_np(self):
+    """Tests prefill with weight = 2."""
+    _, _, prefill_result, true_length = self._prefill_np()
     np.testing.assert_array_equal(
         prefill_result[:, :true_length], np.array([[4.0, 130.0, 132.0]])
     )
