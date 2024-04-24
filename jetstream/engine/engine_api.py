@@ -19,13 +19,14 @@ could want to call, enabling interleaved (continuous batching) inference.
 """
 
 import abc
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Optional, Tuple, Union, List
 
 from flax import struct
 import jax
 import numpy as np
 
 from jetstream.engine import tokenizer_pb2
+from jetstream.engine import token_utils
 
 
 # The model parameters - their partitioning will be unique for different prefill
@@ -120,6 +121,77 @@ class ResultTokens(abc.ABC):
         ][:, 0],
     )
 
+class Tokenizer(abc.ABC):
+  """Tokenizer to convert strings to token ids and vice-versa
+
+  The default implementation assumes a SentencePience tokenizer.
+  """
+  def __init__(self, metadata: tokenizer_pb2.TokenizerParameters):
+    self.vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
+
+  def encode(self, s: str, **kwargs):
+    """Tokenize a string.
+
+    Args:
+        s: String to tokenize.
+        **kwargs: Additional keyword arguments
+
+    Returns:
+        tokens: Tokenized into integers.
+        true_length: Actual length of the non-padded sequence if padding is used.
+    """
+    is_bos = kwargs.pop('is_bos', True)
+    prefill_length = kwargs.pop('prefill_length', None)
+    max_prefill_length = kwargs.pop('max_prefill_length', None)
+
+    tokens, true_length = token_utils.tokenizer_and_pad(
+        s, self.vocab, is_bos=is_bos,
+        prefill_length=prefill_length,
+        max_prefill_length=max_prefill_length
+    )
+    return tokens, true_length
+
+
+  def decode(
+      self,
+      slot: int,
+      slot_max_length: int,
+      result_tokens: ResultTokens,
+      complete: np.ndarray,
+      debug: bool = False,
+  ) -> Tuple[List[str], np.ndarray]:
+    """Processes a result tokens into a list of strings, handling multiple
+    samples.
+
+    Args:
+      slot: The slot at which to draw tokens from.
+      slot_max_length: Max length for a sample in the slot.
+      result_tokens: The tokens to access by slot.
+      complete: Array representing the completion status of each sample in the
+        slot.
+      debug: Whether to log step by step detokenisation.
+
+    Returns:
+      sample_return: List of strings, one per sample.
+      complete: Updated complete.
+    """
+    results, complete = token_utils.process_result_tokens(
+        slot=slot,
+        slot_max_length=slot_max_length,
+        result_tokens=result_tokens,
+        vocab=self.vocab,
+        complete=complete,
+        debug=debug,
+    )
+    return results, complete
+
+  @property
+  def pad_id(self) -> int:
+    return self.vocab.pad_id
+
+  @property
+  def eos_id(self) -> int:
+    return self.vocab.eos_id
 
 class Engine(abc.ABC):
   """The computational core of the generative model server.
@@ -198,6 +270,10 @@ class Engine(abc.ABC):
       self,
   ) -> tokenizer_pb2.TokenizerParameters:
     """Returns the info to construct a sentencepiece tokenizer in py/c++."""
+
+  def build_tokenizer(self, metadata: tokenizer_pb2.TokenizerParameters) -> Tokenizer:
+    """Returns the Tokenizer object."""
+    return Tokenizer(metadata)
 
   @abc.abstractmethod
   def init_decode_state(self, *args, **kwargs) -> DecodeState:
