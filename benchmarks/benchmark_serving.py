@@ -60,7 +60,7 @@ python3 benchmark_serving.py \
 
 import argparse
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 import json
 import random
@@ -112,7 +112,7 @@ class InputRequest:
 @dataclass
 class RequestFuncOutput:
   input_request: Optional[InputRequest] = None
-  generated_token_list: list[str] = []
+  generated_token_list: list[str] = field(default_factory=list)
   generated_text: str = ""
   success: bool = False
   latency: float = 0
