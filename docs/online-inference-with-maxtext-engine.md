@@ -126,7 +126,7 @@ export ICI_AUTOREGRESSIVE_PARALLELISM=-1
 export ICI_TENSOR_PARALLELISM=1
 export SCAN_LAYERS=false
 export WEIGHT_DTYPE=bfloat16
-export PER_DEVICE_BATCH_SIZE=6
+export PER_DEVICE_BATCH_SIZE=4
 ```
 
 #### Create Llama2-13b environment variables for server flags
@@ -191,7 +191,10 @@ Note: these flags are from [MaxText config](https://github.com/google/maxtext/bl
 
 ```bash
 cd ~
-python JetStream/jetstream/tools/requester.py
+# For Gemma model
+python JetStream/jetstream/tools/requester.py --tokenizer maxtext/assets/tokenizer.gemma
+# For Llama2 model
+python JetStream/jetstream/tools/requester.py --tokenizer maxtext/assets/tokenizer.llama2
 ```
 
 The output will be similar to the following:
@@ -250,7 +253,7 @@ wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/r
 # run benchmark with the downloaded dataset and the tokenizer in maxtext
 # You can control the qps by setting `--request-rate`, the default value is inf.
 python JetStream/benchmarks/benchmark_serving.py \
---tokenizer /home/$USER/maxtext/assets/tokenizer.gemma \ 
+--tokenizer maxtext/assets/tokenizer.gemma \ 
 --num-prompts 1000 \
 --dataset sharegpt \
 --dataset-path ~/ShareGPT_V3_unfiltered_cleaned_split.json \
