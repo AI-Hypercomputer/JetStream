@@ -338,6 +338,10 @@ def calculate_metrics(
       )
       total_output += output_len
       total_input += input_requests[i].prompt_len
+      if output_len == 0:
+        print(f"""-------- output_len is zero for {i}th request:,
+             output: {outputs[i]}""")
+        continue
       per_token_latencies.append(outputs[i].latency / output_len)
       ttfts.append(outputs[i].ttft)
       completed += 1
