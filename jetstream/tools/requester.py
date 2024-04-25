@@ -36,7 +36,7 @@ _MAX_TOKENS = flags.DEFINE_integer(
 )
 _TOKENIZER = flags.DEFINE_string(
     "tokenizer",
-    "",
+    None,
     "Name or path of the tokenizer (matched to the model)",
     required=True,
 )
