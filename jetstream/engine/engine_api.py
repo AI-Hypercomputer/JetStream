@@ -149,8 +149,8 @@ class Tokenizer(abc.ABC):
       result_tokens: ResultTokens,
       complete: np.ndarray,
       **kwargs,
-  ) -> Tuple[List[str], np.ndarray]:
-    """Processes a result tokens into a list of strings, handling multiple
+  ) -> Tuple[List[List[int]], np.ndarray]:
+    """Processes a result tokens into a list of token ids, handling multiple
     samples.
 
     Args:
@@ -165,6 +165,7 @@ class Tokenizer(abc.ABC):
       sample_return: List of strings, one per sample.
       complete: Updated complete.
     """
+    #TODO(bbahl): Add an option to return str from decode.
 
   @property
   @abc.abstractmethod
