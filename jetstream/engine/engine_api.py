@@ -165,7 +165,7 @@ class Tokenizer(abc.ABC):
       sample_return: List of strings, one per sample.
       complete: Updated complete.
     """
-    #TODO(bbahl): Add an option to return str from decode.
+    # TODO(bbahl): Add an option to return str from decode.
 
   @property
   @abc.abstractmethod
