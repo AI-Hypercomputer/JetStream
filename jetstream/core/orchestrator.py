@@ -93,7 +93,6 @@ from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.engine import engine_api
-from jetstream.engine import token_utils
 import numpy as np
 
 
@@ -397,7 +396,7 @@ class Driver:
     prefill_engine = self._prefill_engines[idx]
     prefill_params = self._prefill_params[idx]
     metadata = prefill_engine.get_tokenizer()
-    vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
+    tokenizer = prefill_engine.build_tokenizer(metadata)
     logging.info("---------Prefill params %d loaded.---------", idx)
 
     while self.live:
@@ -429,9 +428,8 @@ class Driver:
           is_bos,
           request.history_path,
       )
-      padded_tokens, true_length = token_utils.tokenize_and_pad(
+      padded_tokens, true_length = tokenizer.encode(
           request.prefill_text,
-          vocab,
           is_bos=is_bos,
           max_prefill_length=prefill_engine.max_prefill_length,
           jax_padding=self._jax_padding,
@@ -568,8 +566,7 @@ class Driver:
     my_slots = self._generate_slots[idx]
 
     metadata = my_generate_engine.get_tokenizer()
-    vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
-
+    tokenizer = my_generate_engine.build_tokenizer(metadata)
     my_live_requests = {
         i: None for i in range(my_generate_engine.max_concurrent_decodes)
     }
@@ -587,11 +584,10 @@ class Driver:
 
         for slot, request in my_live_requests.items():
           if request is not None:
-            results, complete = token_utils.process_result_tokens(
+            results, complete = tokenizer.decode(
                 slot=slot,
                 slot_max_length=request.max_tokens,
                 result_tokens=result_tokens,
-                vocab=vocab,
                 complete=request.complete,
             )
             request.complete = complete

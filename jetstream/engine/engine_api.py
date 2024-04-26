@@ -26,6 +26,7 @@ import jax
 import numpy as np
 
 from jetstream.engine import tokenizer_pb2
+from jetstream.engine import token_utils
 
 
 # The model parameters - their partitioning will be unique for different prefill
@@ -39,6 +40,8 @@ DecodeState = Any
 DeviceTokens = Any
 # Cpus asscociated with the mesh.
 CpuDevices = Any
+# Tokenkizer used by the engine
+Tokenizer = Any
 
 
 @struct.dataclass
@@ -200,7 +203,14 @@ class Engine(abc.ABC):
   def get_tokenizer(
       self,
   ) -> tokenizer_pb2.TokenizerParameters:
-    """Returns the info to construct a sentencepiece tokenizer in py/c++."""
+    """Returns the info to construct a tokenizer in py/c++."""
+
+  def build_tokenizer(
+      self,
+      metadata: tokenizer_pb2.TokenizerParameters,
+  ) -> Tokenizer:
+    """Builds a new tokenizer object and returns it."""
+    return token_utils.SentencePieceTokenizer(metadata)
 
   @abc.abstractmethod
   def init_decode_state(self, *args, **kwargs) -> DecodeState:
