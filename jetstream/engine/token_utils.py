@@ -26,6 +26,7 @@ from seqio.vocabularies import Vocabulary
 
 from jetstream.engine import engine_api
 from jetstream.engine import mock_utils
+from jetstream.engine import tokenizer_api
 from jetstream.engine import tokenizer_pb2
 
 
@@ -199,13 +200,15 @@ def load_vocab(path: str, extra_ids: int = 0) -> Vocabulary:
     return vocab
 
 
-class SentencePieceTokenizer(engine_api.Tokenizer):
+class SentencePieceTokenizer(tokenizer_api.Tokenizer):
   """Tokenizer to convert strings to token ids and vice-versa."""
 
   def __init__(self, metadata: tokenizer_pb2.TokenizerParameters):
     self.vocab = load_vocab(metadata.path, metadata.extra_ids)
 
-  def encode(self, s: str, **kwargs):
+  def encode(
+      self, s: str, **kwargs
+  ) -> Tuple[Union[jax.Array, np.ndarray], int]:
     """Tokenize a string.
 
     Args:

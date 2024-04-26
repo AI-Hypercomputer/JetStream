@@ -19,7 +19,7 @@ could want to call, enabling interleaved (continuous batching) inference.
 """
 
 import abc
-from typing import Any, Optional, Tuple, Union, List
+from typing import Any, Optional, Tuple, Union
 
 from flax import struct
 import jax
@@ -39,6 +39,8 @@ DecodeState = Any
 DeviceTokens = Any
 # Cpus asscociated with the mesh.
 CpuDevices = Any
+# Tokenkizer used by the engine
+Tokenizer = Any
 
 
 @struct.dataclass
@@ -122,60 +124,6 @@ class ResultTokens(abc.ABC):
             start_idx:end_idx, self.length_idx[0] : self.length_idx[1]
         ][:, 0],
     )
-
-
-class Tokenizer(abc.ABC):
-  """Tokenizer to convert strings to token ids and vice-versa."""
-
-  @abc.abstractmethod
-  def encode(self, s: str, **kwargs):
-    """Tokenize a string.
-
-    Args:
-        s: String to tokenize.
-        **kwargs: Additional keyword arguments
-
-    Returns:
-        tokens: Tokenized into integers.
-        true_length: Actual length of the non-padded sequence
-          if padding is used.
-    """
-
-  @abc.abstractmethod
-  def decode(
-      self,
-      slot: int,
-      slot_max_length: int,
-      result_tokens: ResultTokens,
-      complete: np.ndarray,
-      **kwargs,
-  ) -> Tuple[List[List[int]], np.ndarray]:
-    """Processes a result tokens into a list of token ids, handling multiple
-    samples.
-
-    Args:
-      slot: The slot at which to draw tokens from.
-      slot_max_length: Max length for a sample in the slot.
-      result_tokens: The tokens to access by slot.
-      complete: Array representing the completion status of each sample in the
-        slot.
-      **kwards: Additional keyword arguments.
-
-    Returns:
-      sample_return: List of strings, one per sample.
-      complete: Updated complete.
-    """
-    # TODO(bbahl): Add an option to return str from decode.
-
-  @property
-  @abc.abstractmethod
-  def pad_id(self) -> int:
-    """ID of the pad token."""
-
-  @property
-  @abc.abstractmethod
-  def eos_id(self) -> int:
-    """ID of EOS token."""
 
 
 class Engine(abc.ABC):
