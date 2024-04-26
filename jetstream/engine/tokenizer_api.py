@@ -15,12 +15,13 @@
 """Defines the JetStream Tokenizer API."""
 
 import abc
-from typing import Tuple, Union
+from typing import Any, Tuple, Union
 
 import numpy as np
 import jax
 
-from jetstream.engine import engine_api
+# Class to store token ids.
+ResultTokens = Any
 
 
 class Tokenizer(abc.ABC):
@@ -47,7 +48,7 @@ class Tokenizer(abc.ABC):
       self,
       slot: int,
       slot_max_length: int,
-      result_tokens: engine_api.ResultTokens,
+      result_tokens: ResultTokens,
       complete: np.ndarray,
       **kwargs,
   ) -> Tuple[list[list[int]], np.ndarray]:

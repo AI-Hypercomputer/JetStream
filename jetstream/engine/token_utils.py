@@ -16,7 +16,7 @@
 
 from bisect import bisect_left
 import logging
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import jax
 import jax.numpy as jnp
@@ -24,10 +24,12 @@ import numpy as np
 from seqio.vocabularies import SentencePieceVocabulary
 from seqio.vocabularies import Vocabulary
 
-from jetstream.engine import engine_api
 from jetstream.engine import mock_utils
 from jetstream.engine import tokenizer_api
 from jetstream.engine import tokenizer_pb2
+
+# ResultToken class to store tokens ids.
+ResultTokens = Any
 
 
 def take_nearest_length(lengths: list[int], length: int) -> int:
@@ -114,7 +116,7 @@ def tokenize_and_pad(
 def process_result_tokens(
     slot: int,
     slot_max_length: int,
-    result_tokens: engine_api.ResultTokens,
+    result_tokens: ResultTokens,
     vocab: Vocabulary,
     complete: np.ndarray,
     debug: bool = False,
@@ -237,7 +239,7 @@ class SentencePieceTokenizer(tokenizer_api.Tokenizer):
       self,
       slot: int,
       slot_max_length: int,
-      result_tokens: engine_api.ResultTokens,
+      result_tokens: ResultTokens,
       complete: np.ndarray,
       **kwargs,
   ) -> Tuple[List[List[int]], np.ndarray]:
