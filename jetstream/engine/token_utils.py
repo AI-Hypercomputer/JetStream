@@ -16,7 +16,7 @@
 
 from bisect import bisect_left
 import logging
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import jax
 import jax.numpy as jnp
@@ -24,8 +24,12 @@ import numpy as np
 from seqio.vocabularies import SentencePieceVocabulary
 from seqio.vocabularies import Vocabulary
 
-from jetstream.engine import engine_api
 from jetstream.engine import mock_utils
+from jetstream.engine import tokenizer_api
+from jetstream.engine import tokenizer_pb2
+
+# ResultToken class to store tokens ids.
+ResultTokens = Any
 
 
 def take_nearest_length(lengths: list[int], length: int) -> int:
@@ -112,7 +116,7 @@ def tokenize_and_pad(
 def process_result_tokens(
     slot: int,
     slot_max_length: int,
-    result_tokens: engine_api.ResultTokens,
+    result_tokens: ResultTokens,
     vocab: Vocabulary,
     complete: np.ndarray,
     debug: bool = False,
@@ -196,3 +200,81 @@ def load_vocab(path: str, extra_ids: int = 0) -> Vocabulary:
     sp_model = vocab.sp_model
     del sp_model
     return vocab
+
+
+class SentencePieceTokenizer(tokenizer_api.Tokenizer):
+  """Tokenizer to convert strings to token ids and vice-versa."""
+
+  def __init__(self, metadata: tokenizer_pb2.TokenizerParameters):
+    self.vocab = load_vocab(metadata.path, metadata.extra_ids)
+
+  def encode(
+      self, s: str, **kwargs
+  ) -> Tuple[Union[jax.Array, np.ndarray], int]:
+    """Tokenize a string.
+
+    Args:
+        s: String to tokenize.
+        **kwargs: Additional keyword arguments
+
+    Returns:
+        tokens: Tokenized into integers.
+        true_length: Actual length of the non-padded sequence
+          if padding is used.
+    """
+    is_bos = kwargs.pop("is_bos", True)
+    prefill_lengths = kwargs.pop("prefill_lengths", None)
+    max_prefill_length = kwargs.pop("max_prefill_length", None)
+
+    tokens, true_length = tokenize_and_pad(
+        s,
+        self.vocab,
+        is_bos=is_bos,
+        prefill_lengths=prefill_lengths,
+        max_prefill_length=max_prefill_length,
+    )
+    return tokens, true_length
+
+  def decode(
+      self,
+      slot: int,
+      slot_max_length: int,
+      result_tokens: ResultTokens,
+      complete: np.ndarray,
+      **kwargs,
+  ) -> Tuple[List[List[int]], np.ndarray]:
+    """Processes a result tokens into a list of strings, handling multiple
+    samples.
+
+    Args:
+      slot: The slot at which to draw tokens from.
+      slot_max_length: Max length for a sample in the slot.
+      result_tokens: The tokens to access by slot.
+      complete: Array representing the completion status of each sample in the
+        slot.
+      kwargs: Additional keyword arguments.
+
+    Returns:
+      sample_return: List of strings, one per sample.
+      complete: Updated complete.
+    """
+    debug = kwargs.pop("debug", False)
+    results, complete = process_result_tokens(
+        slot=slot,
+        slot_max_length=slot_max_length,
+        result_tokens=result_tokens,
+        vocab=self.vocab,
+        complete=complete,
+        debug=debug,
+    )
+    return results, complete
+
+  @property
+  def pad_id(self) -> int:
+    """ID of the pad token."""
+    return self.vocab.pad_id
+
+  @property
+  def eos_id(self) -> int:
+    """ID of EOS token."""
+    return self.vocab.eos_id
