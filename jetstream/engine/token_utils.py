@@ -16,7 +16,7 @@
 
 from bisect import bisect_left
 import logging
-from typing import Any, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import jax
 import jax.numpy as jnp
