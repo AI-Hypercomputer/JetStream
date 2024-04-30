@@ -16,7 +16,6 @@
 
 import dataclasses
 import functools
-import math
 from typing import Any, Callable, List, Tuple, Type
 
 from jetstream.engine import engine_api
@@ -85,11 +84,12 @@ class InterleavedCPUTestServer(ServerConfig):
 
 
 def slice_to_num_chips(s: str) -> int:
-  """Converts a TPU spec like v5e=4x2 to the number of chips, 8."""
-  # Account for the case where it is written 'v5e:4x2'.
-  delim = "=" if "=" in s else ":"
-  i = math.prod([int(c) for c in s.split(delim)[1].split("x")])
-  return i
+  """Converts a TPU spec like v5e-8 or v5e=8 to the number of chips, 8."""
+  # Account for the case where it is written 'tpu=8' for compatibility.
+  delim = "-" if "-" in s else "="
+  # TODO: Support more accelerator type check.
+  accelerator_type, num_devices = s.split(delim)
+  return int(num_devices) if accelerator_type != "v4" else int(num_devices) // 2
 
 
 def _split_devices_by_slices(
