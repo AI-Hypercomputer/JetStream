@@ -204,11 +204,14 @@ pyyaml==6.0.1
     #   flax
     #   ml-collections
     #   orbax-checkpoint
+regex==2024.4.28
+    # via tiktoken
 requests==2.31.0
     # via
     #   requests-oauthlib
     #   tensorboard
     #   tfds-nightly
+    #   tiktoken
 requests-oauthlib==1.3.1
     # via google-auth-oauthlib
 rich==13.7.0
@@ -258,6 +261,8 @@ tf-keras==2.15.0
     # via tensorflow-hub
 tfds-nightly==4.9.2.dev202308090034
     # via seqio
+tiktoken==0.6.0
+    # via -r requirements.in
 toml==0.10.2
     # via tfds-nightly
 tomli==2.0.1

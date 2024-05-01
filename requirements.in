@@ -8,3 +8,4 @@ numpy
 portpicker
 pytest
 seqio
+tiktoken
