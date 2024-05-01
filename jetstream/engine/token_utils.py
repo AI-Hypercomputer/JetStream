@@ -27,7 +27,7 @@ from seqio.vocabularies import Vocabulary
 from jetstream.engine import mock_utils
 from jetstream.engine import tokenizer_api
 from jetstream.engine import tokenizer_pb2
-from jetstream.core.utils import llama3_tokenizer
+from jetstream.third_party.llama3 import llama3_tokenizer
 
 # ResultToken class to store tokens ids.
 ResultTokens = Any
