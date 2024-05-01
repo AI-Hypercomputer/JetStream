@@ -32,11 +32,9 @@ class Tokenizer(abc.ABC):
       self, s: str, **kwargs
   ) -> Tuple[Union[jax.Array, np.ndarray], int]:
     """Tokenize a string.
-
     Args:
         s: String to tokenize.
         **kwargs: Additional keyword arguments
-
     Returns:
         tokens: Tokenized into integers.
         true_length: Actual length of the non-padded sequence
@@ -54,7 +52,6 @@ class Tokenizer(abc.ABC):
   ) -> Tuple[list[list[int]], np.ndarray]:
     """Processes a result tokens into a list of token ids, handling multiple
     samples.
-
     Args:
       slot: The slot at which to draw tokens from.
       slot_max_length: Max length for a sample in the slot.
@@ -62,12 +59,19 @@ class Tokenizer(abc.ABC):
       complete: Array representing the completion status of each sample in the
         slot.
       **kwards: Additional keyword arguments.
-
     Returns:
-      sample_return: List of strings, one per sample.
+      sample_return: List of token_ids, one per sample.
       complete: Updated complete.
     """
-    # TODO(bbahl): Add an option to return str from decode.
+
+  @abc.abstractmethod
+  def decode_str(self, token_ids: list[int]) -> str:
+    """Processess input token ids to generate a string.
+    Args:
+      token_ids: List of token ids.
+    Returns:
+      str: String generated from the token ids.
+    """
 
   @property
   @abc.abstractmethod
@@ -78,3 +82,8 @@ class Tokenizer(abc.ABC):
   @abc.abstractmethod
   def eos_id(self) -> int:
     """ID of EOS token."""
+  
+  @property
+  @abc.abstractmethod
+  def bos_id(self) -> int:
+    """ID of BOS token."""
