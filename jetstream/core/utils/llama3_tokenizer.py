@@ -84,7 +84,7 @@ class Tokenizer:
         mergeable_ranks=mergeable_ranks,
         special_tokens=self.special_tokens,
     )
-    logger.info(f"Reloaded tiktoken model from {model_path}")
+    logger.info("Reloaded tiktoken model from %s", model_path)
 
     self.n_words: int = self.model.n_vocab
     # BOS / EOS token IDs
@@ -95,9 +95,12 @@ class Tokenizer:
         self.special_tokens["<|end_of_text|>"],
         self.special_tokens["<|eot_id|>"],
     }
-    # pylint: disable=line-too-long
+
     logger.info(
-        f"#words: {self.n_words} - BOS ID: {self.bos_id} - EOS ID: {self.eos_id}"
+        "#words: %d - BOS ID: %d - EOS ID: %d",
+        self.n_words,
+        self.bos_id,
+        self.eos_id,
     )
 
   def encode(
@@ -106,7 +109,7 @@ class Tokenizer:
       *,
       bos: bool,
       eos: bool,
-      allowed_special: Union[Literal["all"], AbstractSet[str]] = set(),
+      allowed_special: Union[Literal["all"], AbstractSet[str]] = None,
       disallowed_special: Union[Literal["all"], Collection[str]] = (),
   ) -> List[int]:
     """
@@ -127,25 +130,27 @@ class Tokenizer:
     - Setting `allowed_special` to "all" will treat all text corresponding
       to special tokens to be encoded as special tokens.
     """
-    assert type(s) is str
+    assert isinstance(s, str)
 
     # The tiktoken tokenizer can handle <=400k chars without
     # pyo3_runtime.PanicException.
-    TIKTOKEN_MAX_ENCODE_CHARS = 400_000
+    tiktoken_max_encode_chars = 400_000
 
     # https://github.com/openai/tiktoken/issues/195
     # Here we iterate over subsequences and split if we exceed the limit
     # of max consecutive non-whitespace or whitespace characters.
-    MAX_NO_WHITESPACES_CHARS = 25_000
+    max_no_whitespaces_chars = 25_000
 
     substrs = (
         substr
-        for i in range(0, len(s), TIKTOKEN_MAX_ENCODE_CHARS)
+        for i in range(0, len(s), tiktoken_max_encode_chars)
         for substr in self._split_whitespaces_or_nonwhitespaces(
-            s[i : i + TIKTOKEN_MAX_ENCODE_CHARS], MAX_NO_WHITESPACES_CHARS
+            s[i : i + tiktoken_max_encode_chars], max_no_whitespaces_chars
         )
     )
     t: List[int] = []
+    if allowed_special is None:
+      allowed_special = set()
     for substr in substrs:
       t.extend(
           self.model.encode(
@@ -199,6 +204,7 @@ class Tokenizer:
 
 
 class ChatFormat:
+  """Helper class to encode/decode messages in chat format."""
 
   def __init__(self, tokenizer: Tokenizer):
     self.tokenizer = tokenizer
