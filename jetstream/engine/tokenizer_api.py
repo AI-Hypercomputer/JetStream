@@ -64,10 +64,20 @@ class Tokenizer(abc.ABC):
       **kwards: Additional keyword arguments.
 
     Returns:
-      sample_return: List of strings, one per sample.
+      sample_return: List of token_ids, one per sample.
       complete: Updated complete.
     """
-    # TODO(bbahl): Add an option to return str from decode.
+
+  @abc.abstractmethod
+  def decode_str(self, token_ids: list[int]) -> str:
+    """Processess input token ids to generate a string.
+
+    Args:
+      token_ids: List of token ids.
+
+    Returns:
+      str: String generated from the token ids.
+    """
 
   @property
   @abc.abstractmethod
