@@ -50,7 +50,7 @@ jobs:
         pip install -r benchmarks/requirements.in
     - name: Typecheck the code with pytype
       run: |
-        pytype --jobs auto --disable import-error --disable module-attr jetstream/ benchmarks/
+        pytype --jobs auto --disable=import-error,module-attr jetstream/ benchmarks/
     - name: Analysing the code with pylint
       run: |
         pylint jetstream/ benchmarks/
