@@ -23,6 +23,8 @@ array-record==0.5.0
     # via tfds-nightly
 astunparse==1.6.3
     # via tensorflow
+blobfile==2.1.1
+    # via -r requirements.in
 cachetools==5.3.2
     # via google-auth
 certifi==2024.2.2
@@ -55,6 +57,8 @@ etils[array-types,enp,epath,epy,etqdm,etree]==1.6.0
     #   tfds-nightly
 exceptiongroup==1.2.0
     # via pytest
+filelock==3.14.0
+    # via blobfile
 flatbuffers==23.5.26
     # via tensorflow
 flax==0.8.0
@@ -109,6 +113,8 @@ keras==2.13.1
     # via tensorflow
 libclang==16.0.6
     # via tensorflow
+lxml==4.9.4
+    # via blobfile
 markdown==3.5.2
     # via tensorboard
 markdown-it-py==3.0.0
@@ -193,6 +199,8 @@ pyasn1==0.5.1
     #   rsa
 pyasn1-modules==0.3.0
     # via google-auth
+pycryptodomex==3.20.0
+    # via blobfile
 pyglove==0.4.4
     # via seqio
 pygments==2.17.2
@@ -282,7 +290,9 @@ typing-extensions==4.5.0
     #   orbax-checkpoint
     #   tensorflow
 urllib3==2.2.0
-    # via requests
+    # via
+    #   blobfile
+    #   requests
 werkzeug==3.0.1
     # via tensorboard
 wheel==0.42.0

@@ -45,6 +45,7 @@ def pad_tokens(
     tokens: np.ndarray,
     bos_id: int,
     pad_id: int,
+    is_bos: bool = True,
     prefill_lengths: Optional[List[int]] = None,
     max_prefill_length: Optional[int] = None,
     jax_padding: bool = True,

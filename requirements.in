@@ -9,3 +9,4 @@ portpicker
 pytest
 seqio
 tiktoken
+blobfile
