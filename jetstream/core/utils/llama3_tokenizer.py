@@ -109,7 +109,7 @@ class Tokenizer:
       *,
       bos: bool,
       eos: bool,
-      allowed_special: Union[Literal["all"], AbstractSet[str]] = None,
+      allowed_special: Union[Literal["all"], AbstractSet[str]] | None = None,
       disallowed_special: Union[Literal["all"], Collection[str]] = (),
   ) -> List[int]:
     """
