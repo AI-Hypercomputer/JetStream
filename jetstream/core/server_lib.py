@@ -112,11 +112,15 @@ def run(
   generate_params = [ge.load_params() for ge in engines.generate_engines]
   shared_params = [ie.load_params() for ie in engines.interleaved_engines]
   logging.info("Loaded all weights.")
+  interleaved_mode = (
+      len(config.prefill_slices) + len(config.generate_slices) == 0
+  )
   driver = orchestrator.Driver(
       prefill_engines=engines.prefill_engines + engines.interleaved_engines,
       generate_engines=engines.generate_engines + engines.interleaved_engines,
       prefill_params=prefill_params + shared_params,
       generate_params=generate_params + shared_params,
+      interleaved_mode=interleaved_mode,
       jax_padding=jax_padding,
   )
   # We default threads to the total number of concurrent allowed decodes,
@@ -130,8 +134,8 @@ def run(
 
 
 def get_devices() -> Any:
-  """Gets devices locally."""
-  # Run interleaved engine on local device.
+  """Gets devices."""
+  # TODO: Add more logs for the devices.
   devices = jax.devices()
-  logging.info("Using local devices for interleaved serving: %d", len(devices))
+  logging.info("Using devices: %d", len(devices))
   return devices
