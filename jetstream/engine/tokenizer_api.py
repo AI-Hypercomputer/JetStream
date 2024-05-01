@@ -82,7 +82,7 @@ class Tokenizer(abc.ABC):
   @abc.abstractmethod
   def eos_id(self) -> int:
     """ID of EOS token."""
-  
+
   @property
   @abc.abstractmethod
   def bos_id(self) -> int:
