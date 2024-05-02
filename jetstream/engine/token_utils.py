@@ -41,6 +41,47 @@ def take_nearest_length(lengths: list[int], length: int) -> int:
   return lengths[pos]
 
 
+def tokenize_and_pad(
+    s: str,
+    vocab: Vocabulary,
+    is_bos: bool = True,
+    prefill_lengths: Optional[List[int]] = None,
+    max_prefill_length: Optional[int] = None,
+    jax_padding: bool = True,
+) -> Tuple[Union[jax.Array, np.ndarray], int]:
+  """Tokenize and pads a string.
+
+  Args:
+    s: String to tokenize.
+    vocab: Vocabulary to tokenize with.
+    is_bos: Whether or not this is the beginning of a sequence. Default to yes
+      as prefill is typically used when beginning sequences.
+    prefill_lengths: Buckets to pad the sequence to for static compilation.
+    max_prefill_length: Maximum bucket to use.
+    jax_padding: convert to JAX padded tokens if True.
+
+  Returns:
+    tokens: Tokenized into integers.
+    true_length: Actual length of the non-padded sequence.
+  """
+
+  tokens = np.array(vocab.encode_tf(s))  # [Length]
+  bos_id = vocab.bos_id
+  pad_id = vocab.pad_id
+  assert pad_id == 0, "Further logic required if pad_id not 0."
+
+  padded_tokens, true_length = pad_tokens(
+      tokens=tokens,
+      bos_id=bos_id,
+      pad_id=pad_id,
+      is_bos=is_bos,
+      prefill_lengths=prefill_lengths,
+      max_prefill_length=max_prefill_length,
+      jax_padding=jax_padding,
+  )
+  return padded_tokens, true_length
+
+
 def pad_tokens(
     tokens: np.ndarray,
     bos_id: int,
