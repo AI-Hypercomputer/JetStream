@@ -277,7 +277,7 @@ tomli==2.0.1
     # via pytest
 toolz==0.12.1
     # via chex
-tqdm==4.66.1
+tqdm==4.66.3
     # via
     #   etils
     #   tfds-nightly
