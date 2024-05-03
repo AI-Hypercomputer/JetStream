@@ -52,8 +52,8 @@ class EngineTest(absltest.TestCase):
     # A 2 will be pre-pended as 'bos' token from the vocab.
     text = "AB"
     metadata = engine.get_tokenizer()
-    vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
-    tokens, true_length = token_utils.tokenize_and_pad(text, vocab, is_bos=True)
+    tokenizer = engine.build_tokenizer(metadata)
+    tokens, true_length = tokenizer.encode(text, is_bos=True)
     prefill_result = engine.prefill(
         params=params, padded_tokens=tokens, true_length=3
     )
@@ -65,10 +65,8 @@ class EngineTest(absltest.TestCase):
     # A 2 will be pre-pended as 'bos' token from the vocab.
     text = "AB"
     metadata = engine.get_tokenizer()
-    vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
-    tokens, true_length = token_utils.tokenize_and_pad(
-        text, vocab, is_bos=True, jax_padding=False
-    )
+    tokenizer = engine.build_tokenizer(metadata)
+    tokens, true_length = tokenizer.encode(text, is_bos=True, jax_padding=False)
     prefill_result = engine.prefill(
         params=params, padded_tokens=tokens, true_length=3
     )

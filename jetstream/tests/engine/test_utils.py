@@ -55,11 +55,13 @@ class UtilsTest(absltest.TestCase):
         length_idx=(2 * speculations, 2 * speculations + 1),
         samples_per_slot=2,
     )
+    vocab = mock_utils.TestVocab()
     per_channel, complete = token_utils.process_result_tokens(
         slot=0,
         slot_max_length=4,
         result_tokens=result_tokens,
-        vocab=mock_utils.TestVocab(),
+        eos_id=vocab.eos_id,
+        pad_id=vocab.pad_id,
         complete=mock_complete,
     )
     np.testing.assert_equal(complete, np.array([1, 0]))
@@ -74,7 +76,8 @@ class UtilsTest(absltest.TestCase):
         slot=1,
         slot_max_length=4,
         result_tokens=result_tokens,
-        vocab=mock_utils.TestVocab(),
+        eos_id=vocab.eos_id,
+        pad_id=vocab.pad_id,
         complete=mock_complete,
     )
     text_output = [mock_utils.TestVocab().decode(row) for row in per_channel]
