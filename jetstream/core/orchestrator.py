@@ -246,7 +246,7 @@ class Driver:
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
-    self._prefill_backlog_size_metric = prometheus_client.Gauge("jetstream_prefil_backlog_size", "Size of prefill queue")
+    self._prefill_backlog_size_metric = prometheus_client.Gauge("jetstream_prefill_backlog_size", "Size of prefill queue")
 
     # Stage 2
     # After prefilling, it is placed here in order to get transferred to
