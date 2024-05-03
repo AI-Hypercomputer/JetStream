@@ -29,9 +29,10 @@ from jetstream.core import config_lib
 from jetstream.core import orchestrator
 from jetstream.core.proto import jetstream_pb2_grpc
 
+from prometheus_client import start_http_server
 
 _HOST = "[::]"
-
+PROMETHEUS_PORT = 9090
 
 class JetStreamServer:
   """JetStream grpc server."""
@@ -126,6 +127,12 @@ def run(
   logging.info("Starting server on port %d with %d threads", port, threads)
 
   jetstream_server.start()
+
+  logging.info("Starting Prometheus server on port %d", port)
+
+  # Setup Prometheus server
+  start_http_server(PROMETHEUS_PORT)
+  
   return jetstream_server
 
 

@@ -93,8 +93,9 @@ from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.engine import engine_api
-import numpy as np
 
+import numpy as np
+import prometheus_client
 
 root = logging.getLogger()
 root.setLevel(logging.DEBUG)
@@ -203,6 +204,9 @@ class Driver:
   # todo: remove jax_padding after all then engine migrate to np padding
   _jax_padding = True
 
+  # Record metrics for prefill_backlog size
+  _prefill_backlog_size_metric: prometheus_client.Gauge
+
   def __init__(
       self,
       prefill_engines: Optional[list[engine_api.Engine]] = None,
@@ -233,6 +237,8 @@ class Driver:
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
+    self._prefill_backlog_size_metric = prometheus_client.Gauge(self._prefill_backlog.qsize())
+
     # _ready_to_prefill event will block the prefill thread until there is
     # available decode slot to insert the prefill result.
     self._ready_to_prefill = threading.Event()
@@ -382,6 +388,7 @@ class Driver:
     """Used to place new requests for prefilling and generation."""
     # Don't block so we can fail and shed load when the queue is full.
     self._prefill_backlog.put(request, block=False)
+    self._prefill_backlog_size_metric.set(self._prefill_backlog.qsize())
 
   def _load_cache_history(self, path: str) -> Union[None, Any]:
     """Loads previous kv cache for a longer conversation."""
@@ -414,6 +421,8 @@ class Driver:
         )
       # The prefill thread can just sleep until it has work to do.
       request = self._prefill_backlog.get(block=True)
+      self._prefill_backlog_size_metric.set(self._prefill_backlog.qsize())
+
       if request is None:
         break
       # TODO: Implement hot/cold cache for history.
