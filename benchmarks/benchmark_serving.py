@@ -169,14 +169,14 @@ def load_sharegpt_dataset(
 def load_openorca_dataset_pkl():
   # read pickle file
   samples = pandas.read_pickle(
-    os.path.join(os.path.dirname(os.path.relpath(__file__)), 
+    os.path.join(os.path.dirname(os.path.relpath(__file__)),
                  "open_orca_gpt4_tokenized_llama.calibration_1000.pkl"))
-  
+
   prompts = []
   outputs = []
-  for index, row in samples.iterrows():
-    prompts.append(row['input'])
-    outputs.append(row['output'])
+  for _, row in samples.iterrows():
+    prompts.append(row["input"])
+    outputs.append(row["output"])
 
   return [(prompt, output) for prompt, output in zip(prompts, outputs)]
 
