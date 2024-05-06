@@ -7,7 +7,7 @@ cd ~/JetStream/benchmarks
 pip install -r requirements.in
 ```
 
-## Benchmark
+## Benchmark with shareGPT
 
 ### Prepare DataSet
 
@@ -44,6 +44,21 @@ python benchmark_serving.py \
 
 ```
 
+## Benchmark with openorca dataset (openorca is used by MLPerf inference for LLaMA2 models)
+```
+python JetStream/benchmarks/benchmark_serving.py   \
+--tokenizer ~/maxtext/assets/tokenizer.llama2  \
+--warmup-first true   \
+--save-result   \
+--save-request-outputs   \
+--request-outputs-file-path outputs.json   \
+--num-prompts 1000   \
+--max-output-length 1024   \
+--dataset openorca
+
+```
+
+
 ### Automatically run evaluation after Benchmark
 
 To automatically evaluate the outputs against the ROUGE evaluation metric, add the `--run-eval true` flag.
@@ -69,3 +84,9 @@ If you used `--save-request-outputs`, you can separately evaluate against the ge
 python eval_accuracy.py
 
 ```
+
+With openorca dataset and llama2-chat models (used by MLPerf), here are the reference accuracy numbers:
+```
+llama2-7b-chat {'rouge1': 42.0706, 'rouge2': 19.8021, 'rougeL': 26.8474, 'rougeLsum': 39.5952, 'gen_len': 1146679, 'gen_num': 998}
+llama2-70b-chat {'rouge1': 44.4312, 'rouge2': 22.0352, 'rougeL': 28.6162}
+``` 
