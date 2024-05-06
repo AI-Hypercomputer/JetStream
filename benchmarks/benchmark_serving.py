@@ -65,7 +65,7 @@ from datetime import datetime
 import json
 import random
 import time
-from typing import Any, AsyncGenerator, List, Optional
+from typing import Any, AsyncGenerator, Optional
 import os
 
 
@@ -74,8 +74,6 @@ from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine.token_utils import load_vocab
 import numpy as np
-import tensorflow as tf
-import tensorflow_text as tftxt
 from tqdm.asyncio import tqdm
 import pandas
 
