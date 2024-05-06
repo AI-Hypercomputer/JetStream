@@ -44,21 +44,6 @@ python benchmark_serving.py \
 
 ```
 
-## Benchmark with openorca dataset (openorca is used by MLPerf inference for LLaMA2 models)
-```
-python JetStream/benchmarks/benchmark_serving.py   \
---tokenizer ~/maxtext/assets/tokenizer.llama2  \
---warmup-first true   \
---save-result   \
---save-request-outputs   \
---request-outputs-file-path outputs.json   \
---num-prompts 1000   \
---max-output-length 1024   \
---dataset openorca
-
-```
-
-
 ### Automatically run evaluation after Benchmark
 
 To automatically evaluate the outputs against the ROUGE evaluation metric, add the `--run-eval true` flag.
@@ -73,6 +58,20 @@ python benchmark_serving.py \
 --max-output-length 1024  \
 --save-request-outputs \
 --run-eval true
+
+```
+
+## Benchmark with openorca dataset (openorca is used by MLPerf inference for LLaMA2 models)
+```
+python JetStream/benchmarks/benchmark_serving.py   \
+--tokenizer ~/maxtext/assets/tokenizer.llama2  \
+--warmup-first true   \
+--save-result   \
+--save-request-outputs   \
+--request-outputs-file-path outputs.json   \
+--num-prompts 1000   \
+--max-output-length 1024   \
+--dataset openorca
 
 ```
 
