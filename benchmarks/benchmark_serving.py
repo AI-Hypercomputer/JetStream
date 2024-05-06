@@ -74,7 +74,7 @@ from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine.token_utils import load_vocab
 import numpy as np
-from tqdm.asyncio import tqdm
+from tqdm.asyncio import tqdm # pytype: disable=pyi-error
 import pandas
 
 from eval_accuracy import eval_accuracy
