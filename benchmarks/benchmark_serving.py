@@ -611,7 +611,11 @@ def main(args: argparse.Namespace):
         args.request_rate if args.request_rate < float("inf") else "inf"
     )
 
-    metrics_json = {**metrics_json, **benchmark_result}
+    metrics_json = {
+      **metrics_json,
+      **benchmark_result,
+      **json.loads(args.additional_metadata_metrics_to_save)
+    }
     if args.run_eval:
       metrics_json = {**metrics_json, **eval_json}
 
@@ -728,6 +732,14 @@ if __name__ == "__main__":
       "--save-result",
       action="store_true",
       help="Specify to save benchmark results to a json file",
+  )
+  parser.add_argument(
+      "--additional-metadata-metrics-to-save",
+      type=str,
+      help=(
+        "Additional metadata about the workload. Should be a dictionary in the"
+        " form of a string."
+      )
   )
   parser.add_argument(
       "--priority",
