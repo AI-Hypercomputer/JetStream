@@ -604,18 +604,17 @@ def main(args: argparse.Namespace):
     dimensions_json["date"] = current_dt
     dimensions_json["model_id"] = model_id
     dimensions_json["tokenizer_id"] = tokenizer_id
+    dimensions_json = {
+        **dimensions_json,
+        **json.loads(args.additional_metadata_metrics_to_save),
+    }
     metrics_json["num_prompts"] = args.num_prompts
 
     # Traffic
     metrics_json["request_rate"] = (
         args.request_rate if args.request_rate < float("inf") else "inf"
     )
-
-    metrics_json = {
-        **metrics_json,
-        **benchmark_result,
-        **json.loads(args.additional_metadata_metrics_to_save),
-    }
+    metrics_json = {**metrics_json, **benchmark_result}
     if args.run_eval:
       metrics_json = {**metrics_json, **eval_json}
 
