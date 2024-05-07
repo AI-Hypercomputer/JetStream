@@ -612,9 +612,9 @@ def main(args: argparse.Namespace):
     )
 
     metrics_json = {
-      **metrics_json,
-      **benchmark_result,
-      **json.loads(args.additional_metadata_metrics_to_save)
+        **metrics_json,
+        **benchmark_result,
+        **json.loads(args.additional_metadata_metrics_to_save),
     }
     if args.run_eval:
       metrics_json = {**metrics_json, **eval_json}
@@ -737,9 +737,9 @@ if __name__ == "__main__":
       "--additional-metadata-metrics-to-save",
       type=str,
       help=(
-        "Additional metadata about the workload. Should be a dictionary in the"
-        " form of a string."
-      )
+          "Additional metadata about the workload. Should be a dictionary in the"
+          " form of a string."
+      ),
   )
   parser.add_argument(
       "--priority",
