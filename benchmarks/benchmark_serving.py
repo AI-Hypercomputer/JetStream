@@ -737,8 +737,8 @@ if __name__ == "__main__":
       "--additional-metadata-metrics-to-save",
       type=str,
       help=(
-          "Additional metadata about the workload. Should be a dictionary in the"
-          " form of a string."
+          "Additional metadata about the workload. Should be a dictionary in"
+          " the form of a string."
       ),
   )
   parser.add_argument(
