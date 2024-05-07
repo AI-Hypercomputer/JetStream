@@ -80,7 +80,7 @@ python JetStream/benchmarks/benchmark_serving.py   \
 If you used `--save-request-outputs`, you can separately evaluate against the generated outputs.
 
 ```
-python eval_accuracy.py
+python eval_accuracy.py outputs.json
 
 ```
 
