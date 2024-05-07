@@ -136,7 +136,7 @@ def run(
 
   # Setup Prometheus server
   start_http_server(PROMETHEUS_PORT)
-  
+
   return jetstream_server
 
 
