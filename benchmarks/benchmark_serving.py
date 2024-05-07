@@ -170,32 +170,11 @@ def load_sharegpt_dataset(
 def load_openorca_dataset_pkl():
   # read pickle file
   samples = pandas.read_pickle(
-<<<<<<< HEAD
-<<<<<<< HEAD
-    os.path.join(os.path.dirname(os.path.relpath(__file__)),
-                 "open_orca_gpt4_tokenized_llama.calibration_1000.pkl"))
-=======
-=======
-<<<<<<< HEAD
-    os.path.join(os.path.dirname(os.path.relpath(__file__)),
-                 "open_orca_gpt4_tokenized_llama.calibration_1000.pkl"))
-=======
-=======
->>>>>>> 195cbd3 (check in openorca calibration dataset.)
->>>>>>> 8cd6edd (check in openorca calibration dataset.)
       os.path.join(
           os.path.dirname(os.path.relpath(__file__)),
           "open_orca_gpt4_tokenized_llama.calibration_1000.pkl",
       )
   )
-<<<<<<< HEAD
->>>>>>> 98d5e6a (check in openorca calibration dataset.)
-=======
-<<<<<<< HEAD
->>>>>>> 98d5e6a (check in openorca calibration dataset.)
-=======
->>>>>>> 195cbd3 (check in openorca calibration dataset.)
->>>>>>> 8cd6edd (check in openorca calibration dataset.)
 
   prompts = []
   outputs = []
