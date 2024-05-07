@@ -74,7 +74,7 @@ from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine.token_utils import load_vocab
 import numpy as np
-from tqdm.asyncio import tqdm # pytype: disable=pyi-error
+from tqdm.asyncio import tqdm  # pytype: disable=pyi-error
 import pandas
 
 from eval_accuracy import eval_accuracy
@@ -166,11 +166,20 @@ def load_sharegpt_dataset(
 
   return dataset
 
+
 def load_openorca_dataset_pkl():
   # read pickle file
   samples = pandas.read_pickle(
+<<<<<<< HEAD
     os.path.join(os.path.dirname(os.path.relpath(__file__)),
                  "open_orca_gpt4_tokenized_llama.calibration_1000.pkl"))
+=======
+      os.path.join(
+          os.path.dirname(os.path.relpath(__file__)),
+          "open_orca_gpt4_tokenized_llama.calibration_1000.pkl",
+      )
+  )
+>>>>>>> 98d5e6a (check in openorca calibration dataset.)
 
   prompts = []
   outputs = []
@@ -179,6 +188,7 @@ def load_openorca_dataset_pkl():
     outputs.append(row["output"])
 
   return [(prompt, output) for prompt, output in zip(prompts, outputs)]
+
 
 def tokenize_dataset(
     dataset: list[tuple[Any, Any, Any]],
