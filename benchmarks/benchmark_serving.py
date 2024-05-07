@@ -614,6 +614,7 @@ def main(args: argparse.Namespace):
     metrics_json["request_rate"] = (
         args.request_rate if args.request_rate < float("inf") else "inf"
     )
+
     metrics_json = {**metrics_json, **benchmark_result}
     if args.run_eval:
       metrics_json = {**metrics_json, **eval_json}
