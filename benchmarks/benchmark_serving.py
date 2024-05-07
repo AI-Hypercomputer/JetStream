@@ -66,6 +66,8 @@ import json
 import random
 import time
 from typing import Any, AsyncGenerator, Optional
+import os
+
 
 import grpc
 from jetstream.core.proto import jetstream_pb2
@@ -73,6 +75,8 @@ from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine.token_utils import load_vocab
 import numpy as np
 from tqdm.asyncio import tqdm  # pytype: disable=pyi-error
+import pandas
+
 from eval_accuracy import eval_accuracy
 
 
@@ -163,14 +167,20 @@ def load_sharegpt_dataset(
   return dataset
 
 
-def load_openorca_dataset(dataset_path: str) -> list[tuple[Any, Any]]:
-  # Load the dataset.
-  with open(dataset_path, "r", encoding="utf-8") as f:
-    dataset = json.load(f)
+def load_openorca_dataset_pkl():
+  # read pickle file
+  samples = pandas.read_pickle(
+      os.path.join(
+          os.path.dirname(os.path.relpath(__file__)),
+          "open_orca_gpt4_tokenized_llama.calibration_1000.pkl",
+      )
+  )
 
-  # Tokenize the prompts and completions.
-  prompts = dataset["prompts"]
-  outputs = dataset["results"]
+  prompts = []
+  outputs = []
+  for _, row in samples.iterrows():
+    prompts.append(row["input"])
+    outputs.append(row["output"])
 
   return [(prompt, output) for prompt, output in zip(prompts, outputs)]
 
@@ -542,7 +552,7 @@ def main(args: argparse.Namespace):
     )  # e.g. [("AB", 2, "AB", 3)]
   else:
     if args.dataset == "openorca":
-      dataset = load_openorca_dataset(args.dataset_path)
+      dataset = load_openorca_dataset_pkl()
     elif args.dataset == "sharegpt":
       dataset = load_sharegpt_dataset(
           args.dataset_path,
