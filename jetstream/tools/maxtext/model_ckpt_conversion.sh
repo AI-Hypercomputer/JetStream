@@ -71,17 +71,17 @@ else
 fi
 echo "Written MaxText compatible checkpoint to ${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx}"
 
-# We define `CONVERTED_CHECKPOINT` to refer to the checkpoint subdirectory.
-export CONVERTED_CHECKPOINT=${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx}/0/items
+# We define `SCANNED_CKPT_PATH` to refer to the checkpoint subdirectory.
+export SCANNED_CKPT_PATH=${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx}/0/items
 
 # Covert MaxText compatible checkpoints to unscanned checkpoints.
-# Note that the `CONVERTED_CHECKPOINT` is in a `scanned` format which is great for training but for efficient decoding performance we want the checkpoint in an `unscanned` format.
+# Note that the `SCANNED_CKPT_PATH` is in a `scanned` format which is great for training but for efficient decoding performance we want the checkpoint in an `unscanned` format.
 export RUN_NAME=${MODEL_NAME}_unscanned_chkpt_${idx}
 
 JAX_PLATFORMS=cpu python MaxText/generate_param_only_checkpoint.py \
 MaxText/configs/base.yml \
 base_output_directory=${BASE_OUTPUT_DIRECTORY} \
-load_parameters_path=${CONVERTED_CHECKPOINT} \
+load_parameters_path=${SCANNED_CKPT_PATH} \
 run_name=${RUN_NAME} \
 model_name=${MODEL_NAME} \
 force_unroll=true
