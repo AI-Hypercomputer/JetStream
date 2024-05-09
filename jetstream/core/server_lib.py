@@ -34,6 +34,7 @@ from prometheus_client import start_http_server
 _HOST = "[::]"
 PROMETHEUS_PORT = 9090
 
+
 class JetStreamServer:
   """JetStream grpc server."""
 
