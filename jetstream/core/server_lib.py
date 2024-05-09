@@ -134,10 +134,11 @@ def run(
 
   jetstream_server.start()
 
-  logging.info("Starting Prometheus server on port %d", port)
-
   # Setup Prometheus server
   if "PROMETHEUS_ENABLED_ON_PORT" in os.environ:
+    logging.info(
+        "Starting Prometheus server on port %d", PROMETHEUS_ENABLED_ON_PORT
+    )
     start_http_server(PROMETHEUS_ENABLED_ON_PORT)
 
   return jetstream_server
