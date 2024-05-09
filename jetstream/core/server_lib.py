@@ -20,6 +20,7 @@ See implementations/*/sever.py for examples.
 import asyncio
 from concurrent import futures
 import logging
+import os
 import threading
 from typing import Any, Type
 
@@ -32,7 +33,7 @@ from jetstream.core.proto import jetstream_pb2_grpc
 from prometheus_client import start_http_server
 
 _HOST = "[::]"
-PROMETHEUS_PORT = 9090
+PROMETHEUS_ENABLED_ON_PORT = 9090
 
 
 class JetStreamServer:
@@ -136,7 +137,8 @@ def run(
   logging.info("Starting Prometheus server on port %d", port)
 
   # Setup Prometheus server
-  start_http_server(PROMETHEUS_PORT)
+  if "PROMETHEUS_ENABLED_ON_PORT" in os.environ:
+    start_http_server(PROMETHEUS_ENABLED_ON_PORT)
 
   return jetstream_server
 
