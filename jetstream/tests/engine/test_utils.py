@@ -57,30 +57,32 @@ class UtilsTest(absltest.TestCase):
     )
     vocab = mock_utils.TestVocab()
     per_channel, complete = token_utils.process_result_tokens(
+        tokenizer=vocab,
         slot=0,
         slot_max_length=4,
         result_tokens=result_tokens,
-        eos_id=vocab.eos_id,
-        pad_id=vocab.pad_id,
         complete=mock_complete,
     )
     np.testing.assert_equal(complete, np.array([1, 0]))
 
-    text_output = [mock_utils.TestVocab().decode(row) for row in per_channel]
+    text_output = [
+        mock_utils.TestVocab().decode(row.token_ids) for row in per_channel
+    ]
     assert not text_output[0]  # i.e. == '', because of the pad.
     assert text_output[1] == "AD"
     mock_complete = np.zeros(
         (mock_tokens.shape[0] // samples_per_slot), dtype=np.int32
     )
     per_channel, complete = token_utils.process_result_tokens(
+        tokenizer=vocab,
         slot=1,
         slot_max_length=4,
         result_tokens=result_tokens,
-        eos_id=vocab.eos_id,
-        pad_id=vocab.pad_id,
         complete=mock_complete,
     )
-    text_output = [mock_utils.TestVocab().decode(row) for row in per_channel]
+    text_output = [
+        mock_utils.TestVocab().decode(row.token_ids) for row in per_channel
+    ]
     assert text_output[0] == "T3"
     assert text_output[1] == "A"  # second token is padded.
     np.testing.assert_equal(complete, np.array([0, 1]))

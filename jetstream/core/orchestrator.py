@@ -85,14 +85,15 @@ import sys
 import threading
 import time
 import traceback
-from typing import Any, AsyncIterator, Optional, Union
+from typing import Any, AsyncIterator, Optional, Tuple, Union, cast
 
 import grpc
 import jax
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
-from jetstream.engine import engine_api
+from jetstream.core.utils.return_sample import ReturnSample
+from jetstream.engine import engine_api, tokenizer_api, token_utils
 import numpy as np
 
 
@@ -126,27 +127,27 @@ class ActiveRequest:
   # We keep prefill and decode information together in the same object so that
   # there is less indirection about where this return channel is.
   # The return channel returns a list of strings, one per sample for that query.
-  return_channel: async_multifuture.AsyncMultifuture[list[list[int]]]
+  return_channel: async_multifuture.AsyncMultifuture[list[ReturnSample]]
   # [num_samples,] which corresponds to whether each sample is complete for the
   # requests.
   complete: Optional[np.ndarray] = None
   prefill_result: Any = None
   #################### Information relevant for prefill ########################
   history_path: Optional[str] = None
-  prefill_text: Optional[str] = None
+  prefill_content: Optional[str | list[int]] = None
   ################## Information relevant for detokenization ###################
   # Which generate step this was added at.
   generate_timestep_added: Optional[int] = None
 
-  def enqueue_tokens(self, generated_tokens: list[list[int]]):
-    """Records information about the step.
+  def enqueue_samples(self, generated_samples: list[ReturnSample]):
+    """Adds the generated sample(s) to return channel for current step.
 
     Args:
-      generated_tokens: One token to put into the return channel
+      generated_samples: The generated sample(s) for current step.
 
     This should be called only from within the Drivers background thread.
     """
-    self.return_channel.add_result(generated_tokens)
+    self.return_channel.add_result(generated_samples)
 
 
 class JetThread(threading.Thread):
@@ -429,6 +430,33 @@ class Driver:
     else:
       return None
 
+  def _process_prefill_content(
+      self,
+      request: ActiveRequest,
+      tokenizer: tokenizer_api.Tokenizer,
+      is_bos: bool,
+      max_prefill_length: int,
+  ) -> Tuple[jax.Array | np.ndarray, int]:
+    content = request.prefill_content
+    if isinstance(content, str):
+      # If it's text input, tokenize and pad the input.
+      return tokenizer.encode(
+          content,
+          is_bos=is_bos,
+          max_prefill_length=max_prefill_length,
+          jax_padding=self._jax_padding,
+      )
+    else:
+      # If it's token input, pad the input.
+      return token_utils.pad_tokens(
+          content,
+          tokenizer.bos_id,
+          tokenizer.pad_id,
+          is_bos=is_bos,
+          max_prefill_length=max_prefill_length,
+          jax_padding=self._jax_padding,
+      )
+
   def _prefill_thread(self, idx: int):
     """Thread which runs in the background performing prefills."""
     logging.info("---------Spinning up prefill thread %d.---------", idx)
@@ -444,7 +472,6 @@ class Driver:
       request = self._prefill_backlog.get(block=True)
       if request is None:
         break
-      # Tokenize, and introduce a leading dimension
       is_bos = not bool(request.history_path)
       logging.info(
           "Prefilling on prefill engine %d : prefill queue size, %d,"
@@ -454,13 +481,11 @@ class Driver:
           is_bos,
           request.history_path,
       )
-      padded_tokens, true_length = tokenizer.encode(
-          request.prefill_text,
-          is_bos=is_bos,
-          max_prefill_length=prefill_engine.max_prefill_length,
-          jax_padding=self._jax_padding,
+      # Tokenize and padding the text or token input.
+      padded_tokens, true_length = self._process_prefill_content(
+          request, tokenizer, is_bos, prefill_engine.max_prefill_length
       )
-      # Compute new kv cache for the prefill_text.
+      # Compute new kv cache for the prefill_content.
       prefill_result = prefill_engine.prefill(
           params=prefill_params,
           padded_tokens=padded_tokens,
@@ -654,15 +679,16 @@ class Driver:
 
         for slot, request in my_live_requests.items():
           if request is not None:
-            results, complete = tokenizer.decode(
+            results, complete = token_utils.process_result_tokens(
+                tokenizer=tokenizer,
                 slot=slot,
                 slot_max_length=request.max_tokens,
                 result_tokens=result_tokens,
                 complete=request.complete,
             )
             request.complete = complete
-            # Return some tokens.
-            request.enqueue_tokens(results)
+            # Return some output samples.
+            request.enqueue_samples(results)
             if request.complete.all():
               request.return_channel.close()
               # Place the slot back on the free queue.
@@ -687,6 +713,18 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
   def __init__(self, driver: Driver):
     self._driver = driver
 
+  def _get_prefill_content(
+      self, request: jetstream_pb2.DecodeRequest
+  ) -> str | list[int]:
+    which_content = request.WhichOneof("content")
+    content = getattr(request, which_content)
+    if which_content == "text_content":
+      return cast(jetstream_pb2.DecodeRequest.TextContent, content).text_content
+    else:
+      return list(
+          cast(jetstream_pb2.DecodeRequest.TokenContent, content).token_content
+      )
+
   async def Decode(  # pylint: disable=invalid-overridden-method
       self,
       request: jetstream_pb2.DecodeRequest,
@@ -705,7 +743,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     active_request = ActiveRequest(
         max_tokens=request.max_tokens,
         history_path=request.session_cache,
-        prefill_text=request.additional_text,
+        prefill_content=self._get_prefill_content(request),
         return_channel=return_channel,
     )
     # The first stage is being prefilled, all other stages are handled
@@ -725,18 +763,58 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     logging.info(
         "Placed request on the prefill queue.",
     )
+    buffered_response_list = []
     async for response in active_request.return_channel:
       # When an active request is created a queue is instantiated. New tokens
       # are placed there during the decoding loop, we pop from that queue by
       # using the .next method on the active request.
       # Yielding allows for the response to be a streaming grpc call - which
-      # can be called via iterating over a for loop on the other side.
+      # can be called via iterating over a for loop on the client side.
       # The DecodeResponse stream should consume all generated tokens in
-      # return_channel when complete signal is received. It should check if
-      # return_channel is empty to decide if it should exit the while loop.
-      repeated_token_ids = []
-      for token_ids in response:
-        repeated_token_ids.append(
-            jetstream_pb2.RepeatedTokenIds(token_ids=token_ids)
+      # return_channel when complete signal is received (AsyncMultifuture
+      # promises this). Buffer response mechanism is used to handle streaming
+      # detokenization with special character (For some edge cases with
+      # SentencePiece tokenizer, it requires to decode a complete sequence
+      # instead of a single token).
+      response = cast(list[ReturnSample], response)
+      buffered = False
+      for item in response:
+        if item.text and token_utils.is_byte_token(item.text[-1]):
+          # If any sample ends in bytes, this means we might still need to
+          # decode more bytes to compose the string.
+          buffered_response_list.append(response)
+          buffered = True
+          break
+      if buffered:
+        continue
+      # Flush the buffered responses to each sample of current response.
+      current_response_with_flushed_buffer = list(
+          zip(*buffered_response_list, response)
+      )
+      # Empty buffer: [[s0_cur], [s1_cur], ...]
+      # Has buffer:
+      # [[s0_b0, s0_b1, ..., s0_cur], [s1_b0, s1_b1, ..., s1_cur], ...]
+      current_response_with_flushed_buffer = cast(
+          list[list[ReturnSample]], current_response_with_flushed_buffer
+      )
+      # Reset buffer after flushed.
+      buffered_response_list = []
+      # Form correct sample(s) and return as StreamContent for this iteration.
+      samples = []
+      for sample in current_response_with_flushed_buffer:
+        text = []
+        token_ids = []
+        for resp in sample:
+          text.extend(resp.text)
+          token_ids.extend(resp.token_ids)
+        samples.append(
+            jetstream_pb2.DecodeResponse.StreamContent.Sample(
+                text=token_utils.text_tokens_to_str(text),
+                token_ids=token_ids,
+            )
         )
-      yield jetstream_pb2.DecodeResponse(response=repeated_token_ids)
+      yield jetstream_pb2.DecodeResponse(
+          stream_content=jetstream_pb2.DecodeResponse.StreamContent(
+              samples=samples
+          )
+      )

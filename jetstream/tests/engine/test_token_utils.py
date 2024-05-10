@@ -191,7 +191,7 @@ class TokenUtilsTest(unittest.TestCase):
     )
     self.assertEqual(true_length, expected_true_length)
 
-  def test_sentencepiece_tokenizer_decode(self):
+  def test_process_result_with_sentencepiece_tokenizer_decode(self):
     self.setup_sentencepiece()
     metadata = tokenizer_pb2.TokenizerParameters(path=self.tokenizer_path)
     tokenizer = token_utils.SentencePieceTokenizer(metadata)
@@ -225,16 +225,29 @@ class TokenUtilsTest(unittest.TestCase):
         length_idx=(2 * length, 2 * length + 1),
         samples_per_slot=1,
     )
-    tokens, complete = tokenizer.decode(0, 16, result_tokens, complete)
+    samples, complete = token_utils.process_result_tokens(
+        tokenizer, 0, 16, result_tokens, complete
+    )
+    # Note: the expected_tokens list is for the output token(s) for 1 decode
+    # step. Currently, JetStream only output 1 token (1 text piece) for 1
+    # decode step.
     expected_tokens = np.array([[306, 4658, 278, 6593, 310, 2834, 338]])
-    self.assertTrue(np.allclose(tokens, expected_tokens, atol=1e-7))
+    self.assertTrue(
+        np.allclose(
+            [sample.token_ids for sample in samples], expected_tokens, atol=1e-7
+        )
+    )
+    self.assertTrue(
+        samples[0].text
+        == [" I", " believe", " the", " meaning", " of", " life", " is"]
+    )
     self.assertTrue(np.allclose(complete, np.zeros((1,), dtype=np.bool_)))
 
-  def test_sentencepiece_tokenizer_decode_str(self):
+  def test_sentencepiece_tokenizer_decode(self):
     self.setup_sentencepiece()
     metadata = tokenizer_pb2.TokenizerParameters(path=self.tokenizer_path)
     tokenizer = token_utils.SentencePieceTokenizer(metadata)
-    result = tokenizer.decode_str([306, 4658, 278, 6593, 310, 2834, 338])
+    result = tokenizer.decode([306, 4658, 278, 6593, 310, 2834, 338])
     self.assertTrue(result == "I believe the meaning of life is")
 
   def test_tiktoken_tokenizer_encode(self):
@@ -343,7 +356,7 @@ class TokenUtilsTest(unittest.TestCase):
     )
     self.assertEqual(true_length, expected_true_length)
 
-  def test_tiktoken_decode(self):
+  def test_process_result_with_tiktoken_decode(self):
     self.setup_tiktoken()
     metadata = tokenizer_pb2.TokenizerParameters(path=self.tokenizer_path)
     tokenizer = token_utils.TikToken(metadata)
@@ -359,17 +372,111 @@ class TokenUtilsTest(unittest.TestCase):
         length_idx=(2 * length, 2 * length + 1),
         samples_per_slot=1,
     )
-    tokens, complete = tokenizer.decode(0, 16, result_tokens, complete)
+    samples, complete = token_utils.process_result_tokens(
+        tokenizer, 0, 16, result_tokens, complete
+    )
+    # Note: the expected_tokens list is for the output token(s) for 1 decode
+    # step. Currently, JetStream only output 1 token (1 text piece) for 1
+    # decode step.
     expected_tokens = np.array([[40, 4510, 279, 7438, 315, 2324, 374]])
-    self.assertTrue(np.allclose(tokens, expected_tokens, atol=1e-7))
+    self.assertTrue(
+        np.allclose(
+            [sample.token_ids for sample in samples], expected_tokens, atol=1e-7
+        )
+    )
+    self.assertTrue(
+        samples[0].text
+        == ["I", " believe", " the", " meaning", " of", " life", " is"]
+    )
     self.assertTrue(np.allclose(complete, np.zeros((1,), dtype=np.bool_)))
 
-  def test_tiktoken_decode_str(self):
+  def test_tiktoken_decode(self):
     self.setup_tiktoken()
     metadata = tokenizer_pb2.TokenizerParameters(path=self.tokenizer_path)
     tokenizer = token_utils.TikToken(metadata)
-    result = tokenizer.decode_str([40, 4510, 279, 7438, 315, 2324, 374])
+    result = tokenizer.decode([40, 4510, 279, 7438, 315, 2324, 374])
     self.assertTrue(result == "I believe the meaning of life is")
+
+  def test_text_tokens_to_str(self):
+    # Start with text token
+    self.assertTrue(
+        token_utils.text_tokens_to_str(
+            ["你", "好", "<0xE5>", "<0x90>", "<0x97>", "hello"]
+        )
+        == "你好吗hello"
+    )
+    self.assertTrue(
+        token_utils.text_tokens_to_str(
+            ["你", "好", "<0xE5>", "<0x90>", "<0x97>", "<0x0A>", "hello"]
+        )
+        == "你好吗\nhello"
+    )
+    self.assertTrue(
+        token_utils.text_tokens_to_str(
+            [
+                "你",
+                "好",
+                "<0xE5>",
+                "<0x90>",
+                "<0x97>",
+                "<0x0A>",
+                "<0x0A>",
+                "hello",
+            ]
+        )
+        == "你好吗\n\nhello"
+    )
+    self.assertTrue(
+        token_utils.text_tokens_to_str(
+            ["你", "好", "<0xE5>", "<0x90>", "<0x97>", "hello", "<0x0A>"]
+        )
+        == "你好吗hello\n"
+    )
+    # Start with byte token
+    self.assertTrue(
+        token_utils.text_tokens_to_str(
+            ["<0x0A>", "你", "好", "<0xE5>", "<0x90>", "<0x97>", "hello"]
+        )
+        == "\n你好吗hello"
+    )
+    self.assertTrue(
+        token_utils.text_tokens_to_str(
+            [
+                "<0x0A>",
+                "<0x0A>",
+                "你",
+                "好",
+                "<0xE5>",
+                "<0x90>",
+                "<0x97>",
+                "hello",
+            ]
+        )
+        == "\n\n你好吗hello"
+    )
+    self.assertTrue(
+        token_utils.text_tokens_to_str(["<0xE5>", "<0x90>", "<0x97>", "hello"])
+        == "吗hello"
+    )
+    self.assertTrue(
+        token_utils.text_tokens_to_str(
+            ["<0x0A>", "<0x0A>", "<0xE5>", "<0x90>", "<0x97>", "hello"]
+        )
+        == "\n\n吗hello"
+    )
+    self.assertTrue(
+        token_utils.text_tokens_to_str(
+            ["<0x0A>", "<0x0A>", "<0xE5>", "<0x90>", "<0x97>"]
+        )
+        == "\n\n吗"
+    )
+    # Invalid byte token sequence
+    self.assertTrue(
+        token_utils.text_tokens_to_str(
+            ["你", "好", "<0xE5>", "<0x90>", "<0x0A>", "<0x97>", "hello"]
+        )
+        == "你好�\n�hello"
+    )
 
 
 if __name__ == "__main__":

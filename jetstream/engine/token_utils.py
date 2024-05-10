@@ -16,7 +16,7 @@
 
 from bisect import bisect_left
 import logging
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Iterable, List, Optional, Tuple, Union
 
 import jax
 import jax.numpy as jnp
@@ -24,6 +24,7 @@ import numpy as np
 from seqio.vocabularies import SentencePieceVocabulary
 from seqio.vocabularies import Vocabulary
 
+from jetstream.core.utils.return_sample import ReturnSample
 from jetstream.engine import mock_utils
 from jetstream.engine import tokenizer_api
 from jetstream.engine import tokenizer_pb2
@@ -155,14 +156,13 @@ def pad_tokens(
 
 
 def process_result_tokens(
+    tokenizer: tokenizer_api.Tokenizer,
     slot: int,
     slot_max_length: int,
     result_tokens: ResultTokens,
-    eos_id: int,
-    pad_id: int,
     complete: np.ndarray,
     debug: bool = False,
-) -> Tuple[List[List[int]], np.ndarray]:
+) -> Tuple[List[ReturnSample], np.ndarray]:
   """Processes a result tokens into a list of strings, handling multiple
     samples.
 
@@ -170,14 +170,12 @@ def process_result_tokens(
     slot: The slot at which to draw tokens from.
     slot_max_length: Max length for a sample in the slot.
     result_tokens: The tokens to access by slot.
-    eos_id: Id for EOS token.
-    pad_id: Id for pad token.
     complete: Array representing the completion status of each sample in the
       slot.
     debug: Whether to log step by step detokenisation.
 
   Returns:
-    sample_return: List of tok_id list, one list per sample.
+    return_samples: List of ReturnSample.
     complete: Updated complete.
   """
   # tokens: [samples, speculations]
@@ -186,7 +184,7 @@ def process_result_tokens(
   slot_valid = slot_data.valid
   slot_lengths = slot_data.lengths
   samples, speculations = slot_tokens.shape
-  stop_tokens = [eos_id, pad_id]
+  stop_tokens = [tokenizer.eos_id, tokenizer.pad_id]
   # Stop anything which has reached it's max length.
   complete = complete | (slot_lengths > slot_max_length)
   if debug:
@@ -196,8 +194,9 @@ def process_result_tokens(
         str(slot_tokens),
         str(slot_lengths),
     )
-  sample_return = []
+  return_samples = []
   for idx in range(samples):
+    text_so_far = []
     tok_id_so_far = []
     if not complete[idx].item():
       for spec_idx in range(speculations):
@@ -214,11 +213,17 @@ def process_result_tokens(
           complete[idx] = True
           break
         else:
+          if isinstance(tokenizer, SentencePieceTokenizer):
+            text_so_far.append(tokenizer.decode([tok_id], is_streaming=True))
+          else:
+            text_so_far.append(tokenizer.decode([tok_id]))
           tok_id_so_far.append(tok_id)
-    sample_return.append(tok_id_so_far)
+    return_samples.append(
+        ReturnSample(text=text_so_far, token_ids=tok_id_so_far)
+    )
     if debug:
-      logging.info("Sampled return %s", str(sample_return))
-  return sample_return, complete
+      logging.info("Return samples %s", str(return_samples))
+  return return_samples, complete
 
 
 def load_vocab(path: str, extra_ids: int = 0) -> Vocabulary:
@@ -245,6 +250,28 @@ def load_vocab(path: str, extra_ids: int = 0) -> Vocabulary:
     return vocab
 
 
+def is_byte_token(s: str) -> bool:
+  """Returns True if s is a byte string like "<0xAB>"."""
+  # Bytes look like "<0xAB>".
+  if len(s) != 6 or s[0:3] != "<0x" or s[-1] != ">":
+    return False
+  return True
+
+
+def text_tokens_to_str(text_tokens: Iterable[str]) -> str:
+  """Converts an iterable of token text to a single string, collapsing bytes.
+
+  e.g. ['你', '好', '<0xE5>', '<0x90>', '<0x97>', 'hello'] -> '你好吗hello'
+  """
+  bytes_so_far = []
+  for text_token in text_tokens:
+    if is_byte_token(text_token):
+      bytes_so_far.append(bytes([int(text_token[1:-1], 16)]))
+    else:
+      bytes_so_far.append(bytes(text_token, "utf-8"))
+  return b"".join(bytes_so_far).decode("utf-8", "replace")
+
+
 class SentencePieceTokenizer(tokenizer_api.Tokenizer):
   """Tokenizer to convert strings to token ids and vice-versa."""
 
@@ -257,7 +284,7 @@ class SentencePieceTokenizer(tokenizer_api.Tokenizer):
     """Tokenize a string.
     Args:
         s: String to tokenize.
-        **kwargs: Additional keyword arguments
+        **kwargs: Additional keyword arguments.
     Returns:
         tokens: Tokenized into integers.
         true_length: Actual length of the non-padded sequence
@@ -281,47 +308,27 @@ class SentencePieceTokenizer(tokenizer_api.Tokenizer):
     )
     return tokens, true_length
 
-  def decode(
-      self,
-      slot: int,
-      slot_max_length: int,
-      result_tokens: ResultTokens,
-      complete: np.ndarray,
-      **kwargs,
-  ) -> Tuple[List[List[int]], np.ndarray]:
-    """Processes a result tokens into a list of strings, handling multiple
-    samples.
-    Args:
-      slot: The slot at which to draw tokens from.
-      slot_max_length: Max length for a sample in the slot.
-      result_tokens: The tokens to access by slot.
-      complete: Array representing the completion status of each sample in the
-        slot.
-      kwargs: Additional keyword arguments.
-    Returns:
-      sample_return: List of strings, one per sample.
-      complete: Updated complete.
-    """
-    debug = kwargs.pop("debug", False)
-    results, complete = process_result_tokens(
-        slot=slot,
-        slot_max_length=slot_max_length,
-        result_tokens=result_tokens,
-        eos_id=self.eos_id,
-        pad_id=self.pad_id,
-        complete=complete,
-        debug=debug,
-    )
-    return results, complete
-
-  def decode_str(self, token_ids: list[int]) -> str:
+  def decode(self, token_ids: list[int], **kwargs) -> str:
     """Processess input token ids to generate a string.
     Args:
       token_ids: List of token ids.
+      **kwargs: Additional keyword arguments.
     Returns:
       str: String generated from the token ids.
     """
-    return self.vocab.tokenizer.decode(token_ids)
+    # If is_streaming, we need to decode a token id to a piece.
+    is_streaming = kwargs.pop("is_streaming", False)
+    if is_streaming:
+      # The piece could be a byte token or a text token. It requires further
+      # processing for the byte tokens. For JetStream, it's handled in
+      # LLMOrchestrator.
+      piece = self.vocab.tokenizer.IdToPiece(token_ids[0])
+      # SentencePiece escapes the whitespace with a meta symbol "▁" (U+2581)
+      return piece.replace("▁", " ")
+    else:
+      # If it's not streaming decoding, we can directly decode the full list
+      # of token ids to a complete sequence.
+      return self.vocab.tokenizer.decode(token_ids)
 
   @property
   def pad_id(self) -> int:
@@ -375,40 +382,7 @@ class TikToken(tokenizer_api.Tokenizer):
     )
     return tokens, true_length
 
-  def decode(
-      self,
-      slot: int,
-      slot_max_length: int,
-      result_tokens: ResultTokens,
-      complete: np.ndarray,
-      **kwargs,
-  ) -> Tuple[List[List[int]], np.ndarray]:
-    """Processes a result tokens into a list of strings, handling multiple
-    samples.
-    Args:
-      slot: The slot at which to draw tokens from.
-      slot_max_length: Max length for a sample in the slot.
-      result_tokens: The tokens to access by slot.
-      complete: Array representing the completion status of each sample in the
-        slot.
-      kwargs: Additional keyword arguments.
-    Returns:
-      sample_return: List of strings, one per sample.
-      complete: Updated complete.
-    """
-    debug = kwargs.pop("debug", False)
-    results, complete = process_result_tokens(
-        slot=slot,
-        slot_max_length=slot_max_length,
-        result_tokens=result_tokens,
-        eos_id=self.eos_id,
-        pad_id=self.pad_id,
-        complete=complete,
-        debug=debug,
-    )
-    return results, complete
-
-  def decode_str(self, token_ids: list[int]) -> str:
+  def decode(self, token_ids: list[int]) -> str:
     """Processess input token ids to generate a string.
     Args:
       token_ids: List of token ids.

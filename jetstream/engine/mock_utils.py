@@ -76,9 +76,9 @@ class TestVocab(Vocabulary):
     results = np.split(ids, ids.shape[0])
     return ["".join([chr(r) for r in list(line[0])]) for line in results]
 
-  def decode(self, ids: np.ndarray):
+  def decode(self, ids: np.ndarray, is_streaming=True):
     """Converts a numpy array into a string."""
-    return self._decode(ids)
+    return is_streaming and self._decode(ids)
 
   def encode_tf(self, s: str) -> np.ndarray:
     """Converts a string into a numpy array."""
