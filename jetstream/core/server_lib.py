@@ -33,7 +33,7 @@ from jetstream.core.proto import jetstream_pb2_grpc
 from prometheus_client import start_http_server
 
 _HOST = "[::]"
-PROMETHEUS_ENABLED_ON_PORT = 9090
+PROMETHEUS_ENABLED_ON_PORT = os.getenv("PROMETHEUS_ENABLED_ON_PORT")
 
 
 class JetStreamServer:
@@ -135,12 +135,15 @@ def run(
   jetstream_server.start()
 
   # Setup Prometheus server
-  if "PROMETHEUS_ENABLED_ON_PORT" in os.environ:
+  if PROMETHEUS_ENABLED_ON_PORT is not None:
     logging.info(
         "Starting Prometheus server on port %d", PROMETHEUS_ENABLED_ON_PORT
     )
     start_http_server(PROMETHEUS_ENABLED_ON_PORT)
-
+  else:
+    logging.info(
+        "Not starting Prometheus server: PROMETHEUS_ENABLED_ON_PORT not set"
+    )
   return jetstream_server
 
 
