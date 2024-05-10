@@ -511,6 +511,8 @@ class Driver:
     while self.live:
       # The transfer thread can just sleep until it has work to do.
       new_request = transfer_backlog.get(block=True)
+      if new_request is None:
+        break
       target_idx = min(
           self._generate_backlogs.items(), key=lambda q: q[1].qsize()
       )[0]
@@ -719,10 +721,10 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     which_content = request.WhichOneof("content")
     content = getattr(request, which_content)
     if which_content == "text_content":
-      return cast(jetstream_pb2.DecodeRequest.TextContent, content).text_content
+      return cast(jetstream_pb2.DecodeRequest.TextContent, content).text
     else:
       return list(
-          cast(jetstream_pb2.DecodeRequest.TokenContent, content).token_content
+          cast(jetstream_pb2.DecodeRequest.TokenContent, content).token_ids
       )
 
   async def Decode(  # pylint: disable=invalid-overridden-method

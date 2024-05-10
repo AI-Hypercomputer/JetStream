@@ -173,6 +173,8 @@ packaging==23.2
     #   pytest
     #   seqio
     #   tensorflow
+parameterized==0.9.0
+    # via -r requirements.in
 pluggy==1.4.0
     # via pytest
 portpicker==1.6.0

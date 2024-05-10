@@ -19,10 +19,10 @@ response.
 """
 
 from typing import Any, Type
+import unittest
 
-from absl.testing import absltest, parameterized
+from parameterized import parameterized
 import grpc
-import pytest
 from jetstream.core import config_lib
 from jetstream.core import server_lib
 from jetstream.core.proto import jetstream_pb2
@@ -30,27 +30,31 @@ from jetstream.core.proto import jetstream_pb2_grpc
 import portpicker
 
 
-class ServerTest(parameterized.TestCase):
+class ServerTest(unittest.IsolatedAsyncioTestCase):
 
-  @parameterized.parameters(
-      # Uses weight 2 for prefill, 4 for decode.
-      (
-          config_lib.CPUTestServer,
-          ["Ċ", "Ō", "Ɵ", ""],
-          [None, None],
-      ),
-      # Uses the same prefill / generate weights (2).
-      (
-          config_lib.InterleavedCPUTestServer,
-          ["Ċ", "Ə", "ɖ", ""],
-          [None],
-      ),
+  @parameterized.expand(
+      [
+          # Uses weight 2 for prefill, 4 for decode.
+          (
+              config_lib.CPUTestServer,
+              ["Ċ", "Ō", "Ɵ", ""],
+              [266, 332, 415, None],
+              [None, None],
+          ),
+          # Uses the same prefill / generate weights (2).
+          (
+              config_lib.InterleavedCPUTestServer,
+              ["Ċ", "Ə", "ɖ", ""],
+              [266, 399, 598, None],
+              [None],
+          ),
+      ]
   )
-  @pytest.mark.asyncio
   async def test_server(
       self,
       config: Type[config_lib.ServerConfig],
-      expected_tokens: list[str],
+      expected_text: list[str],
+      expected_token_ids: list[int | None],
       devices: list[Any],
   ):
     """Sets up a server and requests token responses."""
@@ -76,25 +80,22 @@ class ServerTest(parameterized.TestCase):
       text = "AB"
       request = jetstream_pb2.DecodeRequest(
           session_cache="",
-          additional_text=text,
+          text_content=jetstream_pb2.DecodeRequest.TextContent(text=text),
           priority=1,
           max_tokens=3,
       )
       iterator = stub.Decode(request)
       counter = 0
-      async for token in iterator:
-        # Tokens come through as bytes
-        output_token = await token.response[0].token_id[0]
-        print(
-            "actual output: " + bytes(output_token, encoding="utf-8").decode()
-        )
-        assert (
-            bytes(output_token, encoding="utf-8").decode()
-            == expected_tokens[counter]
-        )
+      async for resp in iterator:
+        output_text = resp.stream_content.samples[0].text
+        token_ids = resp.stream_content.samples[0].token_ids
+        output_token_id = token_ids[0] if len(token_ids) > 0 else None
+        print(f"actual output: {output_text=} {output_token_id=}")
+        assert output_text == expected_text[counter]
+        assert output_token_id == expected_token_ids[counter]
         counter += 1
       server.stop()
 
 
 if __name__ == "__main__":
-  absltest.main()
+  unittest.main()

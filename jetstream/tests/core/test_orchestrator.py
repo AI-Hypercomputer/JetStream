@@ -41,16 +41,15 @@ decoded (these are the ascii chars at those indices which is what the test
 tokenizer returns).
 """
 
-import pytest
-from absl.testing import absltest
+import unittest
 from jetstream.core import orchestrator
 from jetstream.core.proto import jetstream_pb2
 from jetstream.engine import mock_engine
 
 
-class OrchestratorTest(absltest.TestCase):
+class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
 
-  def _setup_driver(self):
+  def _setup_driver_interleaved_mode(self):
     prefill_engine = mock_engine.TestEngine(
         batch_size=32, cache_length=256, weight=2.0
     )
@@ -64,13 +63,13 @@ class OrchestratorTest(absltest.TestCase):
         generate_engines=[generate_engine],
         prefill_params=[prefill_engine.load_params()],
         generate_params=[generate_engine.load_params()],
+        interleaved_mode=True,
     )
     return driver
 
-  @pytest.mark.asyncio
-  async def test_orchestrator(self):
+  async def test_orchestrator_interleaved_mode(self):
     """Test the multithreaded orchestration."""
-    driver = self._setup_driver()
+    driver = self._setup_driver_interleaved_mode()
     client = orchestrator.LLMOrchestrator(driver=driver)
 
     # The string representation of np.array([[65, 66]]), [2] will be prepend
@@ -79,25 +78,26 @@ class OrchestratorTest(absltest.TestCase):
 
     request = jetstream_pb2.DecodeRequest(
         session_cache="",
-        additional_text=text,
+        text_content=jetstream_pb2.DecodeRequest.TextContent(text=text),
         priority=1,
         max_tokens=3,
     )
     iterator = client.Decode(request)
     # chr of [266, 332, 415].
-    expected_tokens = ["Ċ", "Ō", "Ɵ", ""]
+    expected_text = ["Ċ", "Ō", "Ɵ", ""]
+    expected_token_ids = [266, 332, 415, None]
     counter = 0
-    async for token in iterator:
-      # Tokens come through as bytes.
-      output_token = await token.response[0].token_id[0]
-      print("actual output: " + bytes(output_token, encoding="utf-8").decode())
-      assert (
-          bytes(output_token, encoding="utf-8").decode()
-          == expected_tokens[counter]
-      )
+    async for resp in iterator:
+      output_text = resp.stream_content.samples[0].text
+      token_ids = resp.stream_content.samples[0].token_ids
+      output_token_id = token_ids[0] if len(token_ids) > 0 else None
+      print(f"actual output: {output_text=} {output_token_id=}")
+      assert output_text == expected_text[counter]
+      assert output_token_id == expected_token_ids[counter]
       counter += 1
     driver.stop()
+    print("Orchestrator driver stopped.")
 
 
 if __name__ == "__main__":
-  absltest.main()
+  unittest.main()
