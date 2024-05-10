@@ -33,7 +33,7 @@ from jetstream.core.proto import jetstream_pb2_grpc
 from prometheus_client import start_http_server
 
 _HOST = "[::]"
-PROMETHEUS_ENABLED_ON_PORT = os.getenv("PROMETHEUS_ENABLED_ON_PORT")
+PROMETHEUS_ENABLED_ON_PORT = int(os.getenv("PROMETHEUS_ENABLED_ON_PORT")) if os.getenv("PROMETHEUS_ENABLED_ON_PORT") else None
 
 
 class JetStreamServer:
