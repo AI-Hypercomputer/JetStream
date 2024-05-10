@@ -614,6 +614,10 @@ def main(args: argparse.Namespace):
     dimensions_json["date"] = current_dt
     dimensions_json["model_id"] = model_id
     dimensions_json["tokenizer_id"] = tokenizer_id
+    dimensions_json = {
+        **dimensions_json,
+        **json.loads(args.additional_metadata_metrics_to_save),
+    }
     metrics_json["num_prompts"] = args.num_prompts
 
     # Traffic
@@ -738,6 +742,14 @@ if __name__ == "__main__":
       "--save-result",
       action="store_true",
       help="Specify to save benchmark results to a json file",
+  )
+  parser.add_argument(
+      "--additional-metadata-metrics-to-save",
+      type=str,
+      help=(
+          "Additional metadata about the workload. Should be a dictionary in"
+          " the form of a string."
+      ),
   )
   parser.add_argument(
       "--priority",

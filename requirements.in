@@ -6,6 +6,7 @@ jax
 jaxlib
 numpy
 portpicker
+prometheus-client
 pytest
 seqio
 tiktoken

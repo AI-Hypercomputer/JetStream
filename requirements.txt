@@ -179,6 +179,8 @@ pluggy==1.4.0
     # via pytest
 portpicker==1.6.0
     # via -r requirements.in
+prometheus-client==0.20.0
+    # via -r requirements.in
 promise==2.3
     # via tfds-nightly
 protobuf==3.20.3
