@@ -91,13 +91,14 @@ def pad_tokens(
     max_prefill_length: Optional[int] = None,
     jax_padding: bool = True,
 ) -> Tuple[Union[jax.Array, np.ndarray], int]:
-  """Tokenize and pads a string.
+  """Pads tokens to the nearest prefill length that is equal to or greater
+     than the token length.
 
   Args:
-    s: String to tokenize.
-    vocab: Vocabulary to tokenize with.
-    is_bos: Whether or not this is the beginning of a sequence. Default to yes
-      as prefill is typically used when beginning sequences.
+    tokens: Tokens.
+    bos_id: Bos ID.
+    pad_id: Pad ID.
+    is_bos: Add a beginning of sequence token if this is ture.
     prefill_lengths: Buckets to pad the sequence to for static compilation.
     max_prefill_length: Maximum bucket to use.
     jax_padding: convert to JAX padded tokens if True.
