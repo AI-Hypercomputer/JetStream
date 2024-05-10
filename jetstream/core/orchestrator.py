@@ -96,6 +96,7 @@ from jetstream.core.utils.return_sample import ReturnSample
 from jetstream.engine import engine_api, tokenizer_api, token_utils
 import numpy as np
 import prometheus_client
+import shortuuid
 
 root = logging.getLogger()
 root.setLevel(logging.DEBUG)
@@ -247,7 +248,8 @@ class Driver:
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
     self._prefill_backlog_size_metric = prometheus_client.Gauge(
-        "jetstream_prefill_backlog_size", "Size of prefill queue"
+        f"jetstream_prefill_backlog_size_{shortuuid.uuid()}",
+        "Size of prefill queue",
     )
 
     # Stage 2
