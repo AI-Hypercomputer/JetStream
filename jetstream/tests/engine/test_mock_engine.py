@@ -30,15 +30,15 @@ If we then insert that and run three generation steps, we should see
 I.e. ['Ċ', 'Ə', 'ɖ'] when converted back with chr()
 """
 
+import unittest
 import jax.numpy as jnp
 import numpy as np
 
 from jetstream.engine import mock_engine
 from jetstream.engine import token_utils
-from absl.testing import absltest
 
 
-class EngineTest(absltest.TestCase):
+class EngineTest(unittest.TestCase):
 
   def _setup(self):
     """Initialises a test engine."""
@@ -128,7 +128,3 @@ class EngineTest(absltest.TestCase):
     token_data = sampled_tokens.get_result_at_slot(slot)
     tok = token_data.tokens
     assert tokenizer.IdToPiece(int(tok.item())) == "ɖ"
-
-
-if __name__ == "__main__":
-  absltest.main()

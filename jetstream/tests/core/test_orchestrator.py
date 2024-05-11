@@ -130,7 +130,3 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
       counter += 1
     driver.stop()
     print("Orchestrator driver stopped.")
-
-
-if __name__ == "__main__":
-  unittest.main()

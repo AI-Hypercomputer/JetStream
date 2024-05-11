@@ -559,7 +559,3 @@ class TokenUtilsTest(unittest.TestCase):
         )
         == "你好�\n�hello"
     )
-
-
-if __name__ == "__main__":
-  unittest.main()

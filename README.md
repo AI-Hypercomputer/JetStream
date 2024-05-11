@@ -57,15 +57,16 @@ python -m jetstream.tools.load_tester
 ### Test core modules
 ```
 # Test JetStream core orchestrator
-python -m jetstream.tests.core.test_orchestrator
+python -m unittest -v jetstream.tests.core.test_orchestrator
 
 # Test JetStream core server library
-python -m jetstream.tests.core.test_server
+python -m unittest -v jetstream.tests.core.test_server
 
 # Test mock JetStream engine implementation
-python -m jetstream.tests.engine.test_mock_engine
+python -m unittest -v jetstream.tests.engine.test_mock_engine
 
 # Test mock JetStream token utils
-python -m jetstream.tests.engine.test_utils
+python -m unittest -v jetstream.tests.engine.test_token_utils
+python -m unittest -v jetstream.tests.engine.test_utils
 
 ```

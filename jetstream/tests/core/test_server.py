@@ -95,7 +95,3 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         assert output_token_id == expected_token_ids[counter]
         counter += 1
       server.stop()
-
-
-if __name__ == "__main__":
-  unittest.main()
