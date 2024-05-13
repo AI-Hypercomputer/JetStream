@@ -96,6 +96,7 @@ from jetstream.engine import engine_api
 
 import numpy as np
 import prometheus_client
+import shortuuid
 
 root = logging.getLogger()
 root.setLevel(logging.DEBUG)
@@ -210,9 +211,6 @@ class Driver:
   # todo: remove jax_padding after all then engine migrate to np padding
   _jax_padding = True
 
-  # Record metrics for prefill_backlog size
-  _prefill_backlog_size_metric: prometheus_client.Gauge
-
   def __init__(
       self,
       prefill_engines: Optional[list[engine_api.Engine]] = None,
@@ -246,9 +244,10 @@ class Driver:
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
-    self._prefill_backlog_size_metric = prometheus_client.Gauge(
-        "jetstream_prefill_backlog_size", "Size of prefill queue"
-    )
+    prometheus_client.Gauge(
+        "jetstream_prefill_backlog_size-{shortuuid.uuid()}",
+        "Size of prefill queue",
+    ).set_function(lambda: self._prefill_backlog.qsize())
 
     # Stage 2
     # After prefilling, it is placed here in order to get transferred to
@@ -429,7 +428,6 @@ class Driver:
     """Used to place new requests for prefilling and generation."""
     # Don't block so we can fail and shed load when the queue is full.
     self._prefill_backlog.put(request, block=False)
-    self._prefill_backlog_size_metric.set(self._prefill_backlog.qsize())
 
   def _load_cache_history(self, path: str) -> Union[None, Any]:
     """Loads previous kv cache for a longer conversation."""
@@ -451,7 +449,6 @@ class Driver:
       my_transfer_backlog = self._transfer_backlogs[idx]
       # The prefill thread can just sleep until it has work to do.
       request = self._prefill_backlog.get(block=True)
-      self._prefill_backlog_size_metric.set(self._prefill_backlog.qsize())
 
       if request is None:
         break
@@ -532,6 +529,11 @@ class Driver:
     logging.info("---------Spinning up generate thread %d.---------", idx)
     generate_engine = self._generate_engines[idx]
     my_slots = self._generate_slots[idx]
+    prometheus_client.Gauge(
+        f"jetstream_slots_available_percentage-{shortuuid.uuid()}-generate-{idx}",
+        "The percentage of available slots in decode batch",
+    ).set_function(lambda: my_slots.qsize() / max_concurrent_decodes)
+
     my_generate_backlog = self._generate_backlogs[idx]
     my_detokenize_backlog = self._detokenize_backlogs[idx]
 
