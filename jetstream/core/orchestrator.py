@@ -529,10 +529,6 @@ class Driver:
     logging.info("---------Spinning up generate thread %d.---------", idx)
     generate_engine = self._generate_engines[idx]
     my_slots = self._generate_slots[idx]
-    prometheus_client.Gauge(
-        f"jetstream_slots_available_percentage-{shortuuid.uuid()}-generate-{idx}",
-        "The percentage of available slots in decode batch",
-    ).set_function(lambda: my_slots.qsize() / max_concurrent_decodes)
 
     my_generate_backlog = self._generate_backlogs[idx]
     my_detokenize_backlog = self._detokenize_backlogs[idx]
@@ -558,6 +554,11 @@ class Driver:
         time_of_last_print = time.time()
 
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
+
+      prometheus_client.Gauge(
+          f"jetstream_slots_available_percentage-{shortuuid.uuid()}-generate-{idx}",
+          "The percentage of available slots in decode batch",
+      ).set_function(lambda: my_slots.qsize() / max_concurrent_decodes)
 
       # Check if there are any free my_slots. We don't want to block here since
       # we can still generate if we can't insert. We do this in a while loop to
