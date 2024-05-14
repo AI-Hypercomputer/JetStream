@@ -245,9 +245,12 @@ class Driver:
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
     prometheus_client.Gauge(
-        "jetstream_prefill_backlog_size-{shortuuid.uuid()}",
+        "jetstream_prefill_backlog_size",
         "Size of prefill queue",
-    ).set_function(lambda: self._prefill_backlog.qsize())
+        labelnames=["uuid"]
+    )
+    self._prefill_backlog.labels("uuid").set(shortuuid.uuid())
+    self._prefill_backlog.set_function(lambda: self._prefill_backlog.qsize())
 
     # Stage 2
     # After prefilling, it is placed here in order to get transferred to
@@ -555,10 +558,15 @@ class Driver:
 
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
 
-      prometheus_client.Gauge(
-          f"jetstream_slots_available_percentage-{shortuuid.uuid()}-generate-{idx}",
-          "The percentage of available slots in decode batch",
-      ).set_function(lambda: my_slots.qsize() / max_concurrent_decodes)
+      jetstream_slots_available_percentage_metric = prometheus_client.Gauge(
+          name="jetstream_slots_available_percentage",
+          documentation="The percentage of available slots in decode batch",
+          labelnames=["uuid", idx],
+      )
+      jetstream_slots_available_percentage_metric.labels("uuid").set(shortuuid.uuid())
+      jetstream_slots_available_percentage_metric.labels("idx").set(idx)
+      jetstream_slots_available_percentage_metric.set_function(lambda: my_slots.qsize() / max_concurrent_decodes)
+      
 
       # Check if there are any free my_slots. We don't want to block here since
       # we can still generate if we can't insert. We do this in a while loop to
