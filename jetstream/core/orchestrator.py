@@ -564,7 +564,7 @@ class Driver:
       jetstream_slots_available_percentage_metric = prometheus_client.Gauge(
           name="jetstream_slots_available_percentage",
           documentation="The percentage of available slots in decode batch",
-          labelnames=["uuid", idx],
+          labelnames=["uuid", "idx"],
       )
       jetstream_slots_available_percentage_metric.labels(
           shortuuid.uuid(), idx
