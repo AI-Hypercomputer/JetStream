@@ -211,8 +211,9 @@ class Driver:
   # todo: remove jax_padding after all then engine migrate to np padding
   _jax_padding = True
 
-  # Record metrics for prefill_backlog size
+  # Record metrics
   _prefill_backlog_size_metric: prometheus_client.Gauge
+  _jetstream_slots_available_percentage_metric: prometheus_client.Gauge
 
   def __init__(
       self,
