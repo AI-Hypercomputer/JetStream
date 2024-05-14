@@ -555,6 +555,7 @@ def main(args: argparse.Namespace):
         args.total_mock_requests
     )  # e.g. [("AB", 2, "AB", 3)]
   else:
+    dataset = []
     if args.dataset == "openorca":
       dataset = load_openorca_dataset_pkl()
     elif args.dataset == "sharegpt":
