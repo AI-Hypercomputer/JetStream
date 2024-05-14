@@ -253,9 +253,7 @@ class Driver:
         labelnames=["uuid"],
     )
     self._prefill_backlog_metric.labels("uuid").set(shortuuid.uuid())
-    self._prefill_backlog_metric.set_function(
-        lambda: self._prefill_backlog.qsize()
-    )
+    self._prefill_backlog_metric.set_function(self._prefill_backlog.qsize())
 
     # Stage 2
     # After prefilling, it is placed here in order to get transferred to
