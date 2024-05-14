@@ -244,12 +244,12 @@ class Driver:
     self._interleaved_mode = interleaved_mode
 
     # Register metric at the driver level to avoid duplicate registration
-    prefill_backlog_metric = prometheus_client.Gauge(
+    self._prefill_backlog_metric = prometheus_client.Gauge(
         "jetstream_prefill_backlog_size",
         "Size of prefill queue",
         labelnames=["uuid"],
     )
-    jetstream_slots_available_percentage_metric = prometheus_client.Gauge(
+    self._jetstream_slots_available_percentage_metric = prometheus_client.Gauge(
         name="jetstream_slots_available_percentage",
         documentation="The percentage of available slots in decode batch",
         labelnames=["uuid", "idx"],
@@ -259,7 +259,7 @@ class Driver:
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
-    prefill_backlog_metric.labels(shortuuid.uuid()).set_function(
+    self._prefill_backlog_metric.labels(shortuuid.uuid()).set_function(
         lambda: float(self._prefill_backlog.qsize())
     )
 
@@ -567,7 +567,7 @@ class Driver:
         time_of_last_print = time.time()
 
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
-      jetstream_slots_available_percentage_metric.labels(
+      self._jetstream_slots_available_percentage_metric.labels(
           shortuuid.uuid(), idx
       ).set_function(lambda: float(my_slots.qsize() / max_concurrent_decodes))
 
