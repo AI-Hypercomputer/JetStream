@@ -252,7 +252,9 @@ class Driver:
         "Size of prefill queue",
         labelnames=["uuid"],
     )
-    self._prefill_backlog_metric.labels(shortuuid.uuid()).set_function(self._prefill_backlog.qsize())
+    self._prefill_backlog_metric.labels(shortuuid.uuid()).set_function(
+        self._prefill_backlog.qsize()
+    )
 
     # Stage 2
     # After prefilling, it is placed here in order to get transferred to
@@ -564,7 +566,9 @@ class Driver:
           documentation="The percentage of available slots in decode batch",
           labelnames=["uuid", idx],
       )
-      jetstream_slots_available_percentage_metric.labels(shortuuid.uuid(), idx).set_function(my_slots.qsize() / max_concurrent_decodes)
+      jetstream_slots_available_percentage_metric.labels(
+          shortuuid.uuid(), idx
+      ).set_function(my_slots.qsize() / max_concurrent_decodes)
 
       # Check if there are any free my_slots. We don't want to block here since
       # we can still generate if we can't insert. We do this in a while loop to
