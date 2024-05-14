@@ -537,7 +537,6 @@ class Driver:
     logging.info("---------Spinning up generate thread %d.---------", idx)
     generate_engine = self._generate_engines[idx]
     my_slots = self._generate_slots[idx]
-
     my_generate_backlog = self._generate_backlogs[idx]
     my_detokenize_backlog = self._detokenize_backlogs[idx]
 
