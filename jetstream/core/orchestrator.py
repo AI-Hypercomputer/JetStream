@@ -246,6 +246,7 @@ class Driver:
     self._interleaved_mode = interleaved_mode
 
     # Register metric at the driver level to avoid duplicate registration
+    self._driver_uuid = shortuuid.uuid()
     self._prefill_backlog_metric = prometheus_client.Gauge(
         "jetstream_prefill_backlog_size",
         "Size of prefill queue",
