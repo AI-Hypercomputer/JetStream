@@ -212,6 +212,7 @@ class Driver:
   _jax_padding = True
 
   # Record metrics
+  _driver_uuid: str
   _prefill_backlog_size_metric: prometheus_client.Gauge
   _jetstream_slots_available_percentage_metric: prometheus_client.Gauge
 
@@ -260,7 +261,7 @@ class Driver:
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
-    self._prefill_backlog_metric.labels(shortuuid.uuid()).set_function(
+    self._prefill_backlog_metric.labels(self._driver_uuid).set_function(
         lambda: float(self._prefill_backlog.qsize())
     )
 
@@ -569,7 +570,7 @@ class Driver:
 
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
       self._jetstream_slots_available_percentage_metric.labels(
-          shortuuid.uuid(), idx
+          self._driver_uuid, idx
       ).set_function(lambda: float(my_slots.qsize() / max_concurrent_decodes))
 
       # Check if there are any free my_slots. We don't want to block here since
