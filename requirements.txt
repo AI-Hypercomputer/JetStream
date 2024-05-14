@@ -173,6 +173,8 @@ packaging==23.2
     #   pytest
     #   seqio
     #   tensorflow
+parameterized==0.9.0
+    # via -r requirements.in
 pluggy==1.4.0
     # via pytest
 portpicker==1.6.0
@@ -235,6 +237,8 @@ scipy==1.12.0
 sentencepiece==0.1.99
     # via seqio
 seqio==0.0.19
+    # via -r requirements.in
+shortuuid==1.0.13
     # via -r requirements.in
 six==1.16.0
     # via
