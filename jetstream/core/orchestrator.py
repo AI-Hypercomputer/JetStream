@@ -253,7 +253,7 @@ class Driver:
         labelnames=["uuid"],
     )
     self._prefill_backlog_metric.labels(shortuuid.uuid()).set_function(
-        self._prefill_backlog.qsize()
+        lambda: float(self._prefill_backlog.qsize())
     )
 
     # Stage 2
@@ -568,7 +568,7 @@ class Driver:
       )
       jetstream_slots_available_percentage_metric.labels(
           shortuuid.uuid(), idx
-      ).set_function(my_slots.qsize() / max_concurrent_decodes)
+      ).set_function(lambda: float(my_slots.qsize() / max_concurrent_decodes))
 
       # Check if there are any free my_slots. We don't want to block here since
       # we can still generate if we can't insert. We do this in a while loop to
