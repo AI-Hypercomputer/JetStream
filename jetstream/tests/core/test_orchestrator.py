@@ -98,6 +98,39 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
     driver.stop()
     print("Orchestrator driver stopped.")
 
+  async def test_orchestrator_interleaved_mode_client_tokenization(self):
+    """Test the multithreaded orchestration."""
+    driver = self._setup_driver_interleaved_mode()
+    client = orchestrator.LLMOrchestrator(driver=driver)
+
+    # The token ids of  string "AB", [2] will be prepend
+    # as BOS.
+    token_ids = [65, 66]
+
+    request = jetstream_pb2.DecodeRequest(
+        session_cache="",
+        token_content=jetstream_pb2.DecodeRequest.TokenContent(
+            token_ids=token_ids
+        ),
+        priority=1,
+        max_tokens=3,
+    )
+    iterator = client.Decode(request)
+    # Return token ids only when in client side tokenization mode.
+    expected_text = ["", "", "", ""]
+    expected_token_ids = [266, 332, 415, None]
+    counter = 0
+    async for resp in iterator:
+      output_text = resp.stream_content.samples[0].text
+      token_ids = resp.stream_content.samples[0].token_ids
+      output_token_id = token_ids[0] if len(token_ids) > 0 else None
+      print(f"actual output: {output_text=} {output_token_id=}")
+      assert output_text == expected_text[counter]
+      assert output_token_id == expected_token_ids[counter]
+      counter += 1
+    driver.stop()
+    print("Orchestrator driver stopped.")
+
 
 if __name__ == "__main__":
   unittest.main()

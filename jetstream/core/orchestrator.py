@@ -139,6 +139,7 @@ class ActiveRequest:
   ################## Information relevant for detokenization ###################
   # Which generate step this was added at.
   generate_timestep_added: Optional[int] = None
+  is_client_side_tokenization: Optional[bool] = False
 
   def enqueue_samples(self, generated_samples: list[ReturnSample]):
     """Adds the generated sample(s) to return channel for current step.
@@ -698,6 +699,7 @@ class Driver:
                 slot=slot,
                 slot_max_length=request.max_tokens,
                 result_tokens=result_tokens,
+                is_client_side_tokenization=request.is_client_side_tokenization,
                 complete=request.complete,
             )
             request.complete = complete
@@ -729,14 +731,17 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
 
   def _get_prefill_content(
       self, request: jetstream_pb2.DecodeRequest
-  ) -> str | list[int]:
+  ) -> Tuple[str | list[int], bool]:
     which_content = request.WhichOneof("content")
     content = getattr(request, which_content)
     if which_content == "text_content":
-      return cast(jetstream_pb2.DecodeRequest.TextContent, content).text
+      return cast(jetstream_pb2.DecodeRequest.TextContent, content).text, False
     else:
-      return list(
-          cast(jetstream_pb2.DecodeRequest.TokenContent, content).token_ids
+      return (
+          list(
+              cast(jetstream_pb2.DecodeRequest.TokenContent, content).token_ids
+          ),
+          True,
       )
 
   async def Decode(  # pylint: disable=invalid-overridden-method
@@ -750,14 +755,19 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
           "LLM orchestrator is being used in offline test mode, and will not"
           " respond to gRPC queries - only direct function calls."
       )
+    is_client_side_tokenization = False
     return_channel = async_multifuture.AsyncMultifuture()
     if context:
       context.add_done_callback(return_channel.cancel)
+    prefill_content, is_client_side_tokenization = self._get_prefill_content(
+        request
+    )
     # Wrap request as an ActiveRequest.
     active_request = ActiveRequest(
         max_tokens=request.max_tokens,
         history_path=request.session_cache,
-        prefill_content=self._get_prefill_content(request),
+        prefill_content=prefill_content,
+        is_client_side_tokenization=is_client_side_tokenization,
         return_channel=return_channel,
     )
     # The first stage is being prefilled, all other stages are handled
@@ -777,58 +787,78 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     logging.info(
         "Placed request on the prefill queue.",
     )
-    buffered_response_list = []
-    async for response in active_request.return_channel:
-      # When an active request is created a queue is instantiated. New tokens
-      # are placed there during the decoding loop, we pop from that queue by
-      # using the .next method on the active request.
-      # Yielding allows for the response to be a streaming grpc call - which
-      # can be called via iterating over a for loop on the client side.
-      # The DecodeResponse stream should consume all generated tokens in
-      # return_channel when complete signal is received (AsyncMultifuture
-      # promises this). Buffer response mechanism is used to handle streaming
+    # When an active request is created a queue is instantiated. New tokens
+    # are placed there during the decoding loop, we pop from that queue by
+    # using the .next method on the active request.
+    # Yielding allows for the response to be a streaming grpc call - which
+    # can be called via iterating over a for loop on the client side.
+    # The DecodeResponse stream should consume all generated tokens in
+    # return_channel when complete signal is received (AsyncMultifuture
+    # promises this).
+    if is_client_side_tokenization:
+      # If is_client_side_tokenization, the client should request with token
+      # ids, and the JetStream server will return token ids as response.
+      # The client should take care of tokenization and detokenization.
+      async for response in active_request.return_channel:
+        response = cast(list[ReturnSample], response)
+        samples = []
+        for sample in response:
+          samples.append(
+              jetstream_pb2.DecodeResponse.StreamContent.Sample(
+                  token_ids=sample.token_ids,
+              )
+          )
+        yield jetstream_pb2.DecodeResponse(
+            stream_content=jetstream_pb2.DecodeResponse.StreamContent(
+                samples=samples
+            )
+        )
+    else:
+      # Buffer response mechanism is used to handle streaming
       # detokenization with special character (For some edge cases with
       # SentencePiece tokenizer, it requires to decode a complete sequence
       # instead of a single token).
-      response = cast(list[ReturnSample], response)
-      buffered = False
-      for item in response:
-        if item.text and token_utils.is_byte_token(item.text[-1]):
-          # If any sample ends in bytes, this means we might still need to
-          # decode more bytes to compose the string.
-          buffered_response_list.append(response)
-          buffered = True
-          break
-      if buffered:
-        continue
-      # Flush the buffered responses to each sample of current response.
-      current_response_with_flushed_buffer = list(
-          zip(*buffered_response_list, response)
-      )
-      # Empty buffer: [[s0_cur], [s1_cur], ...]
-      # Has buffer:
-      # [[s0_b0, s0_b1, ..., s0_cur], [s1_b0, s1_b1, ..., s1_cur], ...]
-      current_response_with_flushed_buffer = cast(
-          list[list[ReturnSample]], current_response_with_flushed_buffer
-      )
-      # Reset buffer after flushed.
       buffered_response_list = []
-      # Form correct sample(s) and return as StreamContent for this iteration.
-      samples = []
-      for sample in current_response_with_flushed_buffer:
-        text = []
-        token_ids = []
-        for resp in sample:
-          text.extend(resp.text)
-          token_ids.extend(resp.token_ids)
-        samples.append(
-            jetstream_pb2.DecodeResponse.StreamContent.Sample(
-                text=token_utils.text_tokens_to_str(text),
-                token_ids=token_ids,
+      async for response in active_request.return_channel:
+        response = cast(list[ReturnSample], response)
+        buffered = False
+        for item in response:
+          if item.text and token_utils.is_byte_token(item.text[-1]):
+            # If any sample ends in bytes, this means we might still need to
+            # decode more bytes to compose the string.
+            buffered_response_list.append(response)
+            buffered = True
+            break
+        if buffered:
+          continue
+        # Flush the buffered responses to each sample of current response.
+        current_response_with_flushed_buffer = list(
+            zip(*buffered_response_list, response)
+        )
+        # Empty buffer: [[s0_cur], [s1_cur], ...]
+        # Has buffer:
+        # [[s0_b0, s0_b1, ..., s0_cur], [s1_b0, s1_b1, ..., s1_cur], ...]
+        current_response_with_flushed_buffer = cast(
+            list[list[ReturnSample]], current_response_with_flushed_buffer
+        )
+        # Reset buffer after flushed.
+        buffered_response_list = []
+        # Form correct sample(s) and return as StreamContent for this iteration.
+        samples = []
+        for sample in current_response_with_flushed_buffer:
+          text = []
+          token_ids = []
+          for resp in sample:
+            text.extend(resp.text)
+            token_ids.extend(resp.token_ids)
+          samples.append(
+              jetstream_pb2.DecodeResponse.StreamContent.Sample(
+                  text=token_utils.text_tokens_to_str(text),
+                  token_ids=token_ids,
+              )
+          )
+        yield jetstream_pb2.DecodeResponse(
+            stream_content=jetstream_pb2.DecodeResponse.StreamContent(
+                samples=samples
             )
         )
-      yield jetstream_pb2.DecodeResponse(
-          stream_content=jetstream_pb2.DecodeResponse.StreamContent(
-              samples=samples
-          )
-      )

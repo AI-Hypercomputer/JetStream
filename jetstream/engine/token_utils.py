@@ -162,6 +162,7 @@ def process_result_tokens(
     slot_max_length: int,
     result_tokens: ResultTokens,
     complete: np.ndarray,
+    is_client_side_tokenization: bool = False,
     debug: bool = False,
 ) -> Tuple[List[ReturnSample], np.ndarray]:
   """Processes a result tokens into a list of strings, handling multiple
@@ -173,6 +174,7 @@ def process_result_tokens(
     result_tokens: The tokens to access by slot.
     complete: Array representing the completion status of each sample in the
       slot.
+    is_client_side_tokenization: Whether to detokenize on client side.
     debug: Whether to log step by step detokenisation.
 
   Returns:
@@ -214,10 +216,11 @@ def process_result_tokens(
           complete[idx] = True
           break
         else:
-          if isinstance(tokenizer, SentencePieceTokenizer):
-            text_so_far.append(tokenizer.decode([tok_id], is_streaming=True))
-          else:
-            text_so_far.append(tokenizer.decode([tok_id]))
+          if not is_client_side_tokenization:
+            if isinstance(tokenizer, SentencePieceTokenizer):
+              text_so_far.append(tokenizer.decode([tok_id], is_streaming=True))
+            else:
+              text_so_far.append(tokenizer.decode([tok_id]))
           tok_id_so_far.append(tok_id)
     return_samples.append(
         ReturnSample(text=text_so_far, token_ids=tok_id_so_far)

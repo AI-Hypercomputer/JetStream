@@ -62,6 +62,7 @@ class UtilsTest(absltest.TestCase):
         slot_max_length=4,
         result_tokens=result_tokens,
         complete=mock_complete,
+        is_client_side_tokenization=False,
     )
     np.testing.assert_equal(complete, np.array([1, 0]))
 
@@ -79,6 +80,7 @@ class UtilsTest(absltest.TestCase):
         slot_max_length=4,
         result_tokens=result_tokens,
         complete=mock_complete,
+        is_client_side_tokenization=False,
     )
     text_output = [
         mock_utils.TestVocab().decode(row.token_ids) for row in per_channel

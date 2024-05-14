@@ -226,7 +226,7 @@ class TokenUtilsTest(unittest.TestCase):
         samples_per_slot=1,
     )
     samples, complete = token_utils.process_result_tokens(
-        tokenizer, 0, 16, result_tokens, complete
+        tokenizer, 0, 16, result_tokens, complete, False
     )
     # Note: the expected_tokens list is for the output token(s) for 1 decode
     # step. Currently, JetStream only output 1 token (1 text piece) for 1
@@ -241,6 +241,56 @@ class TokenUtilsTest(unittest.TestCase):
         samples[0].text
         == [" I", " believe", " the", " meaning", " of", " life", " is"]
     )
+    self.assertTrue(np.allclose(complete, np.zeros((1,), dtype=np.bool_)))
+
+  def test_process_result_with_sentencepiece_tokenizer_client_decode(self):
+    self.setup_sentencepiece()
+    metadata = tokenizer_pb2.TokenizerParameters(path=self.tokenizer_path)
+    tokenizer = token_utils.SentencePieceTokenizer(metadata)
+    complete = np.zeros((1,), dtype=np.bool_)
+
+    length = 7
+    result_tokens = engine_api.ResultTokens(
+        data=np.array(
+            [
+                [
+                    306,
+                    4658,
+                    278,
+                    6593,
+                    310,
+                    2834,
+                    338,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    1,
+                    length,
+                ]
+            ]
+        ),
+        tokens_idx=(0, length),
+        valid_idx=(length, 2 * length),
+        length_idx=(2 * length, 2 * length + 1),
+        samples_per_slot=1,
+    )
+    samples, complete = token_utils.process_result_tokens(
+        tokenizer, 0, 16, result_tokens, complete, True
+    )
+    # Note: the expected_tokens list is for the output token(s) for 1 decode
+    # step. Currently, JetStream only output 1 token (1 text piece) for 1
+    # decode step.
+    expected_tokens = np.array([[306, 4658, 278, 6593, 310, 2834, 338]])
+    self.assertTrue(
+        np.allclose(
+            [sample.token_ids for sample in samples], expected_tokens, atol=1e-7
+        )
+    )
+    # Return token ids only when in client side tokenization mode.
+    self.assertTrue(samples[0].text == [])
     self.assertTrue(np.allclose(complete, np.zeros((1,), dtype=np.bool_)))
 
   def test_sentencepiece_tokenizer_decode(self):
@@ -373,7 +423,7 @@ class TokenUtilsTest(unittest.TestCase):
         samples_per_slot=1,
     )
     samples, complete = token_utils.process_result_tokens(
-        tokenizer, 0, 16, result_tokens, complete
+        tokenizer, 0, 16, result_tokens, complete, False
     )
     # Note: the expected_tokens list is for the output token(s) for 1 decode
     # step. Currently, JetStream only output 1 token (1 text piece) for 1
@@ -388,6 +438,38 @@ class TokenUtilsTest(unittest.TestCase):
         samples[0].text
         == ["I", " believe", " the", " meaning", " of", " life", " is"]
     )
+    self.assertTrue(np.allclose(complete, np.zeros((1,), dtype=np.bool_)))
+
+  def test_process_result_with_tiktoken_client_decode(self):
+    self.setup_tiktoken()
+    metadata = tokenizer_pb2.TokenizerParameters(path=self.tokenizer_path)
+    tokenizer = token_utils.TikToken(metadata)
+    complete = np.zeros((1,), dtype=np.bool_)
+
+    length = 7
+    result_tokens = engine_api.ResultTokens(
+        data=np.array(
+            [[40, 4510, 279, 7438, 315, 2324, 374, 1, 1, 1, 1, 1, 1, 1, length]]
+        ),
+        tokens_idx=(0, length),
+        valid_idx=(length, 2 * length),
+        length_idx=(2 * length, 2 * length + 1),
+        samples_per_slot=1,
+    )
+    samples, complete = token_utils.process_result_tokens(
+        tokenizer, 0, 16, result_tokens, complete, True
+    )
+    # Note: the expected_tokens list is for the output token(s) for 1 decode
+    # step. Currently, JetStream only output 1 token (1 text piece) for 1
+    # decode step.
+    expected_tokens = np.array([[40, 4510, 279, 7438, 315, 2324, 374]])
+    self.assertTrue(
+        np.allclose(
+            [sample.token_ids for sample in samples], expected_tokens, atol=1e-7
+        )
+    )
+    # Return token ids only when in client side tokenization mode.
+    self.assertTrue(samples[0].text == [])
     self.assertTrue(np.allclose(complete, np.zeros((1,), dtype=np.bool_)))
 
   def test_tiktoken_decode(self):
