@@ -144,7 +144,6 @@ def run(
         "Starting Prometheus server on port %d", PROMETHEUS_ENABLED_ON_PORT
     )
     start_http_server(PROMETHEUS_ENABLED_ON_PORT)
-
   else:
     logging.info(
         "Not starting Prometheus server: PROMETHEUS_ENABLED_ON_PORT not set"
