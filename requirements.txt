@@ -238,8 +238,6 @@ sentencepiece==0.1.99
     # via seqio
 seqio==0.0.19
     # via -r requirements.in
-shortuuid==1.0.13
-    # via -r requirements.in
 six==1.16.0
     # via
     #   astunparse

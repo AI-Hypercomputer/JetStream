@@ -94,7 +94,7 @@ from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.core.utils.return_sample import ReturnSample
 from jetstream.engine import engine_api, tokenizer_api, token_utils
-import jetstream.metrics as jetstream_metrics
+from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
 
 root = logging.getLogger()
@@ -211,6 +211,12 @@ class Driver:
   # todo: remove jax_padding after all then engine migrate to np padding
   _jax_padding = True
 
+  # Record prometheus metrics if flag set
+  _metrics_collector: JetstreamMetricsCollector
+  if flag:
+    _metrics_collector = JetstreamMetricsCollector()
+  
+
   def __init__(
       self,
       prefill_engines: Optional[list[engine_api.Engine]] = None,
@@ -244,9 +250,8 @@ class Driver:
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
-    jetstream_metrics.prefill_backlog.labels(
-        jetstream_metrics.instance_uuid
-    ).set_function(lambda: float(self._prefill_backlog.qsize()))
+    if self._metrics_collector is not None:
+      self._metrics_collector.get_prefill_backlog_hostname_metric().set_function(lambda: float(self._prefill_backlog.qsize()))
 
     # Stage 2
     # After prefilling, it is placed here in order to get transferred to
@@ -578,9 +583,9 @@ class Driver:
         time_of_last_print = time.time()
 
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
-      jetstream_metrics.slots_available_percentage.labels(
-          jetstream_metrics.instance_uuid, idx
-      ).set_function(lambda: float(my_slots.qsize() / max_concurrent_decodes))
+
+      if self._metrics_collector is not None:
+        self._metrics_collector.get_slots_available_percentage_metric(idx).set_function(lambda: float(my_slots.qsize() / max_concurrent_decodes))
 
       # Check if there are any free my_slots. We don't want to block here since
       # we can still generate if we can't insert. We do this in a while loop to
