@@ -12,28 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+""" All logic around adding metrics to the Prometheus client registry """
+
 import prometheus_client
 import shortuuid
 
 instance_uuid = shortuuid.uuid()
 
 # Metrics we care to observe
-prefill_backlog: prometheus_client.Gauge
-slots_available_percentage: prometheus_client.Gauge
+prefill_backlog = prometheus_client.Gauge(
+    "jetstream_prefill_backlog_size",
+    "Size of prefill queue",
+    labelnames=["uuid"],
+)
 
-
-def register_metrics():
-
-  global prefill_backlog
-  prefill_backlog = prometheus_client.Gauge(
-      "jetstream_prefill_backlog_size",
-      "Size of prefill queue",
-      labelnames=["uuid"],
-  )
-
-  global slots_available_percentage
-  slots_available_percentage = prometheus_client.Gauge(
-      name="slots_available_percentage",
-      documentation="The percentage of available slots in decode batch",
-      labelnames=["uuid", "idx"],
-  )
+slots_available_percentage = prometheus_client.Gauge(
+    name="slots_available_percentage",
+    documentation="The percentage of available slots in decode batch",
+    labelnames=["uuid", "idx"],
+)
