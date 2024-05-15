@@ -31,6 +31,7 @@ from jetstream.core import orchestrator
 from jetstream.core.proto import jetstream_pb2_grpc
 
 from prometheus_client import start_http_server
+import jetstream.metrics as jetstream_metrics
 
 _HOST = "[::]"
 PROMETHEUS_ENABLED_ON_PORT = (
@@ -144,6 +145,8 @@ def run(
         "Starting Prometheus server on port %d", PROMETHEUS_ENABLED_ON_PORT
     )
     start_http_server(PROMETHEUS_ENABLED_ON_PORT)
+    jetstream_metrics.register_metrics()
+    
   else:
     logging.info(
         "Not starting Prometheus server: PROMETHEUS_ENABLED_ON_PORT not set"
