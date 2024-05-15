@@ -21,8 +21,8 @@ instance_uuid = shortuuid.uuid()
 
 # Metrics we care to observe
 prefill_backlog = prometheus_client.Gauge(
-    "prefill_backlog_size",
-    "Size of prefill queue",
+    name="prefill_backlog_size",
+    documentation="Size of prefill queue",
     labelnames=["uuid"],
 )
 
