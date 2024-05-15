@@ -578,7 +578,7 @@ class Driver:
         time_of_last_print = time.time()
 
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
-      jetstream_metrics.jetstream_slots_available_percentage.labels(
+      jetstream_metrics.slots_available_percentage.labels(
           jetstream_metrics.instance_uuid, idx
       ).set_function(lambda: float(my_slots.qsize() / max_concurrent_decodes))
 
