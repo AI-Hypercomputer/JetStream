@@ -40,7 +40,7 @@ class OrchestratorServicer(object):
   """TODO: Merge this with main JetStream core once we settle on an API."""
 
   def Decode(self, request, context):
-    """Generate the next model tokens."""
+    """Query LLM to generate text or tokens."""
     context.set_code(grpc.StatusCode.UNIMPLEMENTED)
     context.set_details("Method not implemented!")
     raise NotImplementedError("Method not implemented!")

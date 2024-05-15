@@ -388,10 +388,10 @@ async def grpc_async_request(
     token_list = []
     request_start_time = time.perf_counter()
     response = stub.Decode(request)
-    async for sample_list in response:
+    async for resp in response:
       if ttft == 0:
         ttft = time.perf_counter() - request_start_time
-      token_list.extend(sample_list.response[0].token_ids)
+      token_list.extend(resp.stream_content.samples[0].token_ids)
     latency = time.perf_counter() - request_start_time
     return token_list, ttft, latency
 
@@ -405,9 +405,13 @@ async def send_request(
     priority: int,
 ) -> RequestFuncOutput:
   """Send the request to JetStream server."""
+  # Tokenization on client side following MLPerf standard.
+  token_ids = tokenizer.encode(input_request.prompt)
   request = jetstream_pb2.DecodeRequest(
       session_cache=session_cache,
-      additional_text=input_request.prompt,
+      token_content=jetstream_pb2.DecodeRequest.TokenContent(
+          token_ids=token_ids
+      ),
       priority=priority,
       max_tokens=input_request.output_len,
   )
@@ -551,6 +555,7 @@ def main(args: argparse.Namespace):
         args.total_mock_requests
     )  # e.g. [("AB", 2, "AB", 3)]
   else:
+    dataset = []
     if args.dataset == "openorca":
       dataset = load_openorca_dataset_pkl()
     elif args.dataset == "sharegpt":

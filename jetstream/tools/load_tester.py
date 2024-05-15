@@ -38,11 +38,11 @@ def collect_tokens(
     response: Iterator[jetstream_pb2.DecodeResponse], print_interim: bool
 ) -> list[str]:
   tokens = []
-  for token_list in response:
-    tok = token_list.response[0]
+  for resp in response:
+    text_pieces = resp.stream_content.samples[0].text
     if print_interim:
-      print(tok, end="", flush=True)
-    tokens.append(tok)
+      print(text_pieces, end="", flush=True)
+    tokens.extend(text_pieces)
   return tokens
 
 
@@ -56,7 +56,7 @@ def api_call(
   """Sends a request to server and returns text."""
   request = jetstream_pb2.DecodeRequest(
       session_cache=session_cache,
-      additional_text=text,
+      text_content=jetstream_pb2.DecodeRequest.TextContent(text=text),
       priority=1,
       max_tokens=max_tokens,
   )

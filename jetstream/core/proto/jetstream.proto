@@ -19,14 +19,13 @@ package jetstream_proto;
 // TODO: Merge this with main JetStream core once we settle on an API.
 
 service Orchestrator {
-  // Generate the next model tokens.
+  // Query LLM to generate text or tokens.
   rpc Decode(DecodeRequest) returns (stream DecodeResponse) {}
 }
+
 message DecodeRequest {
   // Where to load any pre-existing kv cache from.
   string session_cache = 1;
-  // New text from a user or tool.
-  string additional_text = 2;
   int32 priority = 3;
   // The maximum output length of a sequence. It's used in JetStream to control
   // the output/decode length of a sequence. It would not be used in the engine.
@@ -35,12 +34,44 @@ message DecodeRequest {
   // sequence; max_prefill_predict_length is the maximum length of the
   // input/prefill of a sequence.
   int32 max_tokens = 4;
+
+  message TextContent {
+    string text = 1;
+  }
+  message TokenContent {
+    repeated int32 token_ids = 1;
+  }
+
+  // The client can pass the inputs either as a string, in which case the server will
+  // tokenize it, or as tokens, in which case it's the client's responsibility to
+  // ensure they tokenize its input strings with the correct tokenizer.
+  oneof content {
+    TextContent text_content = 5;
+    TokenContent token_content = 6;
+  }
+  reserved 2;
+  // Next ID: 7
 }
+
 message DecodeResponse {
-  // List of responses, one per sample. The list size depends on text generation strategy the engine used.
-  repeated RepeatedTokenIds response = 1;
-}
-message RepeatedTokenIds {
-  // List of token ids, one list per sample. When speculative decoding is disabled, the list size should be 1; When speculative decoding is enabled, the list size should be >= 1.
-  repeated int32 token_ids = 1;
+  // InitialContent supports returning initial one-off response data from the
+  // stream. It's a placeholder for future features such as history cache.
+  message InitialContent {}
+  message StreamContent {
+    message Sample {
+      // The text string decoded from token id(s).
+      string text = 1;
+      // List of token ids, one list per sample. When speculative decoding is disabled, the list size should be 1; When speculative decoding is enabled, the list size should be >= 1.
+      repeated int32 token_ids = 2;
+    }
+    // Supports multiple samples in the StreamContent. The Sample list size depends on text generation strategy the engine used.
+    repeated Sample samples = 1;
+  }
+
+  oneof content {
+    InitialContent initial_content = 2;
+    StreamContent stream_content = 3;
+  }
+  reserved 1;
+  // Next ID: 4
 }

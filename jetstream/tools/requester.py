@@ -40,6 +40,11 @@ _TOKENIZER = flags.DEFINE_string(
     "Name or path of the tokenizer (matched to the model)",
     required=True,
 )
+_CLIENT_SIDE_TOKENIZATION = flags.DEFINE_bool(
+    "client_side_tokenization",
+    False,
+    "Enable client side tokenization with tokenizer.",
+)
 
 
 def _GetResponseAsync(
@@ -50,10 +55,16 @@ def _GetResponseAsync(
 
   response = stub.Decode(request)
   output = []
-  for sample_list in response:
-    output.extend(sample_list.response[0].token_ids)
-  vocab = load_vocab(_TOKENIZER.value)
-  text_output = vocab.tokenizer.decode(output)
+  for resp in response:
+    if _CLIENT_SIDE_TOKENIZATION.value:
+      output.extend(resp.stream_content.samples[0].token_ids)
+    else:
+      output.extend(resp.stream_content.samples[0].text)
+  if _CLIENT_SIDE_TOKENIZATION.value:
+    vocab = load_vocab(_TOKENIZER.value)
+    text_output = vocab.tokenizer.decode(output)
+  else:
+    text_output = "".join(output)
   print(f"Prompt: {_TEXT.value}")
   print(f"Response: {text_output}")
 
@@ -67,12 +78,26 @@ def main(argv: Sequence[str]) -> None:
     grpc.channel_ready_future(channel).result()
     stub = jetstream_pb2_grpc.OrchestratorStub(channel)
     print(f"Sending request to: {address}")
-    request = jetstream_pb2.DecodeRequest(
-        session_cache=_SESSION_CACHE.value,
-        additional_text=_TEXT.value,
-        priority=_PRIORITY.value,
-        max_tokens=_MAX_TOKENS.value,
-    )
+    if _CLIENT_SIDE_TOKENIZATION.value:
+      vocab = load_vocab(_TOKENIZER.value)
+      token_ids = vocab.tokenizer.encode(_TEXT.value)
+      request = jetstream_pb2.DecodeRequest(
+          session_cache=_SESSION_CACHE.value,
+          token_content=jetstream_pb2.DecodeRequest.TokenContent(
+              token_ids=token_ids
+          ),
+          priority=_PRIORITY.value,
+          max_tokens=_MAX_TOKENS.value,
+      )
+    else:
+      request = jetstream_pb2.DecodeRequest(
+          session_cache=_SESSION_CACHE.value,
+          text_content=jetstream_pb2.DecodeRequest.TextContent(
+              text=_TEXT.value
+          ),
+          priority=_PRIORITY.value,
+          max_tokens=_MAX_TOKENS.value,
+      )
     return _GetResponseAsync(stub, request)
 
 

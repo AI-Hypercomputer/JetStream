@@ -34,7 +34,7 @@ class Tokenizer(abc.ABC):
     """Tokenize a string.
     Args:
         s: String to tokenize.
-        **kwargs: Additional keyword arguments
+        **kwargs: Additional keyword arguments.
     Returns:
         tokens: Tokenized into integers.
         true_length: Actual length of the non-padded sequence
@@ -42,33 +42,11 @@ class Tokenizer(abc.ABC):
     """
 
   @abc.abstractmethod
-  def decode(
-      self,
-      slot: int,
-      slot_max_length: int,
-      result_tokens: ResultTokens,
-      complete: np.ndarray,
-      **kwargs,
-  ) -> Tuple[list[list[int]], np.ndarray]:
-    """Processes a result tokens into a list of token ids, handling multiple
-    samples.
-    Args:
-      slot: The slot at which to draw tokens from.
-      slot_max_length: Max length for a sample in the slot.
-      result_tokens: The tokens to access by slot.
-      complete: Array representing the completion status of each sample in the
-        slot.
-      **kwards: Additional keyword arguments.
-    Returns:
-      sample_return: List of token_ids, one per sample.
-      complete: Updated complete.
-    """
-
-  @abc.abstractmethod
-  def decode_str(self, token_ids: list[int]) -> str:
+  def decode(self, token_ids: list[int], **kwargs) -> str:
     """Processess input token ids to generate a string.
     Args:
       token_ids: List of token ids.
+      **kwargs: Additional keyword arguments.
     Returns:
       str: String generated from the token ids.
     """
