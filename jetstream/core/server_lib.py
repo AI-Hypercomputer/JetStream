@@ -146,7 +146,7 @@ def run(
     )
     start_http_server(PROMETHEUS_ENABLED_ON_PORT)
     jetstream_metrics.register_metrics()
-    
+
   else:
     logging.info(
         "Not starting Prometheus server: PROMETHEUS_ENABLED_ON_PORT not set"
