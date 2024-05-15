@@ -94,9 +94,8 @@ from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.core.utils.return_sample import ReturnSample
 from jetstream.engine import engine_api, tokenizer_api, token_utils
+import jetstream.metrics as jetstream_metrics
 import numpy as np
-import prometheus_client
-import shortuuid
 
 root = logging.getLogger()
 root.setLevel(logging.DEBUG)
@@ -212,11 +211,6 @@ class Driver:
   # todo: remove jax_padding after all then engine migrate to np padding
   _jax_padding = True
 
-  # Record metrics
-  _driver_uuid: str
-  _prefill_backlog_size_metric: prometheus_client.Gauge
-  _jetstream_slots_available_percentage_metric: prometheus_client.Gauge
-
   def __init__(
       self,
       prefill_engines: Optional[list[engine_api.Engine]] = None,
@@ -246,24 +240,11 @@ class Driver:
     self._generate_params = generate_params
     self._interleaved_mode = interleaved_mode
 
-    # Register metric at the driver level to avoid duplicate registration
-    self._driver_uuid = shortuuid.uuid()
-    self._prefill_backlog_metric = prometheus_client.Gauge(
-        "jetstream_prefill_backlog_size",
-        "Size of prefill queue",
-        labelnames=["uuid"],
-    )
-    self._jetstream_slots_available_percentage_metric = prometheus_client.Gauge(
-        name="jetstream_slots_available_percentage",
-        documentation="The percentage of available slots in decode batch",
-        labelnames=["uuid", "idx"],
-    )
-
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
-    self._prefill_backlog_metric.labels(self._driver_uuid).set_function(
+    jetstream_metrics.prefill_backlog.labels(jetstream_metrics.instance_uuid).set_function(
         lambda: float(self._prefill_backlog.qsize())
     )
 
@@ -597,8 +578,8 @@ class Driver:
         time_of_last_print = time.time()
 
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
-      self._jetstream_slots_available_percentage_metric.labels(
-          self._driver_uuid, idx
+      jetstream_metrics.jetstream_slots_available_percentage.labels(
+          jetstream_metrics.instance_uuid, idx
       ).set_function(lambda: float(my_slots.qsize() / max_concurrent_decodes))
 
       # Check if there are any free my_slots. We don't want to block here since
