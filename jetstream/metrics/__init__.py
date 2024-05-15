@@ -18,18 +18,19 @@ import shortuuid
 instance_uuid = shortuuid.uuid()
 
 # Metrics we care to observe
-prefill_backlog : prometheus_client.Gague
+prefill_backlog: prometheus_client.Gauge
 jetstream_slots_available_percentage: prometheus_client.Gauge
 
-def register_metrics(): 
-    prefill_backlog_metric = prometheus_client.Gauge(
-        "jetstream_prefill_backlog_size",
-        "Size of prefill queue",
-        labelnames=["uuid"],
-    )
 
-    jetstream_slots_available_percentage_metric = prometheus_client.Gauge(
-        name="jetstream_slots_available_percentage",
-        documentation="The percentage of available slots in decode batch",
-        labelnames=["uuid", "idx"],
-    )
+def register_metrics():
+  prefill_backlog_metric = prometheus_client.Gauge(
+      "jetstream_prefill_backlog_size",
+      "Size of prefill queue",
+      labelnames=["uuid"],
+  )
+
+  jetstream_slots_available_percentage_metric = prometheus_client.Gauge(
+      name="jetstream_slots_available_percentage",
+      documentation="The percentage of available slots in decode batch",
+      labelnames=["uuid", "idx"],
+  )

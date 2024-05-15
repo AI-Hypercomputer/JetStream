@@ -244,9 +244,9 @@ class Driver:
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
-    jetstream_metrics.prefill_backlog.labels(jetstream_metrics.instance_uuid).set_function(
-        lambda: float(self._prefill_backlog.qsize())
-    )
+    jetstream_metrics.prefill_backlog.labels(
+        jetstream_metrics.instance_uuid
+    ).set_function(lambda: float(self._prefill_backlog.qsize()))
 
     # Stage 2
     # After prefilling, it is placed here in order to get transferred to
