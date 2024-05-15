@@ -21,7 +21,7 @@ instance_uuid = shortuuid.uuid()
 
 # Metrics we care to observe
 prefill_backlog = prometheus_client.Gauge(
-    "jetstream_prefill_backlog_size",
+    "prefill_backlog_size",
     "Size of prefill queue",
     labelnames=["uuid"],
 )
