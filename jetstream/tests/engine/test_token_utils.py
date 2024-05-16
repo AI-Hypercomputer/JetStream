@@ -136,6 +136,67 @@ class TokenUtilsTest(unittest.TestCase):
     )
     self.assertEqual(true_length, expected_true_length)
 
+  def test_tokenize_and_pad(self):
+    jax.config.update("jax_platform_name", "cpu")
+    self.setup_sentencepiece()
+    s = "I believe the meaning of life is"
+    vocab = self.jt_tokenizer.vocab
+    max_prefill_length = 1024
+    padded_tokens, true_length = token_utils.tokenize_and_pad(
+        s,
+        vocab,
+        max_prefill_length=max_prefill_length,
+    )
+    expected_padded_tokens = jnp.array(
+        [1, 306, 4658, 278, 6593, 310, 2834, 338, 0, 0, 0, 0, 0, 0, 0, 0]
+    )
+    expected_true_length = 8
+    self.assertTrue(
+        jnp.allclose(padded_tokens, expected_padded_tokens, atol=1e-7)
+    )
+    self.assertEqual(true_length, expected_true_length)
+
+  def test_pad_token_padding_less_than_zero(self):
+    jax.config.update("jax_platform_name", "cpu")
+    self.setup_sentencepiece()
+    s = "I believe the meaning of life is having different experiences and "
+    s += "enjoy everyday of my life."
+    vocab = self.jt_tokenizer.vocab
+    max_prefill_length = 16
+    tokens = vocab.encode_tf(s)
+    padded_tokens, true_length = token_utils.pad_tokens(
+        tokens,
+        bos_id=vocab.bos_id,
+        pad_id=vocab.pad_id,
+        max_prefill_length=max_prefill_length,
+    )
+    # Take the last N tokens if we have too many.
+    expected_padded_tokens = jnp.array(
+        [
+            278,
+            6593,
+            310,
+            2834,
+            338,
+            2534,
+            1422,
+            27482,
+            322,
+            13389,
+            1432,
+            3250,
+            310,
+            590,
+            2834,
+            29889,
+        ]
+    )
+    expected_true_length = 19
+    self.assertTrue(
+        jnp.allclose(padded_tokens, expected_padded_tokens, atol=1e-7)
+    )
+    self.assertEqual(true_length, expected_true_length)
+
   def test_sentencepiece_tokenizer_encode(self):
     self.setup_sentencepiece()
     s = "I believe the meaning of life is"

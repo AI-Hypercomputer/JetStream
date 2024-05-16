@@ -25,3 +25,7 @@ class TestConfigLib(unittest.TestCase):
   def test_slice_to_num_chips(self, accelerator_slice, expected_num_devices):
     got = config_lib.slice_to_num_chips(accelerator_slice)
     self.assertEqual(got, expected_num_devices)
+
+  def test_get_engines_invalid(self):
+    with self.assertRaises(ValueError):
+      config_lib.get_engines(config_lib.InterleavedCPUTestServer, [])

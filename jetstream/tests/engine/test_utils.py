@@ -88,3 +88,22 @@ class UtilsTest(unittest.TestCase):
     assert text_output[0] == "T3"
     assert text_output[1] == "A"  # second token is padded.
     np.testing.assert_equal(complete, np.array([0, 1]))
+
+  def test_mock_utils(self):
+    vocab = mock_utils.TestVocab()
+    # test encode()
+    with self.assertRaises(NotImplementedError):
+      vocab.encode("AB")
+    # test encode_tf()
+    token_ids = vocab.encode_tf("AB")
+    np.testing.assert_equal(token_ids, np.array([65, 66]))
+    # test decode()
+    ids = np.array([ord("A")])
+    expected = "A"
+    result = vocab.decode(ids)
+    self.assertEqual(result, expected)
+    # test decode_tf()
+    ids = np.array([[ord("A")]])
+    expected = ["A"]
+    result_tf = vocab.decode_tf(ids)
+    self.assertEqual(result_tf, expected)

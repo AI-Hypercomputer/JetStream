@@ -44,6 +44,7 @@ tokenizer returns).
 import unittest
 from jetstream.core import orchestrator
 from jetstream.core.proto import jetstream_pb2
+from jetstream.core.utils.return_sample import ReturnSample
 from jetstream.engine import mock_engine
 
 
@@ -128,5 +129,16 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
       assert output_text == expected_text[counter]
       assert output_token_id == expected_token_ids[counter]
       counter += 1
+    driver.stop()
+    print("Orchestrator driver stopped.")
+
+  def test_should_buffer_response(self):
+    driver = self._setup_driver_interleaved_mode()
+    client = orchestrator.LLMOrchestrator(driver=driver)
+    self.assertTrue(
+        client.should_buffer_response(
+            [ReturnSample(text=["<0xAB>"], token_ids=[13])]
+        )
+    )
     driver.stop()
     print("Orchestrator driver stopped.")

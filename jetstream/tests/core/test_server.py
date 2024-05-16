@@ -95,3 +95,6 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         assert output_token_id == expected_token_ids[counter]
         counter += 1
       server.stop()
+
+  def test_get_devices(self):
+    assert len(server_lib.get_devices()) == 1
