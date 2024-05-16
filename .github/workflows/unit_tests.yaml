@@ -80,4 +80,4 @@ jobs:
         coverage run -m unittest -v
     - name: Create test coverage report
       run: |
-        coverage report -m --omit="jetstream/core/proto/*,jetstream/engine/tokenizer_pb2.py,jetstream/third_party/*"
+        coverage report -m --omit="jetstream/core/proto/*,jetstream/engine/tokenizer_pb2.py,jetstream/third_party/*" --fail-under=96
