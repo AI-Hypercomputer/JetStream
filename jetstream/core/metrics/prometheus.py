@@ -39,12 +39,10 @@ class JetstreamMetricsCollector:
   )
 
   def get_prefill_backlog_metric(self):
-    return _create_labeled_metric(
-        self.__prefill_backlog, self.MetricLabels(hostname=self.hostname)
-    )
+    return _create_labeled_metric(self.__prefill_backlog, _MetricLabels())
 
   def get_slots_available_percentage_metric(self, idx: int):
     return _create_labeled_metric(
         self.__slots_available_percentage,
-        self.MetricLabels(hostname=self.hostname, idx=idx),
+        _MetricLabels(idx=idx),
     )
