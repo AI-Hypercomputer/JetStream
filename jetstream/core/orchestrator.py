@@ -222,7 +222,7 @@ class Driver:
       generate_params: Optional[list[Any]] = None,
       interleaved_mode: bool = False,
       jax_padding: bool = True,
-      metrics_collector: JetstreamMetricsCollector = None,
+      metrics_collector: JetstreamMetricsCollector | None = None,
   ):
     if prefill_engines is None:
       prefill_engines = []
