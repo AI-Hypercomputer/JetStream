@@ -17,6 +17,7 @@
 import dataclasses
 import functools
 from typing import Any, Callable, List, Tuple, Type
+from numpy import uint16
 
 from jetstream.engine import engine_api
 from jetstream.engine import mock_engine
@@ -50,6 +51,10 @@ class InstantiatedEngines:
   prefill_engines: List[engine_api.Engine]
   generate_engines: List[engine_api.Engine]
   interleaved_engines: List[engine_api.Engine]
+
+@dataclasses.dataclass
+class MetricsConfig:
+  port: uint16
 
 
 # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼#

@@ -12,6 +12,7 @@ def __create_labeled_metric(metric, labels: _MetricLabels):
     return metric.labels(hostname = labels.hostname, idx = labels.idx if labels.idx else None)
 
 # Metric Definitions
+# Wrapper class should be used to assure all metrics have proper tags
 class JetstreamMetricsCollector:
     def __new__(cls):
         if not hasattr(cls, 'instance'):

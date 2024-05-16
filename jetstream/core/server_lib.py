@@ -31,13 +31,9 @@ from jetstream.core import orchestrator
 from jetstream.core.proto import jetstream_pb2_grpc
 
 from prometheus_client import start_http_server
+from server_lib import MetricsConfig
 
 _HOST = "[::]"
-PROMETHEUS_ENABLED_ON_PORT = (
-    int(os.getenv("PROMETHEUS_ENABLED_ON_PORT"))
-    if os.getenv("PROMETHEUS_ENABLED_ON_PORT")
-    else None
-)
 
 
 class JetStreamServer:
@@ -99,6 +95,9 @@ def run(
     credentials: Any = grpc.insecure_server_credentials(),
     threads: int | None = None,
     jax_padding: bool = True,
+    metricsConfig: MetricsConfig = None
+
+
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
@@ -139,14 +138,14 @@ def run(
   jetstream_server.start()
 
   # Setup Prometheus server
-  if PROMETHEUS_ENABLED_ON_PORT is not None:
+  if config.prometheus_port is not None:
     logging.info(
-        "Starting Prometheus server on port %d", PROMETHEUS_ENABLED_ON_PORT
+        f"Starting Prometheus server on port {config}", 
     )
-    start_http_server(PROMETHEUS_ENABLED_ON_PORT)
+    start_http_server(config.prometheus_port)
   else:
     logging.info(
-        "Not starting Prometheus server: PROMETHEUS_ENABLED_ON_PORT not set"
+        "Not starting Prometheus server: --prometheus_port flag not set"
     )
   return jetstream_server
 

@@ -96,6 +96,8 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         counter += 1
       server.stop()
 
+      # TODO: explore adding prometheus tests
+
 
 if __name__ == "__main__":
   unittest.main()
