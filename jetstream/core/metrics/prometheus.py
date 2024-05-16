@@ -4,9 +4,10 @@ from prometheus_client import Gauge
 from dataclasses import dataclass
 
 
-# Properties to be set for each metric
 @dataclass
 class _MetricLabels:
+  """All metrics emmitted should be configured with the following labels"""
+
   hostname: str = os.getenv("HOSTNAME", shortuuid.uuid())
   idx: int = 0
 
@@ -15,9 +16,8 @@ def _create_labeled_metric(metric, labels: _MetricLabels):
   return metric.labels(hostname=labels.hostname, idx=labels.idx)
 
 
-# Metric Definitions
-# Wrapper class should be used to assure all metrics have proper tags
 class JetstreamMetricsCollector:
+  """Wrapper class should be used to assure all metrics have proper tags"""
 
   def __new__(cls):
     if not hasattr(cls, "instance"):
