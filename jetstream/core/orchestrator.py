@@ -212,7 +212,7 @@ class Driver:
   _jax_padding = True
 
   # All metrics we want to monitor should be collected with this
-  _metrics_collector: JetstreamMetricsCollector
+  _metrics_collector: JetstreamMetricsCollector = None
 
   def __init__(
       self,
@@ -243,8 +243,7 @@ class Driver:
     self._prefill_params = prefill_params
     self._generate_params = generate_params
     self._interleaved_mode = interleaved_mode
-    if metrics_collector is not None:
-      self._metrics_collector = metrics_collector
+    self._metrics_collector = metrics_collector
 
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
