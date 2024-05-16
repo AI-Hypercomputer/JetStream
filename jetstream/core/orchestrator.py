@@ -211,11 +211,8 @@ class Driver:
   # todo: remove jax_padding after all then engine migrate to np padding
   _jax_padding = True
 
-  # Record prometheus metrics if flag set
+  # All metrics we want to monitor should be collected with this
   _metrics_collector: JetstreamMetricsCollector
-  if flag:
-    _metrics_collector = JetstreamMetricsCollector()
-  
 
   def __init__(
       self,
@@ -225,6 +222,7 @@ class Driver:
       generate_params: Optional[list[Any]] = None,
       interleaved_mode: bool = False,
       jax_padding: bool = True,
+      metrics_collector: JetstreamMetricsCollector = None,
   ):
     if prefill_engines is None:
       prefill_engines = []
@@ -245,13 +243,16 @@ class Driver:
     self._prefill_params = prefill_params
     self._generate_params = generate_params
     self._interleaved_mode = interleaved_mode
+    self._metrics_collector = metrics_collector
 
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
     if self._metrics_collector is not None:
-      self._metrics_collector.get_prefill_backlog_hostname_metric().set_function(lambda: float(self._prefill_backlog.qsize()))
+      self._metrics_collector.get_prefill_backlog_hostname_metric().set_function(
+          lambda: float(self._prefill_backlog.qsize())
+      )
 
     # Stage 2
     # After prefilling, it is placed here in order to get transferred to
@@ -585,7 +586,9 @@ class Driver:
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
 
       if self._metrics_collector is not None:
-        self._metrics_collector.get_slots_available_percentage_metric(idx).set_function(lambda: float(my_slots.qsize() / max_concurrent_decodes))
+        self._metrics_collector.get_slots_available_percentage_metric(
+            idx
+        ).set_function(lambda: float(my_slots.qsize() / max_concurrent_decodes))
 
       # Check if there are any free my_slots. We don't want to block here since
       # we can still generate if we can't insert. We do this in a while loop to

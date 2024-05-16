@@ -52,8 +52,9 @@ class InstantiatedEngines:
   generate_engines: List[engine_api.Engine]
   interleaved_engines: List[engine_api.Engine]
 
+
 @dataclasses.dataclass
-class MetricsConfig:
+class MetricsServerConfig:
   port: uint16
 
 
