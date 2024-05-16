@@ -12,9 +12,7 @@ class _MetricLabels:
 
 
 def _create_labeled_metric(metric, labels: _MetricLabels):
-  return metric.labels(
-      hostname=labels.hostname, idx=labels.idx if labels.idx else None
-  )
+  return metric.labels(hostname=labels.hostname, idx=labels.idx)
 
 
 # Metric Definitions
