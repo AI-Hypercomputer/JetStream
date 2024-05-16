@@ -119,7 +119,7 @@ def run(
   interleaved_mode = (
       len(config.prefill_slices) + len(config.generate_slices) == 0
   )
-  
+
   # Setup Prometheus server
   metrics_collector: JetstreamMetricsCollector = None
   if metrics_server_config is not None:
@@ -140,7 +140,7 @@ def run(
       generate_params=generate_params + shared_params,
       interleaved_mode=interleaved_mode,
       jax_padding=jax_padding,
-      metrics_collector=metrics_collector
+      metrics_collector=metrics_collector,
   )
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.
@@ -150,6 +150,7 @@ def run(
 
   jetstream_server.start()
   return jetstream_server
+
 
 def get_devices() -> Any:
   """Gets devices."""

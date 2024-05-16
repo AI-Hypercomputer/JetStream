@@ -1,4 +1,5 @@
 import os
+import shortuuid
 from prometheus_client import Gauge
 from dataclasses import dataclass
 
@@ -6,7 +7,7 @@ from dataclasses import dataclass
 # Properties to be set for each metric
 @dataclass
 class _MetricLabels:
-  hostname: str = os.environ["HOSTNAME"]
+  hostname: str = os.getenv("HOSTNAME", shortuuid.uuid())
   idx: int = None
 
 
