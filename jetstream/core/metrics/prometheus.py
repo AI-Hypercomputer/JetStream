@@ -8,7 +8,7 @@ from dataclasses import dataclass
 @dataclass
 class _MetricLabels:
   hostname: str = os.getenv("HOSTNAME", shortuuid.uuid())
-  idx: int = None
+  idx: int
 
 
 def _create_labeled_metric(metric, labels: _MetricLabels):
