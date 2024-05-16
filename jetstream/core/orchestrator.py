@@ -243,14 +243,15 @@ class Driver:
     self._prefill_params = prefill_params
     self._generate_params = generate_params
     self._interleaved_mode = interleaved_mode
-    self._metrics_collector = metrics_collector
+    if metrics_collector is not None:
+      self._metrics_collector = metrics_collector
 
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
     if self._metrics_collector is not None:
-      self._metrics_collector.get_prefill_backlog_hostname_metric().set_function(
+      self._metrics_collector.get_prefill_backlog_metric().set_function(
           lambda: float(self._prefill_backlog.qsize())
       )
 
