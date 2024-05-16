@@ -11,7 +11,7 @@ class _MetricLabels:
   idx: int = None
 
 
-def __create_labeled_metric(metric, labels: _MetricLabels):
+def _create_labeled_metric(metric, labels: _MetricLabels):
   return metric.labels(
       hostname=labels.hostname, idx=labels.idx if labels.idx else None
   )
@@ -39,12 +39,12 @@ class JetstreamMetricsCollector:
   )
 
   def get_prefill_backlog_metric(self):
-    return __create_labeled_metric(
+    return _create_labeled_metric(
         self.__prefill_backlog, self.MetricLabels(hostname=self.hostname)
     )
 
   def get_slots_available_percentage_metric(self, idx: int):
-    return __create_labeled_metric(
+    return _create_labeled_metric(
         self.__slots_available_percentage,
         self.MetricLabels(hostname=self.hostname, idx=idx),
     )
