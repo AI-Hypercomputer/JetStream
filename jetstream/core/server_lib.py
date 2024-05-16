@@ -95,7 +95,7 @@ def run(
     credentials: Any = grpc.insecure_server_credentials(),
     threads: int | None = None,
     jax_padding: bool = True,
-    metrics_server_config: config_lib.MetricsServerConfig = None,
+    metrics_server_config: config_lib.MetricsServerConfig | None = None,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
