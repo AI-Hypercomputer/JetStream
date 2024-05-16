@@ -212,7 +212,7 @@ class Driver:
   _jax_padding = True
 
   # All metrics we want to monitor should be collected with this
-  _metrics_collector: JetstreamMetricsCollector = None
+  _metrics_collector: JetstreamMetricsCollector | None = None
 
   def __init__(
       self,
