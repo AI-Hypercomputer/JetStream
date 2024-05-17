@@ -22,8 +22,7 @@ import http
 from typing import Any, Type
 import unittest
 
-import requests
-
+import aiohttp
 from parameterized import parameterized
 import grpc
 from jetstream.core import config_lib
@@ -103,8 +102,9 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         counter += 1
       server.stop()
 
-    async with requests.get(f"http://localhost:{metrics_port}") as response:
-      assert response.status_code == requests.status_codes.codes["ok"]
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"http://localhost:{metrics_port}") as response:
+            assert response.status == 200
 
   def test_get_devices(self):
     assert len(server_lib.get_devices()) == 1

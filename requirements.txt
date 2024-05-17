@@ -4,13 +4,14 @@
 #
 #    pip-compile requirements.in
 #
-absl-py==1.4.0
+absl-py==2.1.0
     # via
     #   -r requirements.in
     #   array-record
     #   chex
     #   clu
     #   etils
+    #   keras
     #   ml-collections
     #   optax
     #   orbax-checkpoint
@@ -19,80 +20,84 @@ absl-py==1.4.0
     #   tensorflow
     #   tensorflow-metadata
     #   tfds-nightly
-array-record==0.5.0
+aiohttp==3.9.5
+    # via -r requirements.in
+aiosignal==1.3.1
+    # via aiohttp
+array-record==0.5.1
     # via tfds-nightly
 astunparse==1.6.3
     # via tensorflow
+async-timeout==4.0.3
+    # via aiohttp
+attrs==23.2.0
+    # via aiohttp
 blobfile==2.1.1
     # via -r requirements.in
-cachetools==5.3.2
-    # via google-auth
 certifi==2024.2.2
     # via requests
 charset-normalizer==3.3.2
     # via requests
-chex==0.1.7
+chex==0.1.86
     # via optax
 click==8.1.7
     # via tfds-nightly
-clu==0.0.10
+clu==0.0.12
     # via seqio
 contextlib2==21.6.0
     # via ml-collections
-coverage==7.4.4
+coverage==7.5.1
     # via -r requirements.in
 dm-tree==0.1.8
-    # via
-    #   chex
-    #   tfds-nightly
-docstring-parser==0.15
+    # via tfds-nightly
+docstring-parser==0.16
     # via pyglove
-editdistance==0.6.2
+editdistance==0.8.1
     # via seqio
-etils[array-types,enp,epath,epy,etqdm,etree]==1.6.0
+etils[array-types,enp,epath,epy,etqdm,etree]==1.7.0
     # via
     #   array-record
     #   clu
     #   orbax-checkpoint
     #   tfds-nightly
-exceptiongroup==1.2.0
+exceptiongroup==1.2.1
     # via pytest
 filelock==3.14.0
     # via blobfile
-flatbuffers==23.5.26
+flatbuffers==24.3.25
     # via tensorflow
-flax==0.8.0
+flax==0.8.3
     # via
     #   -r requirements.in
     #   clu
-fsspec==2023.12.2
-    # via etils
-gast==0.4.0
-    # via tensorflow
-google-auth==2.27.0
+frozenlist==1.4.1
     # via
-    #   google-auth-oauthlib
-    #   tensorboard
-google-auth-oauthlib==1.0.0
-    # via tensorboard
+    #   aiohttp
+    #   aiosignal
+fsspec==2024.5.0
+    # via etils
+gast==0.5.4
+    # via tensorflow
 google-pasta==0.2.0
     # via tensorflow
-googleapis-common-protos==1.62.0
-    # via tensorflow-metadata
-grpcio==1.60.1
+grpcio==1.63.0
     # via
     #   -r requirements.in
     #   tensorboard
     #   tensorflow
-h5py==3.10.0
-    # via tensorflow
+h5py==3.11.0
+    # via
+    #   keras
+    #   tensorflow
 idna==3.7
-    # via requests
-importlib-resources==6.1.1
+    # via
+    #   requests
+    #   yarl
+importlib-resources==6.4.0
     # via etils
 iniconfig==2.0.0
     # via pytest
-jax==0.4.23
+jax==0.4.28
     # via
     #   -r requirements.in
     #   chex
@@ -101,7 +106,7 @@ jax==0.4.23
     #   optax
     #   orbax-checkpoint
     #   seqio
-jaxlib==0.4.23
+jaxlib==0.4.28
     # via
     #   -r requirements.in
     #   chex
@@ -109,13 +114,13 @@ jaxlib==0.4.23
     #   optax
     #   orbax-checkpoint
     #   seqio
-keras==2.13.1
+keras==3.3.3
     # via tensorflow
-libclang==16.0.6
+libclang==18.1.1
     # via tensorflow
 lxml==4.9.4
     # via blobfile
-markdown==3.5.2
+markdown==3.6
     # via tensorboard
 markdown-it-py==3.0.0
     # via rich
@@ -129,14 +134,22 @@ ml-dtypes==0.3.2
     # via
     #   jax
     #   jaxlib
+    #   keras
+    #   tensorflow
     #   tensorstore
-msgpack==1.0.7
+msgpack==1.0.8
     # via
     #   flax
     #   orbax-checkpoint
+multidict==6.0.5
+    # via
+    #   aiohttp
+    #   yarl
+namex==0.0.8
+    # via keras
 nest-asyncio==1.6.0
     # via orbax-checkpoint
-numpy==1.23.1
+numpy==1.26.4
     # via
     #   -r requirements.in
     #   chex
@@ -146,6 +159,7 @@ numpy==1.23.1
     #   h5py
     #   jax
     #   jaxlib
+    #   keras
     #   ml-dtypes
     #   opt-einsum
     #   optax
@@ -154,20 +168,19 @@ numpy==1.23.1
     #   seqio
     #   tensorboard
     #   tensorflow
-    #   tensorflow-hub
     #   tensorstore
     #   tfds-nightly
-oauthlib==3.2.2
-    # via requests-oauthlib
 opt-einsum==3.3.0
     # via
     #   jax
     #   tensorflow
-optax==0.1.8
+optax==0.2.2
     # via flax
-orbax-checkpoint==0.5.2
+optree==0.11.0
+    # via keras
+orbax-checkpoint==0.5.11
     # via flax
-packaging==23.2
+packaging==24.0
     # via
     #   clu
     #   pytest
@@ -175,7 +188,7 @@ packaging==23.2
     #   tensorflow
 parameterized==0.9.0
     # via -r requirements.in
-pluggy==1.4.0
+pluggy==1.5.0
     # via pytest
 portpicker==1.6.0
     # via -r requirements.in
@@ -185,56 +198,45 @@ promise==2.3
     # via tfds-nightly
 protobuf==3.20.3
     # via
-    #   googleapis-common-protos
     #   orbax-checkpoint
     #   seqio
     #   tensorboard
     #   tensorflow
-    #   tensorflow-hub
     #   tensorflow-metadata
     #   tfds-nightly
 psutil==5.9.8
     # via
     #   portpicker
     #   tfds-nightly
-pyasn1==0.5.1
-    # via
-    #   pyasn1-modules
-    #   rsa
-pyasn1-modules==0.3.0
-    # via google-auth
 pycryptodomex==3.20.0
     # via blobfile
 pyglove==0.4.4
     # via seqio
-pygments==2.17.2
+pygments==2.18.0
     # via rich
-pytest==8.1.1
+pytest==8.2.0
     # via -r requirements.in
 pyyaml==6.0.1
     # via
     #   flax
     #   ml-collections
     #   orbax-checkpoint
-regex==2024.4.28
+regex==2024.5.15
     # via tiktoken
 requests==2.31.0
     # via
-    #   requests-oauthlib
-    #   tensorboard
+    #   tensorflow
     #   tfds-nightly
     #   tiktoken
-requests-oauthlib==1.3.1
-    # via google-auth-oauthlib
-rich==13.7.0
-    # via flax
-rsa==4.9
-    # via google-auth
-scipy==1.12.0
+rich==13.7.1
+    # via
+    #   flax
+    #   keras
+scipy==1.13.0
     # via
     #   jax
     #   jaxlib
-sentencepiece==0.1.99
+sentencepiece==0.2.0
     # via seqio
 seqio==0.0.19
     # via -r requirements.in
@@ -246,24 +248,21 @@ six==1.16.0
     #   google-pasta
     #   ml-collections
     #   promise
+    #   tensorboard
     #   tensorflow
-tensorboard==2.13.0
+tensorboard==2.16.2
     # via tensorflow
 tensorboard-data-server==0.7.2
     # via tensorboard
-tensorflow==2.13.1
+tensorflow==2.16.1
     # via tensorflow-text
-tensorflow-estimator==2.13.0
+tensorflow-io-gcs-filesystem==0.37.0
     # via tensorflow
-tensorflow-hub==0.16.1
-    # via tensorflow-text
-tensorflow-io-gcs-filesystem==0.35.0
-    # via tensorflow
-tensorflow-metadata==1.14.0
+tensorflow-metadata==1.15.0
     # via tfds-nightly
-tensorflow-text==2.13.0
+tensorflow-text==2.16.1
     # via seqio
-tensorstore==0.1.52
+tensorstore==0.1.59
     # via
     #   flax
     #   orbax-checkpoint
@@ -271,11 +270,9 @@ termcolor==2.4.0
     # via
     #   tensorflow
     #   tfds-nightly
-tf-keras==2.15.0
-    # via tensorflow-hub
 tfds-nightly==4.9.2.dev202308090034
     # via seqio
-tiktoken==0.6.0
+tiktoken==0.7.0
     # via -r requirements.in
 toml==0.10.2
     # via tfds-nightly
@@ -283,34 +280,35 @@ tomli==2.0.1
     # via pytest
 toolz==0.12.1
     # via chex
-tqdm==4.66.3
+tqdm==4.66.4
     # via
     #   etils
     #   tfds-nightly
-typing-extensions==4.5.0
+typing-extensions==4.11.0
     # via
     #   chex
     #   clu
     #   etils
     #   flax
+    #   optree
     #   orbax-checkpoint
     #   tensorflow
-urllib3==2.2.0
+urllib3==2.2.1
     # via
     #   blobfile
     #   requests
-werkzeug==3.0.1
+werkzeug==3.0.3
     # via tensorboard
-wheel==0.42.0
-    # via
-    #   astunparse
-    #   tensorboard
+wheel==0.43.0
+    # via astunparse
 wrapt==1.16.0
     # via
     #   clu
     #   tensorflow
     #   tfds-nightly
-zipp==3.17.0
+yarl==1.9.4
+    # via aiohttp
+zipp==3.18.2
     # via etils
 
 # The following packages are considered to be unsafe in a requirements file:
