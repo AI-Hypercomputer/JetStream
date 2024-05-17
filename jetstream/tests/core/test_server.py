@@ -18,7 +18,6 @@ See orchestrator test for why these characters specifically will be the
 response.
 """
 
-import http
 from typing import Any, Type
 import unittest
 
@@ -103,8 +102,8 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       server.stop()
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(f"http://localhost:{metrics_port}") as response:
-            assert response.status == 200
+      async with session.get(f"http://localhost:{metrics_port}") as response:
+        assert response.status == 200
 
   def test_get_devices(self):
     assert len(server_lib.get_devices()) == 1
