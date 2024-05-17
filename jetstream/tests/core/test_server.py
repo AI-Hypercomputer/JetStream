@@ -23,7 +23,6 @@ import unittest
 
 
 import requests
-import aiohttp
 from parameterized import parameterized
 import grpc
 from jetstream.core import config_lib
