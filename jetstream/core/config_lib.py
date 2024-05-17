@@ -38,12 +38,6 @@ class ServerConfig:
   generate_engine_create_fns: Tuple[CreateEngineFn, ...] = ()
   interleaved_engine_create_fns: Tuple[CreateEngineFn, ...] = ()
 
-  def get_slices_to_launch(self: "ServerConfig") -> str:
-    """Used when launching this config via xm config."""
-    return ",".join(
-        self.prefill_slices + self.generate_slices + self.interleaved_slices
-    )
-
 
 @dataclasses.dataclass
 class InstantiatedEngines:

@@ -15,13 +15,13 @@
 """Tests functionality of the token processing utils using mock engine vocab."""
 
 import numpy as np
+import unittest
 from jetstream.engine import engine_api
 from jetstream.engine import mock_utils
 from jetstream.engine import token_utils
-from absl.testing import absltest
 
 
-class UtilsTest(absltest.TestCase):
+class UtilsTest(unittest.TestCase):
 
   def test_speculations_with_multi_sample_slots(self, samples_per_slot=2):
     # [4, 1]
@@ -89,6 +89,21 @@ class UtilsTest(absltest.TestCase):
     assert text_output[1] == "A"  # second token is padded.
     np.testing.assert_equal(complete, np.array([0, 1]))
 
-
-if __name__ == "__main__":
-  absltest.main()
+  def test_mock_utils(self):
+    vocab = mock_utils.TestVocab()
+    # test encode()
+    with self.assertRaises(NotImplementedError):
+      vocab.encode("AB")
+    # test encode_tf()
+    token_ids = vocab.encode_tf("AB")
+    np.testing.assert_equal(token_ids, np.array([65, 66]))
+    # test decode()
+    ids = np.array([ord("A")])
+    expected = "A"
+    result = vocab.decode(ids)
+    self.assertEqual(result, expected)
+    # test decode_tf()
+    ids = np.array([[ord("A")]])
+    expected = ["A"]
+    result_tf = vocab.decode_tf(ids)
+    self.assertEqual(result_tf, expected)

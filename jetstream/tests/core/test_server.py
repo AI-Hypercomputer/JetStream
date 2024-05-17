@@ -96,6 +96,5 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         counter += 1
       server.stop()
 
-
-if __name__ == "__main__":
-  unittest.main()
+  def test_get_devices(self):
+    assert len(server_lib.get_devices()) == 1
