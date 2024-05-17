@@ -105,8 +105,6 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       [
           (
               config_lib.InterleavedCPUTestServer,
-              [],
-              [],
               [None],
           ),
       ]
@@ -114,8 +112,6 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
   async def test_prometheus_server(
       self,
       config: Type[config_lib.ServerConfig],
-      expected_text: list[str],
-      expected_token_ids: list[int | None],
       devices: list[Any],
   ):
     """Same as prior test_server but with metrics server config"""
