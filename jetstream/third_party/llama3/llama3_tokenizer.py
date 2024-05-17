@@ -107,8 +107,8 @@ class Tokenizer:
       self,
       s: str,
       *,
-      bos: bool,
-      eos: bool,
+      bos: bool = False,
+      eos: bool = False,
       allowed_special: Union[Literal["all"], AbstractSet[str]] | None = None,
       disallowed_special: Union[Literal["all"], Collection[str]] = (),
   ) -> List[int]:
