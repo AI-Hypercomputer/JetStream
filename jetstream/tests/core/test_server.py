@@ -103,10 +103,8 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         counter += 1
       server.stop()
 
-
     async with requests.get(f"localhost:{metrics_port}") as response:
       assert response.status_code == requests.status_codes.codes["ok"]
-
 
   def test_get_devices(self):
     assert len(server_lib.get_devices()) == 1
