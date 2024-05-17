@@ -108,7 +108,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       expected_token_ids: list[int | None],
       devices: list[Any],
   ):
-    """Sets up a server and requests token responses."""
+    """Same as prior test_server but with metrics server config"""
     ######################### Server side ######################################
     port = portpicker.pick_unused_port()
     metrics_port = portpicker.pick_unused_port()
