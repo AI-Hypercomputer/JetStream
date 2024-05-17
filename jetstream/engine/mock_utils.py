@@ -51,6 +51,7 @@ class TestVocab(Vocabulary):
   eos_id = 1
   bos_id = 2
   unk_id = 3
+  stop_tokens = {pad_id, eos_id}
   _base_vocab_size = 2**16
   tokenizer: TestTokenizer = TestTokenizer()
 
