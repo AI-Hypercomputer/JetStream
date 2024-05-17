@@ -21,6 +21,8 @@ response.
 from typing import Any, Type
 import unittest
 
+
+import requests
 import aiohttp
 from parameterized import parameterized
 import grpc
@@ -133,9 +135,10 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
     ###################### Requester side ######################################
     # assert prometheus server is running and responding
     assert server._driver._metrics_collector is not None  # pylint: disable=protected-access
-    async with aiohttp.ClientSession() as session:
-      async with session.get(f"http://localhost:{metrics_port}") as response:
-        assert response.status == 200
+    assert (
+        requests.get(f"http://localhost:{metrics_port}").status_code
+        == requests.status_codes.codes["ok"]
+    )
 
   def test_get_devices(self):
     assert len(server_lib.get_devices()) == 1
