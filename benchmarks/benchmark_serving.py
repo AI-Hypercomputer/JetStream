@@ -131,7 +131,7 @@ def get_tokenizer(model_id: str, tokenizer_name: str) -> Any:
   """Return a tokenizer or a tokenizer placholder."""
   if tokenizer_name == "test":
     return "test"
-  elif model_id == 'llama-3':
+  elif model_id == "llama-3":
     # Llama 3 uses a tiktoken tokenizer.
     return llama3_tokenizer.Tokenizer(tokenizer_name)
   else:
