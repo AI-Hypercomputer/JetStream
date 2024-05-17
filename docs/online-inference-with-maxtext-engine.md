@@ -217,10 +217,10 @@ Since we configured `prometheus_port=9090` above, we can observe various Jetstre
 ```
 # HELP jetstream_prefill_backlog_size Size of prefill queue
 # TYPE jetstream_prefill_backlog_size gauge
-jetstream_prefill_backlog_size{id="maxengine-server-58f8786f4c-4587n"} 0.0
+jetstream_prefill_backlog_size{id="SOME-HOSTNAME-HERE>"} 0.0
 # HELP jetstream_slots_available_percentage The percentage of available slots in decode batch
 # TYPE jetstream_slots_available_percentage gauge
-jetstream_slots_available_percentage{id="maxengine-server-58f8786f4c-4587n",idx="0"} 0.96875
+jetstream_slots_available_percentage{id="<SOME-HOSTNAME-HERE>",idx="0"} 0.96875
 ```
 
 ## Step 6: Run benchmarks with JetStream MaxText server
