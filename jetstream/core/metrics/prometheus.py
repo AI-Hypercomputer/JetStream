@@ -45,6 +45,4 @@ class JetstreamMetricsCollector:
     return self._prefill_backlog.labels(id=self._id)
 
   def get_slots_available_percentage_metric(self, idx: int):
-    return self._slots_available_percentage.labels(
-        id=self._id, idx=idx
-    )
+    return self._slots_available_percentage.labels(id=self._id, idx=idx)
