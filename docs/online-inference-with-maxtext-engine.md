@@ -229,7 +229,7 @@ python MaxText/maxengine_server.py \
   prometheus_port=${PROMETHEUS_PORT}
 ```
 
-Now that we configured `prometheus_port=9090` above, we can observe various Jetstream metrics via a HTTP requests to `0.0.0.0:9000`. Towards the end, the response should have content similar to the following:
+Now that we configured `prometheus_port=9090` above, we can observe various Jetstream metrics via HTTP requests to `0.0.0.0:9000`. Towards the end, the response should have content similar to the following:
 
 ```
 # HELP jetstream_prefill_backlog_size Size of prefill queue
