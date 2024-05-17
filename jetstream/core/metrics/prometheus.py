@@ -17,7 +17,6 @@
 import os
 import shortuuid
 from prometheus_client import Gauge
-from dataclasses import dataclass
 
 
 class JetstreamMetricsCollector:
