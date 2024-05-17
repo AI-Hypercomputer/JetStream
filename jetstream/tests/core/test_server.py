@@ -62,6 +62,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
     """Sets up a server and requests token responses."""
     ######################### Server side ######################################
     port = portpicker.pick_unused_port()
+    metrics_port = portpicker.pick_unused_port()
 
     print("port: " + str(port))
     credentials = grpc.local_server_credentials()
@@ -73,6 +74,10 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         credentials=credentials,
     )
     ###################### Requester side ######################################
+
+    # prometheus not configured, assert no metrics collector on Driver
+    assert server._driver._metrics_collector is None  # pylint: disable=protected-access
+
     async with grpc.aio.secure_channel(
         f"localhost:{port}", grpc.local_channel_credentials()
     ) as channel:
@@ -99,45 +104,23 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         counter += 1
       server.stop()
 
-    # prometheus not configured, assert no metrics collector on Driver
-    assert server._driver._metrics_collector is None  # pylint: disable=protected-access
-
-  @parameterized.expand(
-      [
-          (
-              config_lib.InterleavedCPUTestServer,
-              [None],
+      # Now test server with prometheus config
+      server = server_lib.run(
+          port=port,
+          config=config,
+          devices=devices,
+          credentials=credentials,
+          metrics_server_config=config_lib.MetricsServerConfig(
+              port=metrics_port
           ),
-      ]
-  )
-  async def test_prometheus_server(
-      self,
-      config: Type[config_lib.ServerConfig],
-      devices: list[Any],
-  ):
-    """Same as prior test_server but with metrics server config"""
-    ######################### Server side ######################################
-    port = portpicker.pick_unused_port()
-    metrics_port = portpicker.pick_unused_port()
-
-    print("port: " + str(port))
-    print("metrics port: " + str(metrics_port))
-    credentials = grpc.local_server_credentials()
-
-    server = server_lib.run(
-        port=port,
-        config=config,
-        devices=devices,
-        credentials=credentials,
-        metrics_server_config=config_lib.MetricsServerConfig(port=metrics_port),
-    )
-    ###################### Requester side ######################################
-    # assert prometheus server is running and responding
-    assert server._driver._metrics_collector is not None  # pylint: disable=protected-access
-    assert (
-        requests.get(f"http://localhost:{metrics_port}").status_code
-        == requests.status_codes.codes["ok"]
-    )
+      )
+      # assert prometheus server is running and responding
+      assert server._driver._metrics_collector is not None  # pylint: disable=protected-access
+      assert (
+          requests.get(f"http://localhost:{metrics_port}").status_code
+          == requests.status_codes.codes["ok"]
+      )
+      server.stop()
 
   def test_get_devices(self):
     assert len(server_lib.get_devices()) == 1
