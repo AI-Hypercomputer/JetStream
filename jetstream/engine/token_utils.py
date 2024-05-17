@@ -187,7 +187,7 @@ def process_result_tokens(
   slot_valid = slot_data.valid
   slot_lengths = slot_data.lengths
   samples, speculations = slot_tokens.shape
-  stop_tokens = [tokenizer.eos_id, tokenizer.pad_id]
+  stop_tokens = tokenizer.stop_tokens
   # Stop anything which has reached it's max length.
   complete = complete | (slot_lengths > slot_max_length)
   if debug:
@@ -394,6 +394,11 @@ class TikToken(tokenizer_api.Tokenizer):
       str: String generated from the token ids.
     """
     return self.tokenizer.decode(token_ids)
+
+  @property
+  def stop_tokens(self) -> set[int]:
+    """ID of the stop token."""
+    return self.tokenizer.stop_tokens
 
   @property
   def pad_id(self) -> int:

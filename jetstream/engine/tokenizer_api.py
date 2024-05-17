@@ -65,3 +65,8 @@ class Tokenizer(abc.ABC):
   @abc.abstractmethod
   def bos_id(self) -> int:
     """ID of BOS token."""
+
+  @property
+  def stop_tokens(self) -> set[int]:
+    """ID of the stop token."""
+    return {self.eos_id, self.pad_id}
