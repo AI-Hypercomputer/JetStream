@@ -18,8 +18,11 @@ See orchestrator test for why these characters specifically will be the
 response.
 """
 
+import http
 from typing import Any, Type
 import unittest
+
+import requests
 
 from parameterized import parameterized
 import grpc
@@ -60,7 +63,10 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
     """Sets up a server and requests token responses."""
     ######################### Server side ######################################
     port = portpicker.pick_unused_port()
+    metrics_port = portpicker.pick_unused_port()
+
     print("port: " + str(port))
+    print("metrics port: " + str(metrics_port))
     credentials = grpc.local_server_credentials()
 
     server = server_lib.run(
@@ -68,6 +74,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         config=config,
         devices=devices,
         credentials=credentials,
+        metrics_server_config=config_lib.MetricsServerConfig(port=metrics_port),
     )
     ###################### Requester side ######################################
     async with grpc.aio.secure_channel(
@@ -75,7 +82,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
     ) as channel:
       stub = jetstream_pb2_grpc.OrchestratorStub(channel)
 
-      # The string representation of np.array([[65, 66]]), [2] will be prependd
+      # The string representation of np.array([[65, 66]]), [2] will be prepended
       # as BOS
       text = "AB"
       request = jetstream_pb2.DecodeRequest(
@@ -95,6 +102,9 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         assert output_token_id == expected_token_ids[counter]
         counter += 1
       server.stop()
+
+    async with requests.get(f"localhost:{metrics_port}") as response:
+      assert response.status_code == requests.status_codes.codes["ok"]
 
 
 if __name__ == "__main__":

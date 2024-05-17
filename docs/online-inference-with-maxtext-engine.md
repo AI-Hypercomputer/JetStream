@@ -109,6 +109,7 @@ export ICI_TENSOR_PARALLELISM=1
 export SCAN_LAYERS=false
 export WEIGHT_DTYPE=bfloat16
 export PER_DEVICE_BATCH_SIZE=11
+export PROMETHEUS_PORT=9090
 ```
 
 #### Create Llama2-7b environment variables for server flags
@@ -127,6 +128,7 @@ export ICI_TENSOR_PARALLELISM=1
 export SCAN_LAYERS=false
 export WEIGHT_DTYPE=bfloat16
 export PER_DEVICE_BATCH_SIZE=11
+export PROMETHEUS_PORT=9090
 ```
 
 #### Create Llama2-13b environment variables for server flags
@@ -147,6 +149,7 @@ export ICI_TENSOR_PARALLELISM=1
 export SCAN_LAYERS=false
 export WEIGHT_DTYPE=bfloat16
 export PER_DEVICE_BATCH_SIZE=4
+export PROMETHEUS_PORT=9090
 ```
 
 ### Run the following command to start the JetStream MaxText server
@@ -165,7 +168,8 @@ python MaxText/maxengine_server.py \
   ici_tensor_parallelism=${ICI_TENSOR_PARALLELISM} \
   scan_layers=${SCAN_LAYERS} \
   weight_dtype=${WEIGHT_DTYPE} \
-  per_device_batch_size=${PER_DEVICE_BATCH_SIZE}
+  per_device_batch_size=${PER_DEVICE_BATCH_SIZE} \
+  prometheus_port=${PROMETHEUS_PORT}
 ```
 
 ### JetStream MaxText Server flag descriptions:
@@ -183,6 +187,7 @@ python MaxText/maxengine_server.py \
 *   ici\_tensor\_parallelism: The number of shards for tensor parallelism
 *   weight\_dtype: Weight data type (e.g. bfloat16)
 *   scan\_layers: Scan layers boolean flag (set to `false` for inference)
+*   prometheus\_port: create a prometheus endpoint emitting metrics on this port
 
 Note: these flags are from [MaxText config](https://github.com/google/maxtext/blob/f9e04cdc1eec74a0e648411857c09403c3358461/MaxText/configs/base.yml)
 
@@ -203,6 +208,19 @@ The output will be similar to the following:
 Sending request to: 0.0.0.0:9000
 Prompt: Today is a good day
 Response:  to be a fan
+```
+
+### (optional) Observe Jetstream metrics
+
+Since we configured `prometheus_port=9090` above, we can observe various Jetstream metrics via a HTTP requests to `0.0.0.0:9000`. Towards the end, the response should have content similar to the following:
+
+```
+# HELP jetstream_prefill_backlog_size Size of prefill queue
+# TYPE jetstream_prefill_backlog_size gauge
+jetstream_prefill_backlog_size{id="maxengine-server-58f8786f4c-4587n"} 0.0
+# HELP jetstream_slots_available_percentage The percentage of available slots in decode batch
+# TYPE jetstream_slots_available_percentage gauge
+jetstream_slots_available_percentage{id="maxengine-server-58f8786f4c-4587n",idx="0"} 0.96875
 ```
 
 ## Step 6: Run benchmarks with JetStream MaxText server
@@ -231,6 +249,7 @@ ici_tensor_parallelism=${ICI_TENSOR_PARALLELISM} \
 scan_layers=${SCAN_LAYERS} \
 weight_dtype=${WEIGHT_DTYPE} \
 per_device_batch_size=${PER_DEVICE_BATCH_SIZE} \
+prometheus_port=${PROMETHEUS_PORT}
 quantization=${QUANTIZATION} \
 quantize_kvcache=${QUANTIZE_KVCACHE}
 ```

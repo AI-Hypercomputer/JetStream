@@ -249,7 +249,7 @@ class Driver:
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
-    if self._metrics_collector is not None:
+    if self._metrics_collector:
       self._metrics_collector.get_prefill_backlog_metric().set_function(
           lambda: float(self._prefill_backlog.qsize())
       )
@@ -585,7 +585,7 @@ class Driver:
 
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
 
-      if self._metrics_collector is not None:
+      if self._metrics_collector:
         self._metrics_collector.get_slots_available_percentage_metric(
             idx
         ).set_function(lambda: float(my_slots.qsize() / max_concurrent_decodes))
