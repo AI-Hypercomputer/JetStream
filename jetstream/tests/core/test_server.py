@@ -101,6 +101,16 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
     # prometheus not configured, assert no metrics collector on Driver
     assert server._driver._metrics_collector is None
 
+  @parameterized.expand(
+      [
+          (
+              config_lib.InterleavedCPUTestServer,
+              [],
+              [],
+              [None],
+          ),
+      ]
+  )
   async def test_prometheus_server(
       self,
       config: Type[config_lib.ServerConfig],
