@@ -25,7 +25,7 @@ class _MetricLabels:
   """All metrics emmitted should be configured with the following labels"""
 
   hostname: str = os.getenv("HOSTNAME", shortuuid.uuid())
-  idx: int = 0
+  idx: int | None = None
 
 
 def _create_labeled_metric(metric, labels: _MetricLabels):
