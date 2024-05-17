@@ -99,7 +99,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       server.stop()
 
     # prometheus not configured, assert no metrics collector on Driver
-    assert server._driver._metrics_collector is not None
+    assert server._driver._metrics_collector is None
 
   async def test_prometheus_server(
       self,
