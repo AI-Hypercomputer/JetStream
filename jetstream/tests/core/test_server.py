@@ -65,6 +65,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
     metrics_port = portpicker.pick_unused_port()
 
     print("port: " + str(port))
+    print("metrics port: " + str(metrics_port))
     credentials = grpc.local_server_credentials()
 
     server = server_lib.run(
