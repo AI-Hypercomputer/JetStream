@@ -20,20 +20,10 @@ from prometheus_client import Gauge
 from dataclasses import dataclass
 
 
-@dataclass
-class _MetricLabels:
-  """All metrics emmitted should be configured with the following labels"""
-
-  hostname: str = os.getenv("HOSTNAME", shortuuid.uuid())
-  idx: int | None = None
-
-
-def _create_labeled_metric(metric, labels: _MetricLabels):
-  return metric.labels(hostname=labels.hostname, idx=labels.idx)
-
-
 class JetstreamMetricsCollector:
   """Wrapper class should be used to assure all metrics have proper tags"""
+
+  _hostname: str = os.getenv("HOSTNAME", shortuuid.uuid())
 
   def __new__(cls):
     if not hasattr(cls, "instance"):
@@ -53,10 +43,9 @@ class JetstreamMetricsCollector:
   )
 
   def get_prefill_backlog_metric(self):
-    return _create_labeled_metric(self._prefill_backlog, _MetricLabels())
+    return self._prefill_backlog.labels(hostname=self._hostname)
 
   def get_slots_available_percentage_metric(self, idx: int):
-    return _create_labeled_metric(
-        self._slots_available_percentage,
-        _MetricLabels(idx=idx),
+    return self._slots_available_percentage.labels(
+        hostname=self._hostname, idx=idx
     )
