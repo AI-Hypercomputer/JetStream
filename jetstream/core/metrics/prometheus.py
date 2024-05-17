@@ -22,7 +22,7 @@ from prometheus_client import Gauge
 class JetstreamMetricsCollector:
   """Wrapper class should be used to assure all metrics have proper tags"""
 
-  _hostname: str = os.getenv("HOSTNAME", shortuuid.uuid())
+  _id: str = os.getenv("HOSTNAME", shortuuid.uuid())
 
   def __new__(cls):
     if not hasattr(cls, "instance"):
@@ -33,18 +33,18 @@ class JetstreamMetricsCollector:
   _prefill_backlog = Gauge(
       name="jetstream_prefill_backlog_size",
       documentation="Size of prefill queue",
-      labelnames=["hostname"],
+      labelnames=["id"],
   )
   _slots_available_percentage = Gauge(
       name="jetstream_slots_available_percentage",
       documentation="The percentage of available slots in decode batch",
-      labelnames=["hostname", "idx"],
+      labelnames=["id", "idx"],
   )
 
   def get_prefill_backlog_metric(self):
-    return self._prefill_backlog.labels(hostname=self._hostname)
+    return self._prefill_backlog.labels(id=self._id)
 
   def get_slots_available_percentage_metric(self, idx: int):
     return self._slots_available_percentage.labels(
-        hostname=self._hostname, idx=idx
+        id=self._id, idx=idx
     )
