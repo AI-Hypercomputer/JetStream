@@ -99,7 +99,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       server.stop()
 
     # prometheus not configured, assert no metrics collector on Driver
-    assert server._driver._metrics_collector is None
+    assert server._driver._metrics_collector is None  # pylint: disable=protected-access
 
   @parameterized.expand(
       [
@@ -132,7 +132,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
     )
     ###################### Requester side ######################################
     # assert prometheus server is running and responding
-    assert server._driver._metrics_collector is not None
+    assert server._driver._metrics_collector is not None  # pylint: disable=protected-access
     async with aiohttp.ClientSession() as session:
       async with session.get(f"http://localhost:{metrics_port}") as response:
         assert response.status == 200
