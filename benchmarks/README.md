@@ -29,6 +29,19 @@ python benchmark_serving.py \
 
 ```
 
+### Run Benchmark for Llama 3
+
+```
+python benchmark_serving.py \
+--tokenizer <llama3 tokenizer path> \
+--num-prompts 10  \
+--dataset sharegpt \
+--dataset-path ~/data/ShareGPT_V3_unfiltered_cleaned_split.json \
+--max-output-length 1024 \
+--model llama-3
+
+```
+
 ### Save request outputs in Benchmark
 
 Please use `--save-request-outputs` flag to save predictions to a file.

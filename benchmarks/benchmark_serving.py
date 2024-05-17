@@ -73,6 +73,7 @@ import grpc
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine.token_utils import load_vocab
+from jetstream.third_party.llama3 import llama3_tokenizer
 import numpy as np
 from tqdm.asyncio import tqdm  # pytype: disable=pyi-error
 import pandas
@@ -130,10 +131,13 @@ class RequestFuncOutput:
     }
 
 
-def get_tokenizer(tokenizer_name: str) -> Any:
+def get_tokenizer(model_id: str, tokenizer_name: str) -> Any:
   """Return a tokenizer or a tokenizer placholder."""
   if tokenizer_name == "test":
     return "test"
+  elif model_id == "llama-3":
+    # Llama 3 uses a tiktoken tokenizer.
+    return llama3_tokenizer.Tokenizer(tokenizer_name)
   else:
     # Use JetStream tokenizer util. It's using the sentencepiece wrapper in
     # seqio library.
@@ -195,18 +199,14 @@ def tokenize_dataset(
   prompts = []
   outputs = []
   indices = []
-
+  prompt_token_ids = []
+  outputs_token_ids = []
   for prompt, output, idx in dataset:
     prompts.append(prompt)
     outputs.append(output)
     indices.append(idx)
-
-  prompt_token_ids = tokenizer.encode(
-      prompts
-  )  # adjust this code based on tokenizer method
-  outputs_token_ids = tokenizer.encode(
-      outputs
-  )  # adjust this code based on tokenizer method
+    prompt_token_ids.append(tokenizer.encode(prompt))
+    outputs_token_ids.append(tokenizer.encode(output))
 
   tokenized_dataset = []
   for i in range(n):
@@ -549,7 +549,7 @@ def main(args: argparse.Namespace):
 
   api_url = f"{args.server}:{args.port}"
 
-  tokenizer = get_tokenizer(tokenizer_id)
+  tokenizer = get_tokenizer(model_id, tokenizer_id)
   if tokenizer == "test" or args.dataset == "test":
     input_requests = mock_requests(
         args.total_mock_requests
@@ -680,9 +680,10 @@ if __name__ == "__main__":
       type=str,
       default="no_model",
       help=(
-          "Name of the model. (it's just used to label the benchmark, the model"
-          " config is defined in config_lib, and passed as the server config"
-          " flag when we run the JetStream server)"
+          "Name of the model like llama-2, llama-3, gemma. (it's just used to"
+          " label the benchmark, pick the tokenizer, the model config is"
+          " defined in config_lib, and passed as the server config flag when"
+          " we run the JetStream server)"
       ),
   )
   parser.add_argument(
