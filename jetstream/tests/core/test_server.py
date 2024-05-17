@@ -61,10 +61,8 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
     """Sets up a server and requests token responses."""
     ######################### Server side ######################################
     port = portpicker.pick_unused_port()
-    metrics_port = portpicker.pick_unused_port()
 
     print("port: " + str(port))
-    print("metrics port: " + str(metrics_port))
     credentials = grpc.local_server_credentials()
 
     server = server_lib.run(
@@ -72,7 +70,6 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         config=config,
         devices=devices,
         credentials=credentials,
-        metrics_server_config=config_lib.MetricsServerConfig(port=metrics_port),
     )
     ###################### Requester side ######################################
     async with grpc.aio.secure_channel(
@@ -101,6 +98,35 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         counter += 1
       server.stop()
 
+    # prometheus not configured, assert no metrics collector on Driver
+    assert server._driver._metrics_collector is not None
+
+  async def test_prometheus_server(
+      self,
+      config: Type[config_lib.ServerConfig],
+      expected_text: list[str],
+      expected_token_ids: list[int | None],
+      devices: list[Any],
+  ):
+    """Sets up a server and requests token responses."""
+    ######################### Server side ######################################
+    port = portpicker.pick_unused_port()
+    metrics_port = portpicker.pick_unused_port()
+
+    print("port: " + str(port))
+    print("metrics port: " + str(metrics_port))
+    credentials = grpc.local_server_credentials()
+
+    server = server_lib.run(
+        port=port,
+        config=config,
+        devices=devices,
+        credentials=credentials,
+        metrics_server_config=config_lib.MetricsServerConfig(port=metrics_port),
+    )
+    ###################### Requester side ######################################
+    # assert prometheus server is running and responding
+    assert server._driver._metrics_collector is not None
     async with aiohttp.ClientSession() as session:
       async with session.get(f"http://localhost:{metrics_port}") as response:
         assert response.status == 200
