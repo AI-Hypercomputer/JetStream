@@ -14,22 +14,18 @@
 
 """Unit test for config_lib.py."""
 
-from absl.testing import absltest, parameterized
+import unittest
+from parameterized import parameterized
 from jetstream.core import config_lib
 
 
-class TestConfigLib(parameterized.TestCase):
+class TestConfigLib(unittest.TestCase):
 
-  @parameterized.parameters(
-      ("tpu=8", 8),
-      ("v5e-8", 8),
-      ("v5e=4", 4),
-      ("v4-8", 4),
-  )
+  @parameterized.expand([("tpu=8", 8), ("v5e-8", 8), ("v5e=4", 4), ("v4-8", 4)])
   def test_slice_to_num_chips(self, accelerator_slice, expected_num_devices):
     got = config_lib.slice_to_num_chips(accelerator_slice)
     self.assertEqual(got, expected_num_devices)
 
-
-if __name__ == "__main__":
-  absltest.main()
+  def test_get_engines_invalid(self):
+    with self.assertRaises(ValueError):
+      config_lib.get_engines(config_lib.InterleavedCPUTestServer, [])
