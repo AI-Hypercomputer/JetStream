@@ -118,7 +118,9 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       # assert prometheus server is running and responding
       assert server._driver._metrics_collector is not None  # pylint: disable=protected-access
       assert (
-          requests.get(f"http://localhost:{metrics_port}").status_code
+          requests.get(
+              f"http://localhost:{metrics_port}", timeout=5
+          ).status_code
           == requests.status_codes.codes["ok"]
       )
       server.stop()
