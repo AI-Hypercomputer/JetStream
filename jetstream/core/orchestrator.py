@@ -94,9 +94,8 @@ from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.core.utils.return_sample import ReturnSample
 from jetstream.engine import engine_api, tokenizer_api, token_utils
+from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
-import prometheus_client
-import shortuuid
 
 root = logging.getLogger()
 root.setLevel(logging.DEBUG)
@@ -212,8 +211,8 @@ class Driver:
   # todo: remove jax_padding after all then engine migrate to np padding
   _jax_padding = True
 
-  # Record metrics for prefill_backlog size
-  _prefill_backlog_size_metric: prometheus_client.Gauge
+  # All metrics we want to monitor should be collected with this
+  _metrics_collector: JetstreamMetricsCollector | None = None
 
   def __init__(
       self,
@@ -223,6 +222,7 @@ class Driver:
       generate_params: Optional[list[Any]] = None,
       interleaved_mode: bool = False,
       jax_padding: bool = True,
+      metrics_collector: JetstreamMetricsCollector | None = None,
   ):
     if prefill_engines is None:
       prefill_engines = []
@@ -243,15 +243,16 @@ class Driver:
     self._prefill_params = prefill_params
     self._generate_params = generate_params
     self._interleaved_mode = interleaved_mode
+    self._metrics_collector = metrics_collector
 
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
-    self._prefill_backlog_size_metric = prometheus_client.Gauge(
-        f"jetstream_prefill_backlog_size_{shortuuid.uuid()}",
-        "Size of prefill queue",
-    )
+    if self._metrics_collector:
+      self._metrics_collector.get_prefill_backlog_metric().set_function(
+          lambda: float(self._prefill_backlog.qsize())
+      )
 
     # Stage 2
     # After prefilling, it is placed here in order to get transferred to
@@ -432,7 +433,6 @@ class Driver:
     """Used to place new requests for prefilling and generation."""
     # Don't block so we can fail and shed load when the queue is full.
     self._prefill_backlog.put(request, block=False)
-    self._prefill_backlog_size_metric.set(self._prefill_backlog.qsize())
 
   def _process_prefill_content(
       self,
@@ -474,7 +474,6 @@ class Driver:
       my_transfer_backlog = self._transfer_backlogs[idx]
       # The prefill thread can just sleep until it has work to do.
       request = self._prefill_backlog.get(block=True)
-      self._prefill_backlog_size_metric.set(self._prefill_backlog.qsize())
 
       if request is None:
         break
@@ -578,6 +577,11 @@ class Driver:
         time_of_last_print = time.time()
 
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
+
+      if self._metrics_collector:
+        self._metrics_collector.get_slots_available_percentage_metric(
+            idx
+        ).set_function(lambda: float(my_slots.qsize() / max_concurrent_decodes))
 
       # Check if there are any free my_slots. We don't want to block here since
       # we can still generate if we can't insert. We do this in a while loop to

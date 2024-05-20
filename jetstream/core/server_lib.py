@@ -20,7 +20,6 @@ See implementations/*/sever.py for examples.
 import asyncio
 from concurrent import futures
 import logging
-import os
 import threading
 from typing import Any, Type
 
@@ -28,16 +27,12 @@ import grpc
 import jax
 from jetstream.core import config_lib
 from jetstream.core import orchestrator
+from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 from jetstream.core.proto import jetstream_pb2_grpc
 
 from prometheus_client import start_http_server
 
 _HOST = "[::]"
-PROMETHEUS_ENABLED_ON_PORT = (
-    int(os.getenv("PROMETHEUS_ENABLED_ON_PORT"))
-    if os.getenv("PROMETHEUS_ENABLED_ON_PORT")
-    else None
-)
 
 
 class JetStreamServer:
@@ -99,6 +94,7 @@ def run(
     credentials: Any = grpc.insecure_server_credentials(),
     threads: int | None = None,
     jax_padding: bool = True,
+    metrics_server_config: config_lib.MetricsServerConfig | None = None,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
@@ -122,6 +118,20 @@ def run(
   interleaved_mode = (
       len(config.prefill_slices) + len(config.generate_slices) == 0
   )
+
+  # Setup Prometheus server
+  metrics_collector: JetstreamMetricsCollector = None
+  if metrics_server_config and metrics_server_config.port:
+    logging.info(
+        "Starting Prometheus server on port %d", metrics_server_config.port
+    )
+    start_http_server(metrics_server_config.port)
+    metrics_collector = JetstreamMetricsCollector()
+  else:
+    logging.info(
+        "Not starting Prometheus server: --prometheus_port flag not set"
+    )
+
   driver = orchestrator.Driver(
       prefill_engines=engines.prefill_engines + engines.interleaved_engines,
       generate_engines=engines.generate_engines + engines.interleaved_engines,
@@ -129,6 +139,7 @@ def run(
       generate_params=generate_params + shared_params,
       interleaved_mode=interleaved_mode,
       jax_padding=jax_padding,
+      metrics_collector=metrics_collector,
   )
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.
@@ -137,17 +148,6 @@ def run(
   logging.info("Starting server on port %d with %d threads", port, threads)
 
   jetstream_server.start()
-
-  # Setup Prometheus server
-  if PROMETHEUS_ENABLED_ON_PORT is not None:
-    logging.info(
-        "Starting Prometheus server on port %d", PROMETHEUS_ENABLED_ON_PORT
-    )
-    start_http_server(PROMETHEUS_ENABLED_ON_PORT)
-  else:
-    logging.info(
-        "Not starting Prometheus server: PROMETHEUS_ENABLED_ON_PORT not set"
-    )
   return jetstream_server
 
 

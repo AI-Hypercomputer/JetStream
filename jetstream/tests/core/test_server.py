@@ -21,6 +21,8 @@ response.
 from typing import Any, Type
 import unittest
 
+
+import requests
 from parameterized import parameterized
 import grpc
 from jetstream.core import config_lib
@@ -60,7 +62,10 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
     """Sets up a server and requests token responses."""
     ######################### Server side ######################################
     port = portpicker.pick_unused_port()
+    metrics_port = portpicker.pick_unused_port()
+
     print("port: " + str(port))
+    print("metrics port: " + str(metrics_port))
     credentials = grpc.local_server_credentials()
 
     server = server_lib.run(
@@ -70,12 +75,16 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         credentials=credentials,
     )
     ###################### Requester side ######################################
+
+    # prometheus not configured, assert no metrics collector on Driver
+    assert server._driver._metrics_collector is None  # pylint: disable=protected-access
+
     async with grpc.aio.secure_channel(
         f"localhost:{port}", grpc.local_channel_credentials()
     ) as channel:
       stub = jetstream_pb2_grpc.OrchestratorStub(channel)
 
-      # The string representation of np.array([[65, 66]]), [2] will be prependd
+      # The string representation of np.array([[65, 66]]), [2] will be prepended
       # as BOS
       text = "AB"
       request = jetstream_pb2.DecodeRequest(
@@ -94,6 +103,26 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         assert output_text == expected_text[counter]
         assert output_token_id == expected_token_ids[counter]
         counter += 1
+      server.stop()
+
+      # Now test server with prometheus config
+      server = server_lib.run(
+          port=port,
+          config=config,
+          devices=devices,
+          credentials=credentials,
+          metrics_server_config=config_lib.MetricsServerConfig(
+              port=metrics_port
+          ),
+      )
+      # assert prometheus server is running and responding
+      assert server._driver._metrics_collector is not None  # pylint: disable=protected-access
+      assert (
+          requests.get(
+              f"http://localhost:{metrics_port}", timeout=5
+          ).status_code
+          == requests.status_codes.codes["ok"]
+      )
       server.stop()
 
   def test_get_devices(self):
