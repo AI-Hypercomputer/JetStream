@@ -139,7 +139,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         enable_jax_profiler=True,
     )
     assert (
-        requests.get(f"http://localhost:9999", timeout=5).status_code
+        requests.get("http://localhost:9999", timeout=5).status_code
         == requests.status_codes.codes["ok"]
     )
     server.stop()

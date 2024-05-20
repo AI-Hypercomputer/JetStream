@@ -158,7 +158,7 @@ def run(
     logging.info("Starting JAX profiler server on port 9999")
     jax.profiler.start_server(9999)
   else:
-    logging.info(f"Not starting JAX profiler server: {enable_jax_profiler=}")
+    logging.info("Not starting JAX profiler server: %s", enable_jax_profiler)
   return jetstream_server
 
 
