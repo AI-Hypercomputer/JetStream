@@ -10,7 +10,7 @@ Following the [JAX official manual profiling approach](https://jax.readthedocs.i
 ```bash
 tensorboard --logdir /tmp/tensorboard/
 ```
-You should be able to load TensorBoard at http://localhost:6006/. You can specify a different port with the --port flag.
+You should be able to load TensorBoard at http://localhost:6006/. You can specify a different port with the `--port` flag.
 
 2. Start JetStream MaxText server:
 ```bash
@@ -48,4 +48,4 @@ python MaxText/maxengine_server.py \
 
 3. Open http://localhost:6006/#profile, and click the “CAPTURE PROFILE” button in the upper left. Enter “localhost:9999” as the profile service URL (this is the address of the profiler server you started in the previous step). Enter the number of milliseconds you’d like to profile for, and click “CAPTURE”.
 
-4. After the capture finishes, TensorBoard should automatically refresh. (Not all of the TensorBoard profiling features are hooked up with JAX, so it may initially look like nothing was captured.) On the left under “Tools”, select trace_viewer.
+4. After the capture finishes, TensorBoard should automatically refresh. (Not all of the TensorBoard profiling features are hooked up with JAX, so it may initially look like nothing was captured.) On the left under “Tools”, select `trace_viewer`.
