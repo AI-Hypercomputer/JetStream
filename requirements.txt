@@ -218,7 +218,7 @@ pyyaml==6.0.1
     #   orbax-checkpoint
 regex==2024.4.28
     # via tiktoken
-requests==2.31.0
+requests==2.32.0
     # via
     #   requests-oauthlib
     #   tensorboard
