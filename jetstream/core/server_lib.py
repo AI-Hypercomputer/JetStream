@@ -96,6 +96,7 @@ def run(
     jax_padding: bool = True,
     metrics_server_config: config_lib.MetricsServerConfig | None = None,
     enable_jax_profiler: bool = False,
+    jax_profiler_port: int = 9999,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
@@ -109,6 +110,7 @@ def run(
     jax_padding: The flag to enable JAX padding during tokenization.
     metrics_server_config: The config to enable Promethus metric server.
     enable_jax_profiler: The flag to enable JAX profiler server.
+    jax_profiler_port: The port JAX profiler server (default to 9999).
 
   Returns:
     JetStreamServer that wraps the grpc server and orchestrator driver.
@@ -155,8 +157,8 @@ def run(
 
   # Setup Jax Profiler
   if enable_jax_profiler:
-    logging.info("Starting JAX profiler server on port 9999")
-    jax.profiler.start_server(9999)
+    logging.info("Starting JAX profiler server on port %s", jax_profiler_port)
+    jax.profiler.start_server(jax_profiler_port)
   else:
     logging.info("Not starting JAX profiler server: %s", enable_jax_profiler)
   return jetstream_server

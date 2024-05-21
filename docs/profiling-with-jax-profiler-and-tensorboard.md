@@ -28,6 +28,8 @@ export WEIGHT_DTYPE=bfloat16
 export PER_DEVICE_BATCH_SIZE=11
 # Set ENABLE_JAX_PROFILER to enable JAX profiler server at port 9999.
 export ENABLE_JAX_PROFILER=true
+# Set JAX_PROFILER_PORT to customize JAX profiler server port.
+export JAX_PROFILER_PORT=9999
 
 cd ~/maxtext
 python MaxText/maxengine_server.py \
@@ -43,7 +45,8 @@ python MaxText/maxengine_server.py \
   scan_layers=${SCAN_LAYERS} \
   weight_dtype=${WEIGHT_DTYPE} \
   per_device_batch_size=${PER_DEVICE_BATCH_SIZE} \
-  enable_jax_profiler=${ENABLE_JAX_PROFILER}
+  enable_jax_profiler=${ENABLE_JAX_PROFILER} \
+  jax_profiler_port=${JAX_PROFILER_PORT}
 ```
 
 3. Open http://localhost:6006/#profile, and click the “CAPTURE PROFILE” button in the upper left. Enter “localhost:9999” as the profile service URL (this is the address of the profiler server you started in the previous step). Enter the number of milliseconds you’d like to profile for, and click “CAPTURE”.
