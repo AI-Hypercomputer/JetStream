@@ -62,10 +62,8 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
     """Sets up a server and requests token responses."""
     ######################### Server side ######################################
     port = portpicker.pick_unused_port()
-    metrics_port = portpicker.pick_unused_port()
 
     print("port: " + str(port))
-    print("metrics port: " + str(metrics_port))
     credentials = grpc.local_server_credentials()
 
     server = server_lib.run(
@@ -105,25 +103,43 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         counter += 1
       server.stop()
 
-      # Now test server with prometheus config
-      server = server_lib.run(
-          port=port,
-          config=config,
-          devices=devices,
-          credentials=credentials,
-          metrics_server_config=config_lib.MetricsServerConfig(
-              port=metrics_port
-          ),
-      )
-      # assert prometheus server is running and responding
-      assert server._driver._metrics_collector is not None  # pylint: disable=protected-access
-      assert (
-          requests.get(
-              f"http://localhost:{metrics_port}", timeout=5
-          ).status_code
-          == requests.status_codes.codes["ok"]
-      )
-      server.stop()
+  def test_prometheus_server(self):
+    port = portpicker.pick_unused_port()
+    metrics_port = portpicker.pick_unused_port()
+
+    print("port: " + str(port))
+    print("metrics port: " + str(metrics_port))
+    credentials = grpc.local_server_credentials()
+    # Now test server with prometheus config
+    server = server_lib.run(
+        port=port,
+        config=config_lib.InterleavedCPUTestServer,
+        devices=[None],
+        credentials=credentials,
+        metrics_server_config=config_lib.MetricsServerConfig(port=metrics_port),
+    )
+    # assert prometheus server is running and responding
+    assert server._driver._metrics_collector is not None  # pylint: disable=protected-access
+    assert (
+        requests.get(f"http://localhost:{metrics_port}", timeout=5).status_code
+        == requests.status_codes.codes["ok"]
+    )
+    server.stop()
+
+  def test_jax_profiler_server(self):
+    port = portpicker.pick_unused_port()
+    print("port: " + str(port))
+    credentials = grpc.local_server_credentials()
+    # Now test server with prometheus config
+    server = server_lib.run(
+        port=port,
+        config=config_lib.InterleavedCPUTestServer,
+        devices=[None],
+        credentials=credentials,
+        enable_jax_profiler=True,
+    )
+    assert server
+    server.stop()
 
   def test_get_devices(self):
     assert len(server_lib.get_devices()) == 1
