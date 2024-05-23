@@ -223,7 +223,7 @@ class Driver:
       interleaved_mode: bool = False,
       jax_padding: bool = True,
       metrics_collector: JetstreamMetricsCollector | None = None,
-      ray_multiple_host: bool = False,
+      is_ray_backend: bool = False,
   ):
     if prefill_engines is None:
       prefill_engines = []
@@ -375,7 +375,7 @@ class Driver:
         )
     )
     self.live = True
-    self._ray_multiple_host = ray_multiple_host
+    self._is_ray_backend = is_ray_backend
     # Start all threads
     for t in self._all_threads:
       t.start()
@@ -522,7 +522,7 @@ class Driver:
     self._generate_engines[target_idx].transfer(new_request.prefill_result)
 
   def _transfer_prefill_result(self, new_request, target_idx):
-    if self._ray_multiple_host:
+    if self._is_ray_backend:
       self._ray_transfer_prefill_result(new_request, target_idx)
     else:
       self._jax_transfer_prefill_result(new_request, target_idx)

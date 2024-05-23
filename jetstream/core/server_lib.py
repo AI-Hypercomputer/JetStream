@@ -97,7 +97,6 @@ def run(
     metrics_server_config: config_lib.MetricsServerConfig | None = None,
     enable_jax_profiler: bool = False,
     jax_profiler_port: int = 9999,
-    ray_multiple_host: bool = False,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
@@ -147,7 +146,7 @@ def run(
       interleaved_mode=interleaved_mode,
       jax_padding=jax_padding,
       metrics_collector=metrics_collector,
-      ray_multiple_host=ray_multiple_host,
+      is_ray_backend=config.is_ray_backend,
   )
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.
