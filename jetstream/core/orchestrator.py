@@ -223,6 +223,7 @@ class Driver:
       interleaved_mode: bool = False,
       jax_padding: bool = True,
       metrics_collector: JetstreamMetricsCollector | None = None,
+      ray_multiple_host: bool = False,
   ):
     if prefill_engines is None:
       prefill_engines = []
@@ -374,6 +375,7 @@ class Driver:
         )
     )
     self.live = True
+    self._ray_multiple_host = ray_multiple_host
     # Start all threads
     for t in self._all_threads:
       t.start()
@@ -508,6 +510,25 @@ class Driver:
       del prefill_result
       del request
 
+  def _jax_transfer_prefill_result(self, new_request, target_idx):
+    new_request.prefill_result = jax.device_put(
+        new_request.prefill_result,
+        self._generate_engines[
+            target_idx
+        ].get_prefix_destination_sharding(),
+    )
+    # Block here so we don't block on the generate thread that steps.
+    jax.block_until_ready(new_request.prefill_result)
+ 
+  def _ray_transfer_prefill_result(self, new_request, target_idx):
+    self._generate_engines[target_idx].transfer(new_request.prefill_result)
+ 
+  def _transfer_prefill_result(self, new_request, target_idx):
+    if self._ray_multiple_host:
+      self._ray_transfer_prefill_result(new_request, target_idx)
+    else:  
+      self._jax_transfer_prefill_result(new_request, target_idx)  
+
   def _transfer_thread(self, idx: int):
     """Transfers the kv cache on an active request to the least full
     generate backlog."""
@@ -531,14 +552,7 @@ class Driver:
             target_idx,
         )
         # Transfer the info to the relevant generate slice.
-        new_request.prefill_result = jax.device_put(
-            new_request.prefill_result,
-            self._generate_engines[
-                target_idx
-            ].get_prefix_destination_sharding(),
-        )
-        # Block here so we don't block on the generate thread that steps.
-        jax.block_until_ready(new_request.prefill_result)
+        self._transfer_backlogs(new_request, target_idx)
       # Place the request on the correct generate backlog and block if full.
       self._generate_backlogs[target_idx].put(new_request, block=True)
       logging.info(
