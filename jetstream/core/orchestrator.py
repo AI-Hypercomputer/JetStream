@@ -510,7 +510,9 @@ class Driver:
       del prefill_result
       del request
 
-  def _jax_transfer_prefill_result(self, new_request, target_idx):
+  def _jax_transfer_prefill_result(
+      self, new_request: ActiveRequest, target_idx: int
+  ):
     new_request.prefill_result = jax.device_put(
         new_request.prefill_result,
         self._generate_engines[target_idx].get_prefix_destination_sharding(),
@@ -518,10 +520,14 @@ class Driver:
     # Block here so we don't block on the generate thread that steps.
     jax.block_until_ready(new_request.prefill_result)
 
-  def _ray_transfer_prefill_result(self, new_request, target_idx):
+  def _ray_transfer_prefill_result(
+      self, new_request: ActiveRequest, target_idx: int
+  ):
     self._generate_engines[target_idx].transfer(new_request.prefill_result)
 
-  def _transfer_prefill_result(self, new_request, target_idx):
+  def _transfer_prefill_result(
+      self, new_request: ActiveRequest, target_idx: int
+  ):
     if self._is_ray_backend:
       self._ray_transfer_prefill_result(new_request, target_idx)
     else:
