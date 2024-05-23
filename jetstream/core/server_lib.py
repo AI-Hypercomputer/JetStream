@@ -146,6 +146,7 @@ def run(
       interleaved_mode=interleaved_mode,
       jax_padding=jax_padding,
       metrics_collector=metrics_collector,
+      is_ray_backend=config.is_ray_backend,
   )
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.

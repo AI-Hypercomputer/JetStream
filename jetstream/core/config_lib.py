@@ -38,6 +38,7 @@ class ServerConfig:
   prefill_engine_create_fns: Tuple[CreateEngineFn, ...] = ()
   generate_engine_create_fns: Tuple[CreateEngineFn, ...] = ()
   interleaved_engine_create_fns: Tuple[CreateEngineFn, ...] = ()
+  is_ray_backend: bool = False
 
 
 @dataclasses.dataclass
