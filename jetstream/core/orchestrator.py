@@ -552,7 +552,7 @@ class Driver:
             target_idx,
         )
         # Transfer the info to the relevant generate slice.
-        self._transfer_backlogs(new_request, target_idx)
+        self._transfer_prefill_result(new_request, target_idx)
       # Place the request on the correct generate backlog and block if full.
       self._generate_backlogs[target_idx].put(new_request, block=True)
       logging.info(
