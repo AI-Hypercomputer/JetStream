@@ -21,74 +21,102 @@ from jetstream.core.proto import jetstream_pb2 as jetstream_dot_core_dot_proto_d
 
 
 class OrchestratorStub(object):
-  """TODO: Merge this with main JetStream core once we settle on an API."""
+    """TODO: Merge this with main JetStream core once we settle on an API.
 
-  def __init__(self, channel):
-    """Constructor.
-
-    Args:
-        channel: A grpc.Channel.
     """
-    self.Decode = channel.unary_stream(
-        "/jetstream_proto.Orchestrator/Decode",
-        request_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeRequest.SerializeToString,
-        response_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeResponse.FromString,
-    )
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.Decode = channel.unary_stream(
+                '/jetstream_proto.Orchestrator/Decode',
+                request_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeRequest.SerializeToString,
+                response_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeResponse.FromString,
+                )
+        self.HealthCheck = channel.unary_unary(
+                '/jetstream_proto.Orchestrator/HealthCheck',
+                request_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.HealthCheckRequest.SerializeToString,
+                response_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.HealthCheckResponse.FromString,
+                )
 
 
 class OrchestratorServicer(object):
-  """TODO: Merge this with main JetStream core once we settle on an API."""
+    """TODO: Merge this with main JetStream core once we settle on an API.
 
-  def Decode(self, request, context):
-    """Query LLM to generate text or tokens."""
-    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-    context.set_details("Method not implemented!")
-    raise NotImplementedError("Method not implemented!")
+    """
+
+    def Decode(self, request, context):
+        """Query LLM to generate text or tokens.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def HealthCheck(self, request, context):
+        """Checks if the model server is live.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
 
 
 def add_OrchestratorServicer_to_server(servicer, server):
-  rpc_method_handlers = {
-      "Decode": grpc.unary_stream_rpc_method_handler(
-          servicer.Decode,
-          request_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeRequest.FromString,
-          response_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeResponse.SerializeToString,
-      ),
-  }
-  generic_handler = grpc.method_handlers_generic_handler(
-      "jetstream_proto.Orchestrator", rpc_method_handlers
-  )
-  server.add_generic_rpc_handlers((generic_handler,))
+    rpc_method_handlers = {
+            'Decode': grpc.unary_stream_rpc_method_handler(
+                    servicer.Decode,
+                    request_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeRequest.FromString,
+                    response_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeResponse.SerializeToString,
+            ),
+            'HealthCheck': grpc.unary_unary_rpc_method_handler(
+                    servicer.HealthCheck,
+                    request_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.HealthCheckRequest.FromString,
+                    response_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.HealthCheckResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'jetstream_proto.Orchestrator', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
 
 
-# This class is part of an EXPERIMENTAL API.
+ # This class is part of an EXPERIMENTAL API.
 class Orchestrator(object):
-  """TODO: Merge this with main JetStream core once we settle on an API."""
+    """TODO: Merge this with main JetStream core once we settle on an API.
 
-  @staticmethod
-  def Decode(
-      request,
-      target,
-      options=(),
-      channel_credentials=None,
-      call_credentials=None,
-      insecure=False,
-      compression=None,
-      wait_for_ready=None,
-      timeout=None,
-      metadata=None,
-  ):
-    return grpc.experimental.unary_stream(
-        request,
-        target,
-        "/jetstream_proto.Orchestrator/Decode",
-        jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeRequest.SerializeToString,
-        jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeResponse.FromString,
-        options,
-        channel_credentials,
-        insecure,
-        call_credentials,
-        compression,
-        wait_for_ready,
-        timeout,
-        metadata,
-    )
+    """
+
+    @staticmethod
+    def Decode(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(request, target, '/jetstream_proto.Orchestrator/Decode',
+            jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeRequest.SerializeToString,
+            jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def HealthCheck(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/jetstream_proto.Orchestrator/HealthCheck',
+            jetstream_dot_core_dot_proto_dot_jetstream__pb2.HealthCheckRequest.SerializeToString,
+            jetstream_dot_core_dot_proto_dot_jetstream__pb2.HealthCheckResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
