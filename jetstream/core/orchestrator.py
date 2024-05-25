@@ -886,10 +886,10 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
         # Reset buffer after flushed.
         buffered_response_list = []
 
-   async def HealthCheck(
-    self,
-    request: jetstream_pb2.HealthCheckRequest,
-    context: Optional[grpc.aio.ServicerContext] = None,
+  async def HealthCheck(
+      self,
+      request: jetstream_pb2.HealthCheckRequest,
+      context: Optional[grpc.aio.ServicerContext] = None,
   ) -> jetstream_pb2.HealthCheckResponse:
     """HealthCheck."""
     if context is None:
