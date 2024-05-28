@@ -886,7 +886,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
         # Reset buffer after flushed.
         buffered_response_list = []
 
-  async def HealthCheck(
+  async def HealthCheck(  # pylint: disable=invalid-overridden-method
       self,
       request: jetstream_pb2.HealthCheckRequest,
       context: Optional[grpc.aio.ServicerContext] = None,

@@ -86,7 +86,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       healthcheck_response = stub.HealthCheck(healthcheck_request)
       healthcheck_response = await healthcheck_response
 
-      assert healthcheck_response.is_live == True
+      assert healthcheck_response.is_live is True
 
       # The string representation of np.array([[65, 66]]), [2] will be prepended
       # as BOS
