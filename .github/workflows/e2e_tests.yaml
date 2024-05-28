@@ -11,6 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Details for GCP Service Account Key setup: https://github.com/google-github-actions/auth?tab=readme-ov-file#sake
+
 name: E2E Tests
 
 on:
@@ -32,8 +34,7 @@ jobs:
         id: 'auth'
         uses: 'google-github-actions/auth@v2'
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          credentials_json: '${{ secrets.GOOGLE_SA_KEY }}'
 
       - name: Setup gcloud
         uses: 'google-github-actions/setup-gcloud@v2'
