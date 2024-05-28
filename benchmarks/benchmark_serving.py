@@ -590,6 +590,9 @@ def main(args: argparse.Namespace):
     )
     print("Warm up done")
 
+  # Wait for server completely warmup before running the benchmark.
+  time.sleep(10)
+
   benchmark_result, request_outputs = asyncio.run(
       benchmark(
           api_url=api_url,
