@@ -1,0 +1,50 @@
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Details for GCP Service Account Key setup: https://github.com/google-github-actions/auth?tab=readme-ov-file#sake
+
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  run_e2e_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: GCP SA auth
+        id: 'auth'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GOOGLE_SA_KEY }}'
+
+      - name: Setup gcloud
+        uses: 'google-github-actions/setup-gcloud@v2'
+        with:
+          version: '>= 363.0.0'
+
+      - name: Run E2E tests on ml-automation-solutions platform
+        run: |
+          gcloud composer environments run ml-automation-solutions \
+            --project=cloud-ml-auto-solutions \
+            --location=us-central1 dags trigger \
+            -- \
+            jetstream_e2e_inference
