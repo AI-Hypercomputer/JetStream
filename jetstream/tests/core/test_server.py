@@ -82,6 +82,12 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
     ) as channel:
       stub = jetstream_pb2_grpc.OrchestratorStub(channel)
 
+      healthcheck_request = jetstream_pb2.HealthCheckRequest()
+      healthcheck_response = stub.HealthCheck(healthcheck_request)
+      healthcheck_response = await healthcheck_response
+
+      assert healthcheck_response.is_live is True
+
       # The string representation of np.array([[65, 66]]), [2] will be prepended
       # as BOS
       text = "AB"

@@ -21,6 +21,8 @@ package jetstream_proto;
 service Orchestrator {
   // Query LLM to generate text or tokens.
   rpc Decode(DecodeRequest) returns (stream DecodeResponse) {}
+  // Checks if the model server is live.
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {}
 }
 
 message DecodeRequest {
@@ -74,4 +76,11 @@ message DecodeResponse {
   }
   reserved 1;
   // Next ID: 4
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  // Denotes whether the model server is live
+  bool is_live = 1;
 }

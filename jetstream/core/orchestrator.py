@@ -885,3 +885,17 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
         )
         # Reset buffer after flushed.
         buffered_response_list = []
+
+  async def HealthCheck(  # pylint: disable=invalid-overridden-method
+      self,
+      request: jetstream_pb2.HealthCheckRequest,
+      context: Optional[grpc.aio.ServicerContext] = None,
+  ) -> jetstream_pb2.HealthCheckResponse:
+    """HealthCheck."""
+    if context is None:
+      logging.warning(
+          "LLM orchestrator is being used in offline test mode, and will not"
+          " respond to gRPC queries - only direct function calls."
+      )
+    is_live = self._driver.live
+    return jetstream_pb2.HealthCheckResponse(is_live=is_live)
