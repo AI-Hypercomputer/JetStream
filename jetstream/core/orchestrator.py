@@ -93,7 +93,7 @@ from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.core.utils.return_sample import ReturnSample
-from jetstream.engine import engine_api, tokenizer_api, token_utils
+from jetstream.engine import engine_api, tokenizer_api, token_utils, aot_utils
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
 
@@ -504,6 +504,14 @@ class Driver:
           request, tokenizer, is_bos, prefill_engine.max_prefill_length
       )
       # Compute new kv cache for the prefill_content.
+      # prefill_result = prefill_engine.prefill(
+      #     params=prefill_params,
+      #     padded_tokens=padded_tokens,
+      #     true_length=true_length,
+      # )
+      prefill_compiled = prefill_engine.prefill_compiled
+      prefill_result = prefill_compiled[128]
+
       prefill_result, first_token = prefill_engine.prefill(
           params=prefill_params,
           padded_tokens=padded_tokens,
@@ -671,9 +679,10 @@ class Driver:
             slot,
             generate_timestep,
         )
-        decode_state = generate_engine.insert(
-            new_request.prefill_result, decode_state, slot=slot
-        )
+        # decode_state = generate_engine.insert(
+        #     new_request.prefill_result, decode_state, slot=slot
+        # )
+        decode_state = generate_engine.insert_compiled[128]
         delete_pytree(new_request.prefill_result)
         new_request.generate_timestep_added = generate_timestep
         new_request.complete = np.zeros(
@@ -781,6 +790,18 @@ class Driver:
         # We want to update a slot with the new channel.
         slot, active_request = data
         my_live_requests[slot] = active_request
+
+  def model_warmup(self, prefill_buckets):
+    aot_utils.layout_params_and_compile_executables(
+      prefill_buckets,
+      self._prefill_engines,
+      self._generate_engines,
+      self._prefill_params,
+      self._generate_params,
+    )
+    if self._prefill_engines:
+      return True 
+    return False
 
 
 class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
@@ -946,3 +967,18 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
       )
     is_live = self._driver.live
     return jetstream_pb2.HealthCheckResponse(is_live=is_live)
+
+  async def ModelWarmup( # pylint: disable=invalid-overridden-method
+      self,
+      request: jetstream_pb2.ModelWarmupRequest,
+      context: Optional[grpc.aio.ServicerContext] = None,
+  ) -> jetstream_pb2.ModelWarmupResponse:
+    """ModelWarmup."""
+    if context is None:
+      logging.warning(
+          "LLM orchestrator is being used in offline test mode, and will not"
+          " respond to gRPC queries - only direct function calls."
+      )
+    prefill_buckets = [16, 32, 64, 128, 256, 512, 1024]
+    success = self._driver.model_warmup(prefill_buckets)
+    return jetstream_pb2.ModelWarmupResponse(success=success)

@@ -19,7 +19,7 @@ could want to call, enabling interleaved (continuous batching) inference.
 """
 
 import abc
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Generic, Optional, Tuple, TypeVar, Union
 
 from flax import struct
 import jax
