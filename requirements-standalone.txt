@@ -1,0 +1,21 @@
+# jetstream library
+absl-py
+coverage
+flax
+grpcio
+jax
+jaxlib
+numpy
+portpicker
+prometheus-client
+pytest
+seqio
+tiktoken
+blobfile
+parameterized
+shortuuid
+# jetstream entrypoints
+pyconfig
+# engines
+# maxtext @ git+https://github.com/google/maxtext.git@jetstream-v0.2.2#egg=maxtext
+jetstream_pt @ git+https://github.com/google/jetstream-pytorch.git@jetstream-v0.2.2#egg=jetstream_pt

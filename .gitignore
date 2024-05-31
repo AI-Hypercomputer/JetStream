@@ -11,3 +11,6 @@ logs/
 tmp/
 venv/
 .vscode/
+
+# engine imple submodules
+jetstream/engine/implementations/

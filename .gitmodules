@@ -1,0 +1,3 @@
+[submodule "jetstream/engine/implementations/maxtext"]
+	path = jetstream/engine/implementations/maxtext
+	url = https://github.com/google/maxtext.git
