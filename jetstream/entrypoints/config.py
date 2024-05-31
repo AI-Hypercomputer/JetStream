@@ -16,15 +16,13 @@
 
 import functools
 import os
-from jetstream.engine.implementations.maxtext.MaxText.maxengine_config import create_maxengine
-import pyconfig
 from typing import Sequence, Type
 
 import jax
-
-
 from jetstream.core import config_lib
+from jetstream.engine.implementations.maxtext.MaxText.maxengine_config import create_maxengine
 from jetstream_pt import config
+import pyconfig
 
 
 def get_server_config(
