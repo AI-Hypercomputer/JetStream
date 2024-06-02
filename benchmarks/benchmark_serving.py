@@ -81,6 +81,31 @@ import pandas
 from eval_accuracy import eval_accuracy
 
 
+def str2bool(v: str) -> bool:
+  """Convert a string of truth to True or False.
+
+  Args:
+    - v (str):
+      - True values are 'y', 'yes', 't', 'true', and '1';
+      - False values are 'n', 'no', 'f', 'false', and '0'.
+
+  Returns:
+    bool: True or False
+
+  Raises:
+    ValueError if v is anything else.
+  """
+  v = v.lower()
+  true_values = ["y", "yes", "t", "true", "1"]
+  false_values = ["n", "no", "f", "false", "0"]
+  if v in true_values:
+    return True
+  elif v in false_values:
+    return False
+  else:
+    raise ValueError(f"Invalid value '{v}'!")
+
+
 @dataclass
 class BenchmarkMetrics:
   """Data class to store benchmark metrics."""
@@ -226,9 +251,9 @@ def tokenize_dataset(
 
 def filter_dataset(
     tokenized_dataset: list[tuple[str, Any, str, int, int, int]],
-    max_output_length: Optional[int] = None,
+    max_output_length: int = 0,
 ) -> list[InputRequest]:
-  if max_output_length is None:
+  if max_output_length != 0:
     print("In InputRequest, pass in actual output_length for each sample")
   else:
     print(
@@ -269,7 +294,7 @@ def sample_requests(
     dataset: list[tuple[Any, Any]],
     tokenizer: Any,
     num_requests: int,
-    max_output_length: Optional[int] = None,
+    max_output_length: int = 0,
     oversample_multiplier: float = 1.2,
 ) -> list[InputRequest]:
 
@@ -319,7 +344,7 @@ async def get_request(
   for request in input_requests:
     yield request
 
-    if request_rate == float("inf"):
+    if request_rate == 0.0:
       # If the request rate is infinity, then we don't need to wait.
       continue
     # Sample the request interval from the exponential distribution.
@@ -576,7 +601,10 @@ def main(args: argparse.Namespace):
 
   if args.warmup_first:
     print("Warm up start:")
-    warmup_requests = list(sample_warmup_requests(input_requests)) * 2
+    if args.full_warmup:
+      warmup_requests = input_requests
+    else:
+      warmup_requests = list(sample_warmup_requests(input_requests)) * 2
     benchmark_result, request_outputs = asyncio.run(
         benchmark(
             api_url=api_url,
@@ -630,10 +658,7 @@ def main(args: argparse.Namespace):
     metrics_json["num_prompts"] = args.num_prompts
 
     # Traffic
-    metrics_json["request_rate"] = (
-        args.request_rate if args.request_rate < float("inf") else "inf"
-    )
-
+    metrics_json["request_rate"] = args.request_rate
     metrics_json = {**metrics_json, **benchmark_result}
     if args.run_eval:
       metrics_json = {**metrics_json, **eval_json}
@@ -661,6 +686,7 @@ def main(args: argparse.Namespace):
 
 
 if __name__ == "__main__":
+
   parser = argparse.ArgumentParser(
       description="Benchmark the online serving throughput."
   )
@@ -711,9 +737,9 @@ if __name__ == "__main__":
   parser.add_argument(
       "--request-rate",
       type=float,
-      default=float("inf"),
+      default=0.0,
       help=(
-          "Number of requests per second. If this is inf, "
+          "Number of requests per second. If this is 0., "
           "then all the requests are sent at time 0. "
           "Otherwise, we use Poisson process to synthesize "
           "the request arrival times."
@@ -729,7 +755,7 @@ if __name__ == "__main__":
   parser.add_argument(
       "--max-output-length",
       type=int,
-      default=None,
+      default=0,
       help=(
           "The maximum output length for reference request. It would be passed"
           " to `max_tokens` parameter of the JetStream's DecodeRequest proto,"
@@ -738,7 +764,8 @@ if __name__ == "__main__":
           " max_tokens <= (max_target_length - max_prefill_predict_length)."
           " max_target_length is the maximum length of a sequence;"
           " max_prefill_predict_length is the maximum length of the"
-          " input/prefill of a sequence."
+          " input/prefill of a sequence. Default to 0, in this case, "
+          "the output length of the golden dataset would be passed."
       ),
   )
 
@@ -792,15 +819,21 @@ if __name__ == "__main__":
   )
   parser.add_argument(
       "--run-eval",
-      type=bool,
+      type=str2bool,
       default=False,
       help="Whether to run evaluation script on the saved outputs",
   )
   parser.add_argument(
       "--warmup-first",
-      type=bool,
+      type=str2bool,
       default=False,
       help="Whether to send warmup req first",
+  )
+  parser.add_argument(
+      "--full-warmup",
+      type=str2bool,
+      default=False,
+      help="Whether to warmup with the full req",
   )
   parser.add_argument(
       "--conversation-starter",
