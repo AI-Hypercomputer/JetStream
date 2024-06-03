@@ -599,12 +599,14 @@ def main(args: argparse.Namespace):
         max_output_length=args.max_output_length,
     )
 
-  if args.warmup_first:
-    print("Warm up start:")
-    if args.full_warmup:
-      warmup_requests = input_requests
-    else:
-      warmup_requests = list(sample_warmup_requests(input_requests)) * 2
+  warmup_requests = None
+  if args.warmup_mode == "full":
+    warmup_requests = input_requests
+  elif args.warmup_mode == "sampled":
+    warmup_requests = list(sample_warmup_requests(input_requests)) * 2
+
+  if warmup_requests:
+    print(f"Starting {args.warmup_mode} warmup:")
     benchmark_result, request_outputs = asyncio.run(
         benchmark(
             api_url=api_url,
@@ -616,7 +618,7 @@ def main(args: argparse.Namespace):
             priority=args.priority,
         )
     )
-    print("Warm up done")
+    print(f"{args.warmup_mode} warmup completed.")
 
   # TODO: Replace this with warmup complete signal once supported.
   # Wait for server completely warmup before running the benchmark.
@@ -824,16 +826,11 @@ if __name__ == "__main__":
       help="Whether to run evaluation script on the saved outputs",
   )
   parser.add_argument(
-      "--warmup-first",
-      type=str2bool,
-      default=False,
-      help="Whether to send warmup req first",
-  )
-  parser.add_argument(
-      "--full-warmup",
-      type=str2bool,
-      default=False,
-      help="Whether to warmup with the full req",
+      "--warmup-mode",
+      type=str,
+      default="none",
+      choices=["none", "sample", "full"],
+      help="Whether to warmup first, and set the warmup mode",
   )
   parser.add_argument(
       "--conversation-starter",
