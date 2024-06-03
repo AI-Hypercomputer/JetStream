@@ -10,7 +10,8 @@ Following the [JAX official manual profiling approach](https://jax.readthedocs.i
 ```bash
 tensorboard --logdir /tmp/tensorboard/
 ```
-You should be able to load TensorBoard at http://localhost:6006/. You can specify a different port with the `--port` flag.
+You should be able to load TensorBoard at http://localhost:6006/. You can specify a different port with the `--port` flag. If you are running on a remote Cloud TPU VM, the `tensorboard-plugin-profile` python package enables remote access to tensorboard endpoints (JetStream deps include this package).
+
 
 2. Start JetStream MaxText server:
 ```bash

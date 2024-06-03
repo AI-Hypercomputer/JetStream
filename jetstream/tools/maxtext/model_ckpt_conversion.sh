@@ -48,7 +48,7 @@ gcloud storage buckets create ${MODEL_BUCKET} --location=${BUCKET_LOCATION} || t
 gcloud storage buckets create ${BASE_OUTPUT_DIRECTORY} --location=${BUCKET_LOCATION} || true
 gcloud storage buckets create ${DATASET_PATH} --location=${BUCKET_LOCATION} || true
 
-# Covert model checkpoints to MaxText compatible checkpoints.
+# Convert model checkpoints to MaxText compatible checkpoints.
 if [ "$MODEL" == "gemma" ]; then
     CONVERT_CKPT_SCRIPT="convert_gemma_chkpt.py"
     JAX_PLATFORMS=cpu python MaxText/${CONVERT_CKPT_SCRIPT} \
@@ -74,7 +74,7 @@ echo "Written MaxText compatible checkpoint to ${MODEL_BUCKET}/${MODEL}/${MODEL_
 # We define `SCANNED_CKPT_PATH` to refer to the checkpoint subdirectory.
 export SCANNED_CKPT_PATH=${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx}/0/items
 
-# Covert MaxText compatible checkpoints to unscanned checkpoints.
+# Convert MaxText compatible checkpoints to unscanned checkpoints.
 # Note that the `SCANNED_CKPT_PATH` is in a `scanned` format which is great for training but for efficient decoding performance we want the checkpoint in an `unscanned` format.
 export RUN_NAME=${MODEL_NAME}_unscanned_chkpt_${idx}
 
