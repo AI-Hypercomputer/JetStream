@@ -829,7 +829,7 @@ if __name__ == "__main__":
       "--warmup-mode",
       type=str,
       default="none",
-      choices=["none", "sample", "full"],
+      choices=["none", "sampled", "full"],
       help="Whether to warmup first, and set the warmup mode",
   )
   parser.add_argument(
