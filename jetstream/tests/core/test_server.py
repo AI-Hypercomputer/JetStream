@@ -175,7 +175,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       assert healthcheck_response.is_live is True
 
       # Test enabling model warmup and its success
-      modelwarmup_request = jetstream_pb.ModelWarmup(enable=True)
+      modelwarmup_request = jetstream_pb2.ModelWarmup(enable=True)
       modelwarmup_response = stub.ModelWarmup(modelwarmup_request)
       modelwarmup_response = await modelwarmup_response
 
