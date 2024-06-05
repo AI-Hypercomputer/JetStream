@@ -87,9 +87,12 @@ message HealthCheckResponse {
   bool is_live = 1;
 }
 
-message ModelWarmupRequest {}
+message ModelWarmupRequest {
+  // Denotes whether to enable model server warmup.
+  bool enable = 1;
+}
 
 message ModelWarmupResponse {
-  // Denotes whether the model warmup has succeeded
-  bool success = 1;
+  // Whether model server warmup is currently enabled.
+  bool warmup_enabled = 1;
 }

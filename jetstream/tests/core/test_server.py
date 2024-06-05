@@ -149,3 +149,42 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
 
   def test_get_devices(self):
     assert len(server_lib.get_devices()) == 1
+
+  async def test_model_warmup(self):
+    port = portpicker.pick_unused_port()
+
+    print("port: " + str(port))
+    credentials = grpc.local_server_credentials()
+
+    server = server_lib.run(
+        port=port,
+        config=config_lib.InterleavedCPUTestServer,
+        devices=[None],
+        credentials=credentials,
+    )
+
+    async with grpc.aio.secure_channel(
+        f"localhost:{port}", grpc.local_channel_credentials()
+    ) as channel:
+      stub = jetstream_pb2_grpc.OrchestratorStub(channel)
+
+      healthcheck_request = jetstream_pb2.HealthCheckRequest()
+      healthcheck_response = stub.HealthCheck(healthcheck_request)
+      healthcheck_response = await healthcheck_response
+
+      assert healthcheck_response.is_live is True
+
+      # Test enabling model warmup and its success
+      modelwarmup_request = jetstream_pb.ModelWarmup(enable=True)
+      modelwarmup_response = stub.ModelWarmup(modelwarmup_request)
+      modelwarmup_response = await modelwarmup_response
+
+      assert modelwarmup_response.warmup_enabled is True
+
+      # Test disabling model warmup
+      modelwarmup_request = jetstream_pb.ModelWarmup(enable=False)
+      modelwarmup_response = stub.ModelWarmup(modelwarmup_request)
+      modelwarmup_response = await modelwarmup_response
+      assert modelwarmup_response.warmup_enabled is False
+
+      server.stop()

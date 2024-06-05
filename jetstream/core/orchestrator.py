@@ -135,6 +135,8 @@ class ActiveRequest:
   #################### Information relevant for prefill ########################
   history_path: Optional[str] = None
   prefill_content: Optional[str | list[int]] = None
+  true_length: Optional[int] = None
+  padded_token_length: Optional[int] = None
   ################## Information relevant for detokenization ###################
   # Which generate step this was added at.
   generate_timestep_added: Optional[int] = None
@@ -385,6 +387,7 @@ class Driver:
         )
     )
     self.live = True
+    self.warmup_enabled = False
     self._is_ray_backend = is_ray_backend
     # Start all threads
     for t in self._all_threads:
@@ -503,14 +506,26 @@ class Driver:
       padded_tokens, true_length = self._process_prefill_content(
           request, tokenizer, is_bos, prefill_engine.max_prefill_length
       )
+      request.true_length = true_length
+
       # Compute new kv cache for the prefill_content.
-      # prefill_result = prefill_engine.prefill(
-      #     params=prefill_params,
-      #     padded_tokens=padded_tokens,
-      #     true_length=true_length,
-      # )
-      prefill_compiled = prefill_engine.prefill_compiled
-      prefill_result = prefill_compiled[128]
+      if self.warmup_enabled:
+        padded_token_length = token_utils.take_nearest_length(
+            prefill_engine.prefill_buckets, true_length
+        )
+        request.padded_token_length = padded_token_length
+        prefill_result = prefill_engine.prefill_compiled[padded_token_length](
+            params=prefill_params,
+            existing_prefix=history,
+            padded_tokens=padded_tokens,
+            true_length=true_length,
+        )
+      else:
+        prefill_result = prefill_engine.prefill(
+            params=prefill_params,
+            padded_tokens=padded_tokens,
+            true_length=true_length,
+        )
 
       prefill_result, first_token = prefill_engine.prefill(
           params=prefill_params,
@@ -679,10 +694,18 @@ class Driver:
             slot,
             generate_timestep,
         )
-        # decode_state = generate_engine.insert(
-        #     new_request.prefill_result, decode_state, slot=slot
-        # )
-        decode_state = generate_engine.insert_compiled[128]
+        if self.warmup_enabled:
+          decode_state = generate_engine.insert_compiled[
+              new_request.padded_token_length
+          ](
+              prefix=new_request.prefill_result,
+              decode_state=decode_state,
+              slot=slot,
+          )
+        else:
+          decode_state = generate_engine.insert(
+              new_request.prefill_result, decode_state, slot=slot
+          )
         delete_pytree(new_request.prefill_result)
         new_request.generate_timestep_added = generate_timestep
         new_request.complete = np.zeros(
@@ -697,9 +720,14 @@ class Driver:
       ), "At this point we must have some requests inserted into the slots."
 
       # Now we actually take a generate step on requests in the slots.
-      decode_state, sampled_tokens = generate_engine.generate(
-          generate_params, decode_state
-      )
+      if self.warmup_enabled:
+        decode_state, sampled_tokens = generate_engine.generate_compiled(
+            params=generate_params, decode_state=decode_state
+        )
+      else:
+        decode_state, sampled_tokens = generate_engine.generate(
+            generate_params, decode_state
+        )
       sampled_tokens.copy_to_host_async()
       # Respond to detokenization backpressure.
       my_detokenize_backlog.put((generate_timestep, sampled_tokens), block=True)
@@ -791,17 +819,19 @@ class Driver:
         slot, active_request = data
         my_live_requests[slot] = active_request
 
-  def model_warmup(self, prefill_buckets):
-    aot_utils.layout_params_and_compile_executables(
-      prefill_buckets,
-      self._prefill_engines,
-      self._generate_engines,
-      self._prefill_params,
-      self._generate_params,
-    )
-    if self._prefill_engines:
-      return True 
-    return False
+  def model_warmup(self):
+    try:
+      self.warmup_enabled = aot_utils.layout_params_and_compile_executables(
+          self._prefill_engines,
+          self._generate_engines,
+          self._prefill_params,
+          self._generate_params,
+      )
+    except ValueError as e:
+      print(f"Model warmup encountered an error: {e}")
+      traceback.print_exc()
+      os.kill(os.getpid(), signal.SIGKILL)
+    return self.warmup_enabled
 
 
 class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
@@ -968,7 +998,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     is_live = self._driver.live
     return jetstream_pb2.HealthCheckResponse(is_live=is_live)
 
-  async def ModelWarmup( # pylint: disable=invalid-overridden-method
+  async def ModelWarmup(  # pylint: disable=invalid-overridden-method
       self,
       request: jetstream_pb2.ModelWarmupRequest,
       context: Optional[grpc.aio.ServicerContext] = None,
@@ -979,6 +1009,18 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
           "LLM orchestrator is being used in offline test mode, and will not"
           " respond to gRPC queries - only direct function calls."
       )
-    prefill_buckets = [16, 32, 64, 128, 256, 512, 1024]
-    success = self._driver.model_warmup(prefill_buckets)
-    return jetstream_pb2.ModelWarmupResponse(success=success)
+    # If model warmup wants to be disabled, and we will disable it.
+    if request.enable is False:
+      self._driver.warmup_enabled = False
+      return jetstream_pb2.ModelWarmupResponse(
+          warmup_enabled=self._driver.warmup_enabled
+      )
+
+    # If model warmup is enabled already and another request is sent to
+    # enable it, we will automatically return, else we will call the
+    # model warmup function.
+    if self._driver.warmup_enabled:
+      warmup_enabled = self._driver.warmup_enabled
+    else:
+      warmup_enabled = self._driver.model_warmup()
+    return jetstream_pb2.ModelWarmupResponse(warmup_enabled=warmup_enabled)

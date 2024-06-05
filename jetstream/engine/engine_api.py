@@ -134,8 +134,13 @@ class Engine(abc.ABC):
   JetStream efficient serving infrastructure.
   """
 
+  # Compiled prefills
   prefill_compiled: dict[int, jax.stages.Compiled]
+  # Compiled inserts
   insert_compiled: dict[int, jax.stages.Compiled]
+  # Compiled generate
+  generate_compiled: jax.stages.Compiled
+  prefill_buckets: list[int]
 
   @abc.abstractmethod
   def prefill(
