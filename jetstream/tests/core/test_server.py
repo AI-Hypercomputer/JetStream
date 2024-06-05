@@ -182,7 +182,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       assert modelwarmup_response.warmup_enabled is True
 
       # Test disabling model warmup
-      modelwarmup_request = jetstream_pb.ModelWarmup(enable=False)
+      modelwarmup_request = jetstream_pb2.ModelWarmup(enable=False)
       modelwarmup_response = stub.ModelWarmup(modelwarmup_request)
       modelwarmup_response = await modelwarmup_response
       assert modelwarmup_response.warmup_enabled is False
