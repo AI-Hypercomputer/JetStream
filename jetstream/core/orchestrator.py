@@ -516,7 +516,6 @@ class Driver:
         request.padded_token_length = padded_token_length
         prefill_result = prefill_engine.prefill_compiled[padded_token_length](
             params=prefill_params,
-            existing_prefix=history,
             padded_tokens=padded_tokens,
             true_length=true_length,
         )
