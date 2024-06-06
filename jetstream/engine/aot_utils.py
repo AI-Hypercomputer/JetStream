@@ -3,7 +3,7 @@
 import jax
 import concurrent.futures
 from typing import Any, Optional
-from absl import logging
+import logging
 from jetstream.engine import engine_api, token_utils
 
 
