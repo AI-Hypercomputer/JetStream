@@ -12,6 +12,12 @@ tensorboard --logdir /tmp/tensorboard/
 ```
 You should be able to load TensorBoard at http://localhost:6006/. You can specify a different port with the `--port` flag. If you are running on a remote Cloud TPU VM, the `tensorboard-plugin-profile` python package enables remote access to tensorboard endpoints (JetStream deps include this package).
 
+When you can not access the tensorboard and the profiling code is run remotely, please run below command setup an SSH tunnel on port 6006 to work. If you run with vs code remote debug commandline, the vs code did ssh forward port for you.
+
+```bash
+ gcloud compute ssh <machine-name> -- -L 6006:127.0.0.1:6006
+ ```
+
 
 2. Start JetStream MaxText server:
 ```bash
