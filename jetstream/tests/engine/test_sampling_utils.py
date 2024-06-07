@@ -63,9 +63,7 @@ class SamplingUtilsTest(unittest.TestCase):
       )  # Only top 2 logits should be sampled
     invalid_topk = 0
     with self.assertRaises(ValueError) as context:
-      sampling_utils.sampling(
-          self.logits, self.rng, "topk", topk=invalid_topk
-      )
+      sampling_utils.sampling(self.logits, self.rng, "topk", topk=invalid_topk)
       self.assertIn(
           f"Can't apply algorithm topk with parameter {invalid_topk=} <= 0",
           str(context.exception),
