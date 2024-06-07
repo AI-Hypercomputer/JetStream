@@ -12,22 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import jax
-import jax.numpy as jnp
-
-NEG_INF = -1.0e7  # Masking purpose
-
-
 # pylint: disable=bare-except, consider-using-generator
 """ Inference sampling utilities.
 
     Inspired by an Google-internal implementation, Global Vision Transformer.
 """
 
+import jax
+import jax.numpy as jnp
+
+NEG_INF = -1.0e7  # Masking purpose
+
 
 def sampling(logits, rng, algorithm, topk=0, nucleus_topp=0, temperature=1.0):
   """
-  logits: unnormalized logits to sample, shaped [YOUR_LEADING_DIMS, Vocab], before logit
+  logits: unnormalized logits to sample, shaped [YOUR_LEADING_DIMS, Vocab],
+  before logit
   rng: rng key to use
   algorithm: string representing supported algorithms
   topk: restricting to topk logits before sampling
@@ -47,7 +47,8 @@ def sampling(logits, rng, algorithm, topk=0, nucleus_topp=0, temperature=1.0):
 
 
 def sample_nucleus_topp_logits(logits, nucleus_topp, temperature, rng):
-  """Restrict sampling to the top logits with cumulative probability >= nucleus_topp.
+  """Restrict sampling to the top logits with cumulative probability >=
+  nucleus_topp.
 
   The nucleus sampling method is proposed in the paper `The Curious Case of
   Neural Text Degeneration (https://arxiv.org/pdf/1904.09751.pdf)`
@@ -74,9 +75,7 @@ def sample_nucleus_topp_logits(logits, nucleus_topp, temperature, rng):
 def sample_topk_logits(logits, topk, temperature, rng):
   """Restricting sampling to the best k logits."""
   if topk <= 0:
-    raise ValueError(
-        "Can't apply algorithm topk with parameter {topk=} less than or equal to zero"
-    )
+    raise ValueError("Can't apply algorithm topk with parameter {topk=} <= 0")
   topk_logits, topk_idxs = jax.lax.top_k(logits, topk)
   topk_token = jnp.expand_dims(
       jax.random.categorical(rng, topk_logits / temperature).astype(jnp.int32),
