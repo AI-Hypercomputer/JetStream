@@ -45,6 +45,15 @@ class SamplingUtilsTest(unittest.TestCase):
           self.logits, self.rng, "nucleus", nucleus_topp=0.8
       )
       self.assertTrue(jnp.all(jnp.isin(result, jnp.array([0, 1, 2]))))
+    invalid_topp = -0.1
+    with self.assertRaises(ValueError) as context:
+      sampling_utils.sampling(
+          self.logits, self.rng, "nucleus", nucleus_topp=invalid_topp
+      )
+      self.assertIn(
+          f"Can't apply nucleus with parameter {invalid_topp=} less zero",
+          str(context.exception),
+      )
 
   def test_topk_sampling(self):
     for _ in range(10):
@@ -52,6 +61,15 @@ class SamplingUtilsTest(unittest.TestCase):
       self.assertTrue(
           jnp.all(jnp.isin(result, jnp.array([1, 2])))
       )  # Only top 2 logits should be sampled
+    invalid_topk = 0
+    with self.assertRaises(ValueError) as context:
+      sampling_utils.sampling(
+          self.logits, self.rng, "topk", topk=invalid_topk
+      )
+      self.assertIn(
+          f"Can't apply algorithm topk with parameter {invalid_topk=} <= 0",
+          str(context.exception),
+      )
 
   def test_unsupported_algorithm(self):
     with self.assertRaises(ValueError):
