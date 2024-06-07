@@ -14,8 +14,14 @@ tiktoken
 blobfile
 parameterized
 shortuuid
-# jetstream entrypoints
-pyconfig
+# jetstream benchmarks
+nltk
+evaluate
+rouge-score
+tqdm
+# jetstream profiling
+tensorboard-plugin-profile
 # engines
 # maxtext @ git+https://github.com/google/maxtext.git@jetstream-v0.2.2#egg=maxtext
+# maxtext @ {root:uri}/jetstream/engine/implementations/maxtext
 jetstream_pt @ git+https://github.com/google/jetstream-pytorch.git@jetstream-v0.2.2#egg=jetstream_pt

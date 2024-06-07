@@ -20,9 +20,8 @@ from typing import Sequence, Type
 
 import jax
 from jetstream.core import config_lib
-from jetstream.engine.implementations.maxtext.MaxText.maxengine_config import create_maxengine
+from jetstream.engine.implementations.maxtext.MaxText import maxengine_config, pyconfig
 from jetstream_pt import config
-import pyconfig
 
 
 def get_server_config(
@@ -40,7 +39,9 @@ def get_server_config(
           prefill_engine_create_fns=(),
           generate_engine_create_fns=(),
           interleaved_engine_create_fns=(
-              functools.partial(create_maxengine, config=pyconfig.config),
+              functools.partial(
+                  maxengine_config.create_maxengine, config=pyconfig.config
+              ),
           ),
       )
     case "PyTorchInterleavedServer":
