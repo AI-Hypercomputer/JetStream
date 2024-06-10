@@ -162,6 +162,16 @@ def run(
     jax.profiler.start_server(jax_profiler_port)
   else:
     logging.info("Not starting JAX profiler server: %s", enable_jax_profiler)
+
+  # Start profiling server by default for proxy backend.
+  if jax.config.jax_platforms and "proxy" in jax.config.jax_platforms:
+    from jetstream.core.utils import proxy_util  # pylint: disable=import-outside-toplevel
+
+    thread = threading.Thread(
+        target=proxy_util.start_profiling_server, args=(jax_profiler_port,)
+    )
+    thread.run()
+
   return jetstream_server
 
 
