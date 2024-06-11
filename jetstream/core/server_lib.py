@@ -212,7 +212,7 @@ class LLMUtilities(jetstream_pb2_grpc.UtilitiesServicer):
       os.kill(os.getpid(), signal.SIGKILL)
     return self._driver.warmup_enabled
 
-  async def ModelWarmup(
+  async def ModelWarmup(  # pylint: disable=invalid-overridden-method
       self,
       request: jetstream_pb2.ModelWarmupRequest,
       context: Optional[grpc.aio.ServicerContext] = None,
