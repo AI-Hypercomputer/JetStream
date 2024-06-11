@@ -23,6 +23,11 @@ service Orchestrator {
   rpc Decode(DecodeRequest) returns (stream DecodeResponse) {}
   // Checks if the model server is live.
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {}
+}
+
+// Utility RPCs for JetStream
+
+service Utilities {
   // Warms up the model server.
   rpc ModelWarmup(ModelWarmupRequest) returns (ModelWarmupResponse) {}
 }

@@ -21,7 +21,7 @@ import asyncio
 from concurrent import futures
 import logging
 import threading
-from typing import Any, Type
+from typing import Any, Type, Optional
 
 import grpc
 import jax
@@ -29,6 +29,8 @@ from jetstream.core import config_lib
 from jetstream.core import orchestrator
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 from jetstream.core.proto import jetstream_pb2_grpc
+from jetstream.core.proto import jetstream_pb2
+from jetstream.engine import aot_utils
 
 from prometheus_client import start_http_server
 
@@ -57,6 +59,9 @@ class JetStreamServer:
     self._driver = driver
     jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
         orchestrator.LLMOrchestrator(driver=self._driver), self._grpc_server
+    )
+    jetstream_pb2_grpc.add_UtilitiesServicer_to_server(
+        LLMUtilities(driver=self._driver), self._grpc_server
     )
     self._grpc_server.add_secure_port(f"{_HOST}:{port}", credentials)
 
@@ -181,3 +186,47 @@ def get_devices() -> Any:
   devices = jax.devices()
   logging.info("Using devices: %d", len(devices))
   return devices
+
+
+class LLMUtilities(jetstream_pb2_grpc.UtilitiesServicer):
+
+  def __init__(self, driver: orchestrator.Driver):
+    self._driver = driver
+
+  def model_warmup(self):
+    try:
+      self._driver.warmup_enabled = (
+          aot_utils.layout_params_and_compile_executables(
+              self._driver._prefill_engines,
+              self._driver._generate_engines,
+              self._driver._prefill_params,
+              self._driver._generate_params,
+          )
+      )
+    except ValueError as e:
+      print(f"Model warmup encountered an error: {e}")
+      traceback.print_exc()
+      os.kill(os.getpid(), signal.SIGKILL)
+    return self._driver.warmup_enabled
+
+  async def ModelWarmup(
+      self,
+      request: jetstream_pb2.ModelWarmupRequest,
+      context: Optional[grpc.aio.ServicerContext] = None,
+  ) -> jetstream_pb2.ModelWarmupResponse:
+    """ModelWarmup."""
+    if context is None:
+      logging.warning(
+          "LLM utilities is being used in offline test mode, and will not"
+          " respond to gRPC queries - only direct function calls."
+      )
+    if request.enable is False:
+      self._driver.warmup_enabled = False
+      return jetstream_pb2.ModelWarmupResponse(
+          warmup_enabled=self._driver.warmup_enabled
+      )
+    if self._driver.warmup_enabled:
+      warmup_enabled = self._driver.warmup_enabled
+    else:
+      warmup_enabled = self.model_warmup()
+    return jetstream_pb2.ModelWarmupResponse(warmup_enabled=warmup_enabled)
