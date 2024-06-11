@@ -192,6 +192,7 @@ def get_devices() -> Any:
 
 
 class LLMUtilities(jetstream_pb2_grpc.UtilitiesServicer):
+  """Coordinates LLM utility helper endpoints for JetStream."""
 
   def __init__(self, driver: orchestrator.Driver):
     self._driver = driver
@@ -200,10 +201,10 @@ class LLMUtilities(jetstream_pb2_grpc.UtilitiesServicer):
     try:
       self._driver.warmup_enabled = (
           aot_utils.layout_params_and_compile_executables(
-              self._driver._prefill_engines,
-              self._driver._generate_engines,
-              self._driver._prefill_params,
-              self._driver._generate_params,
+              self._driver._prefill_engines,  # pylint: disable=protected-access
+              self._driver._generate_engines,  # pylint: disable=protected-access
+              self._driver._prefill_params,  # pylint: disable=protected-access
+              self._driver._generate_params,  # pylint: disable=protected-access
           )
       )
     except ValueError as e:
