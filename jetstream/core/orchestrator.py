@@ -597,9 +597,11 @@ class Driver:
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
 
       if self._metrics_collector:
-        self._metrics_collector.get_slots_available_percentage_metric(
+        self._metrics_collector.get_slots_used_percentage_metric(
             idx
-        ).set_function(lambda: float(my_slots.qsize() / max_concurrent_decodes))
+        ).set_function(
+            lambda: float(1 - (my_slots.qsize() / max_concurrent_decodes))
+        )
 
       # Check if there are any free my_slots. We don't want to block here since
       # we can still generate if we can't insert. We do this in a while loop to
