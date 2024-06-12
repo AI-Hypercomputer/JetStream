@@ -35,14 +35,14 @@ class JetstreamMetricsCollector:
       documentation="Size of prefill queue",
       labelnames=["id"],
   )
-  _slots_available_percentage = Gauge(
-      name="jetstream_slots_available_percentage",
-      documentation="The percentage of available slots in decode batch",
+  _slots_used_percentage = Gauge(
+      name="jetstream_slots_used_percentage",
+      documentation="The percentage of decode slots currently being used",
       labelnames=["id", "idx"],
   )
 
   def get_prefill_backlog_metric(self):
     return self._prefill_backlog.labels(id=self._id)
 
-  def get_slots_available_percentage_metric(self, idx: int):
-    return self._slots_available_percentage.labels(id=self._id, idx=idx)
+  def get_slots_used_percentage_metric(self, idx: int):
+    return self._slots_used_percentage.labels(id=self._id, idx=idx)
