@@ -287,7 +287,7 @@ class Driver:
         for idx, engine in enumerate(self._generate_engines)
     }
     if self._metrics_collector:
-      for idx, backlog in enumerate(self._generate_backlogs):
+      for idx, backlog in self._generate_backlogs.items():
         self._metrics_collector.get_generate_backlog_metric(idx).set_function(
             lambda: float(backlog.qsize())
         )
