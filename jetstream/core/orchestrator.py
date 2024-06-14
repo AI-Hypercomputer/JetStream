@@ -270,7 +270,7 @@ class Driver:
     if self._metrics_collector:
       for idx, backlog in enumerate(self._transfer_backlogs):
         self._metrics_collector.get_transfer_backlog_metric(idx).set_function(
-            lambda: float(backlog.qsize())
+            functools.partial(float, backlog.qsize())
         )
     # Stage 3
     # Each generate engine accesses its own generate backlog.
@@ -289,7 +289,7 @@ class Driver:
     if self._metrics_collector:
       for idx, backlog in self._generate_backlogs.items():
         self._metrics_collector.get_generate_backlog_metric(idx).set_function(
-            lambda: float(backlog.qsize())
+            functools.partial(float, backlog.qsize())
         )
     # Stage 4
     # After generation, ActiveRequests are placed on the detokenization backlog
