@@ -53,10 +53,10 @@ class JetstreamMetricsCollector:
 
   def get_prefill_backlog_metric(self):
     return self._prefill_backlog.labels(id=self._id)
-  
+
   def get_transfer_backlog_metric(self, idx: int):
     return self._transfer_backlog.labels(id=self._id)
-  
+
   def get_generate_backlog_metric(self, idx: int):
     return self._generate_backlog.labels(id=self._id)
 

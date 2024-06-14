@@ -268,9 +268,9 @@ class Driver:
         for i in range(len(self._prefill_engines))
     ]
     if self._metrics_collector:
-      for idx, engine in enumerate(self._transfer_backlogs):
+      for idx, backlog in enumerate(self._transfer_backlogs):
         self._metrics_collector.get_transfer_backlog_metric(idx).set_function(
-          lambda: float(engine.qsize())
+            lambda: float(backlog.qsize())
         )
     # Stage 3
     # Each generate engine accesses its own generate backlog.
@@ -287,9 +287,9 @@ class Driver:
         for idx, engine in enumerate(self._generate_engines)
     }
     if self._metrics_collector:
-      for idx, engine in enumerate(self._generate_backlogs):
+      for idx, backlog in enumerate(self._generate_backlogs):
         self._metrics_collector.get_generate_backlog_metric(idx).set_function(
-          lambda: float(engine.qsize())
+            lambda: float(backlog.qsize())
         )
     # Stage 4
     # After generation, ActiveRequests are placed on the detokenization backlog
