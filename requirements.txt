@@ -302,7 +302,7 @@ typing-extensions==4.5.0
     #   flax
     #   orbax-checkpoint
     #   tensorflow
-urllib3==2.2.0
+urllib3==2.2.2
     # via
     #   blobfile
     #   requests
