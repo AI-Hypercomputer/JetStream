@@ -476,6 +476,7 @@ class Driver:
       my_transfer_backlog = self._transfer_backlogs[idx]
       # The prefill thread can just sleep until it has work to do.
       request = self._prefill_backlog.get(block=True)
+      request_start_time = time.perf_counter()
 
       if request is None:
         break
@@ -508,8 +509,12 @@ class Driver:
           my_transfer_backlog.qsize(),
       )
 
-      # TODO: put first token to detokenize queue
-
+      # put first token to detokenize queue
+      request.complete = np.zeros(
+        (prefill_engine.samples_per_slot,), np.bool_
+      )
+      my_detokenize_backlog = self._detokenize_backlogs[idx]  
+      my_detokenize_backlog.put((first_token, request, request_start_time), block=True)
       del prefill_result
       del request
 
@@ -705,7 +710,7 @@ class Driver:
       start_detokenize_time = time.time()
       # prefill first token
       if isinstance(data[0], engine_api.ResultTokens):
-        request_first_token, request = data
+        request_first_token, request, request_start_time = data
         request_first_token = request_first_token.convert_to_numpy()
 
         results, complete = token_utils.process_result_tokens(
@@ -720,17 +725,14 @@ class Driver:
         # Return some output samples.
         request.enqueue_samples(results)
 
+        first_token_return_time = time.perf_counter
+        logging.info("TTFT duration: {}ms".format((first_token_return_time - request_start_time)*1000))
+
         # actually we should never reach here after prefill
         if request.complete.all():
           request.return_channel.close()
           # Place the slot back on the free queue.
           my_slots.put(slot, block=False)  # This should always have space.
-
-        logging.info(
-            "Detokenizing prefill step of request to get %f",
-            results
-        )
-        assert False
       
       # generate step tokens
       elif isinstance(data[1], engine_api.ResultTokens):
