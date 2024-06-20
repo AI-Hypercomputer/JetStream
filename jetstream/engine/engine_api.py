@@ -142,7 +142,7 @@ class Engine(abc.ABC):
       existing_prefix: Optional[Prefix] = None,
       padded_tokens: jax.Array,
       true_length: int,
-  ) -> Prefix:
+  ) -> Tuple[Prefix, ResultTokens]:
     """Computes a kv-cache for a set of tokens conditional on existing cache.
 
     existing_prefix (if provided) represents a prefix that has already been

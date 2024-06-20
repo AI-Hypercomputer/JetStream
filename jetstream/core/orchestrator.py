@@ -493,7 +493,7 @@ class Driver:
           request, tokenizer, is_bos, prefill_engine.max_prefill_length
       )
       # Compute new kv cache for the prefill_content.
-      prefill_result = prefill_engine.prefill(
+      prefill_result, first_token = prefill_engine.prefill(
           params=prefill_params,
           padded_tokens=padded_tokens,
           true_length=true_length,
@@ -507,6 +507,9 @@ class Driver:
           idx,
           my_transfer_backlog.qsize(),
       )
+
+      # TODO: put first token to detokenize queue
+
       del prefill_result
       del request
 
@@ -700,7 +703,37 @@ class Driver:
       if data is None:
         break
       start_detokenize_time = time.time()
-      if isinstance(data[1], engine_api.ResultTokens):
+      # prefill first token
+      if isinstance(data[0], engine_api.ResultTokens):
+        request_first_token, request = data
+        request_first_token = request_first_token.convert_to_numpy()
+
+        results, complete = token_utils.process_result_tokens(
+            tokenizer=tokenizer,
+            slot=0, # always 0 as prefill only run 1 sample
+            slot_max_length=request.max_tokens,
+            result_tokens=request_first_token,
+            is_client_side_tokenization=request.is_client_side_tokenization,
+            complete=request.complete,
+        )
+        request.complete = complete
+        # Return some output samples.
+        request.enqueue_samples(results)
+
+        # actually we should never reach here after prefill
+        if request.complete.all():
+          request.return_channel.close()
+          # Place the slot back on the free queue.
+          my_slots.put(slot, block=False)  # This should always have space.
+
+        logging.info(
+            "Detokenizing prefill step of request to get %f",
+            results
+        )
+        assert False
+      
+      # generate step tokens
+      elif isinstance(data[1], engine_api.ResultTokens):
         # We want to detokenize them.
         generate_timestep_added, result_tokens = data
         # Disable attribute error because pytype doesn't know this
