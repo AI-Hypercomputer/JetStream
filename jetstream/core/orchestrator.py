@@ -500,6 +500,14 @@ class Driver:
           true_length=true_length,
       )
       request.prefill_result = prefill_result
+
+      # put first token to detokenize queue
+      request.complete = np.zeros(
+        (prefill_engine.samples_per_slot,), np.bool_
+      )
+      my_detokenize_backlog = self._detokenize_backlogs[idx]  
+      my_detokenize_backlog.put((first_token, request, request_start_time), block=True)
+
       # Once prefill is complete, place it on the generation queue and block if
       # full.
       my_transfer_backlog.put(request, block=True)
@@ -509,12 +517,6 @@ class Driver:
           my_transfer_backlog.qsize(),
       )
 
-      # put first token to detokenize queue
-      request.complete = np.zeros(
-        (prefill_engine.samples_per_slot,), np.bool_
-      )
-      my_detokenize_backlog = self._detokenize_backlogs[idx]  
-      my_detokenize_backlog.put((first_token, request, request_start_time), block=True)
       del prefill_result
       del request
 
@@ -725,7 +727,7 @@ class Driver:
         # Return some output samples.
         request.enqueue_samples(results)
 
-        first_token_return_time = time.perf_counter
+        first_token_return_time = time.perf_counter()
         logging.info("TTFT duration: {}ms".format((first_token_return_time - request_start_time)*1000))
 
         # actually we should never reach here after prefill
