@@ -574,7 +574,7 @@ class Driver:
           "from prefill engine %d to generate engine %d (%d requests now in backlog).",
           idx,
           target_idx,
-          self._generate_backlogs[target_idx].qsize()
+          self._generate_backlogs[target_idx].qsize(),
       )
 
   def _generate_thread(self, idx: int):
