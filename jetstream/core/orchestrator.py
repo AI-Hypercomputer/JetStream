@@ -571,7 +571,7 @@ class Driver:
       self._generate_backlogs[target_idx].put(new_request, block=True)
       logging.info(
           "Successfully transferred prefill "
-          "from prefill engine %d to generate engine %d ( %d requests now in backlog).",
+          "from prefill engine %d to generate engine %d (%d requests now in backlog).",
           idx,
           target_idx,
           self._generate_backlogs[target_idx].qsize()
