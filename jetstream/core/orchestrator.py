@@ -267,6 +267,11 @@ class Driver:
         queue.Queue(1 if self._interleaved_mode else 4)
         for i in range(len(self._prefill_engines))
     ]
+    if self._metrics_collector:
+      for idx, backlog in enumerate(self._transfer_backlogs):
+        self._metrics_collector.get_transfer_backlog_metric(idx).set_function(
+            functools.partial(float, backlog.qsize())
+        )
     # Stage 3
     # Each generate engine accesses its own generate backlog.
     # Interleaved Mode: Max size is 1 to increase the HBM utilization
@@ -281,6 +286,11 @@ class Driver:
         )
         for idx, engine in enumerate(self._generate_engines)
     }
+    if self._metrics_collector:
+      for idx, backlog in self._generate_backlogs.items():
+        self._metrics_collector.get_generate_backlog_metric(idx).set_function(
+            functools.partial(float, backlog.qsize())
+        )
     # Stage 4
     # After generation, ActiveRequests are placed on the detokenization backlog
     # for tokens to be sent into each ActiveRequest's return channel.
@@ -561,9 +571,11 @@ class Driver:
       self._generate_backlogs[target_idx].put(new_request, block=True)
       logging.info(
           "Successfully transferred prefill "
-          "from prefill engine %d to generate engine %d.",
+          "from prefill engine %d to generate engine %d "
+          "(%d requests now in backlog).",
           idx,
           target_idx,
+          self._generate_backlogs[target_idx].qsize(),
       )
 
   def _generate_thread(self, idx: int):
