@@ -84,6 +84,8 @@ grpcio==1.60.1
     #   -r requirements.in
     #   tensorboard
     #   tensorflow
+gviz-api==1.10.0
+    # via tensorboard-plugin-profile
 h5py==3.10.0
     # via tensorflow
 idna==3.7
@@ -189,6 +191,7 @@ protobuf==3.20.3
     #   orbax-checkpoint
     #   seqio
     #   tensorboard
+    #   tensorboard-plugin-profile
     #   tensorflow
     #   tensorflow-hub
     #   tensorflow-metadata
@@ -244,13 +247,17 @@ six==1.16.0
     # via
     #   astunparse
     #   google-pasta
+    #   gviz-api
     #   ml-collections
     #   promise
+    #   tensorboard-plugin-profile
     #   tensorflow
 tensorboard==2.13.0
     # via tensorflow
 tensorboard-data-server==0.7.2
     # via tensorboard
+tensorboard-plugin-profile==2.15.1
+    # via -r requirements.in
 tensorflow==2.13.1
     # via tensorflow-text
 tensorflow-estimator==2.13.0
@@ -300,7 +307,9 @@ urllib3==2.2.0
     #   blobfile
     #   requests
 werkzeug==3.0.1
-    # via tensorboard
+    # via
+    #   tensorboard
+    #   tensorboard-plugin-profile
 wheel==0.42.0
     # via
     #   astunparse

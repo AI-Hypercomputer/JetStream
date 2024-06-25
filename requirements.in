@@ -13,3 +13,5 @@ tiktoken
 blobfile
 parameterized
 shortuuid
+# For profiling
+tensorboard-plugin-profile

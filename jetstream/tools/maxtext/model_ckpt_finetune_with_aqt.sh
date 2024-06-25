@@ -66,7 +66,7 @@ checkpoint_period=100
 # We will convert the `AQT_CKPT` to unscanned checkpoint in the next step.
 export AQT_CKPT=${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/checkpoints/100/items
 
-# Covert MaxText compatible AQT-fine-tuned checkpoints to unscanned checkpoints.
+# Convert MaxText compatible AQT-fine-tuned checkpoints to unscanned checkpoints.
 # Note that the `AQT_CKPT` is in a `scanned` format which is great for training but for efficient decoding performance we want the checkpoint in an `unscanned` format.
 export RUN_NAME=${MODEL_NAME}_unscanned_chkpt_${idx}
 
