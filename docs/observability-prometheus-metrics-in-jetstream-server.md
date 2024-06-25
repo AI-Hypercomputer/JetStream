@@ -45,7 +45,7 @@ Now that we configured `prometheus_port=9090` above, we can observe various Jets
 # HELP jetstream_prefill_backlog_size Size of prefill queue
 # TYPE jetstream_prefill_backlog_size gauge
 jetstream_prefill_backlog_size{id="SOME-HOSTNAME-HERE>"} 0.0
-# HELP jetstream_slots_available_percentage The percentage of available slots in decode batch
-# TYPE jetstream_slots_available_percentage gauge
-jetstream_slots_available_percentage{id="<SOME-HOSTNAME-HERE>",idx="0"} 0.96875
+# HELP jetstream_slots_used_percentage The percentage of decode slots currently being used
+# TYPE jetstream_slots_used_percentage gauge
+jetstream_slots_used_percentage{id="<SOME-HOSTNAME-HERE>",idx="0"} 0.04166666666666663
 ```
