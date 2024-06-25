@@ -259,7 +259,7 @@ python JetStream/benchmarks/benchmark_serving.py \
 --dataset-path ~/ShareGPT_V3_unfiltered_cleaned_split.json \
 --max-output-length 1024 \
 --request-rate 5 \
---warmup-first true
+--warmup-mode sampled
 ```
 
 ### Benchmarking Llama2-\*b
@@ -274,7 +274,7 @@ python JetStream/benchmarks/benchmark_serving.py \
 --dataset-path ~/ShareGPT_V3_unfiltered_cleaned_split.json \
 --max-output-length 1024 \
 --request-rate 5 \
---warmup-first true
+--warmup-mode sampled
 ```
 
 ## Clean Up

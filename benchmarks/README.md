@@ -78,7 +78,7 @@ python benchmark_serving.py \
 ```
 python JetStream/benchmarks/benchmark_serving.py   \
 --tokenizer ~/maxtext/assets/tokenizer.llama2  \
---warmup-first true   \
+--warmup-mode sampled   \
 --save-result   \
 --save-request-outputs   \
 --request-outputs-file-path outputs.json   \
@@ -86,6 +86,23 @@ python JetStream/benchmarks/benchmark_serving.py   \
 --max-output-length 1024   \
 --dataset openorca
 
+```
+
+## Benchmark warmup mode
+
+We currently support `sampled` and `full` warmup mode. `sampled` mode would warmup up the JetStream server with bucket sampled requests from the input requests; `full` mode would warmup up the JetStream server with the input requests.
+
+Example to run benchmark with `full` warmup mode:
+```
+python JetStream/benchmarks/benchmark_serving.py   \
+--tokenizer ~/maxtext/assets/tokenizer.llama2  \
+--warmup-mode full   \
+--save-result   \
+--save-request-outputs   \
+--request-outputs-file-path outputs.json   \
+--num-prompts 1000   \
+--max-output-length 1024   \
+--dataset openorca
 ```
 
 ## Standalone Evaluation Run
