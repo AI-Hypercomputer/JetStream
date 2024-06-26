@@ -80,4 +80,4 @@ Currently Google Cloud Managed Service for Prometheus is enabled by default on a
   }
   ```
 
-  the metrics can now be queried in the [Google Cloud Metrics Explorer](https://pantheon.corp.google.com/monitoring/metrics-explorer).
+the metrics can now be queried in the [Google Cloud Metrics Explorer](https://pantheon.corp.google.com/monitoring/metrics-explorer).
