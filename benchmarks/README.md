@@ -90,7 +90,7 @@ python JetStream/benchmarks/benchmark_serving.py   \
 
 ## Benchmark warmup mode
 
-With warmup for the JetStream server, the benchmark would produce better performance. We currently support `sampled` and `full` warmup mode. `sampled` mode would warmup up the JetStream server with bucket sampled requests from the input requests; `full` mode would warmup up the JetStream server with the input requests.
+The benchmark has better performance if it first conducts a warmup of the JetStream server. We currently support `sampled` and `full` warmup modes. `full` mode would warmup up the JetStream server with all the input requests. `sampled` mode would warmup up the JetStream server with a sampling of the input requests across different bucket sizes of input lengths.
 
 Example to run benchmark with `full` warmup mode:
 ```
