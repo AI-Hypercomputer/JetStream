@@ -49,3 +49,35 @@ jetstream_prefill_backlog_size{id="SOME-HOSTNAME-HERE>"} 0.0
 # TYPE jetstream_slots_used_percentage gauge
 jetstream_slots_used_percentage{id="<SOME-HOSTNAME-HERE>",idx="0"} 0.04166666666666663
 ```
+
+## Observe metrics on GKE
+
+Currently Google Cloud Managed Service for Prometheus is enabled by default on all GKE clusters, Google Cloud Managed Service for Prometheus determines scrape targets via the PodMonitoring custom resource, as such one must be applied to your cluster, the following .json manifest can be used as a template:
+
+```
+{
+    "apiVersion": "monitoring.googleapis.com/v1",
+    "kind": "PodMonitoring",
+    "metadata": {
+      "name": "jetstream-podmonitoring"
+    },
+    "spec": {
+      "endpoints": [
+        {
+          "interval": "1s",
+          "path": "/",
+          "port": <your-prometheus-port>
+        }
+      ],
+      "targetLabels": {
+        "metadata": [
+          "pod",
+          "container",
+          "node"
+        ]
+      }
+    }
+  }
+  ```
+
+  the metrics can now be queried in the [Google Cloud Metrics Explorer](https://pantheon.corp.google.com/monitoring/metrics-explorer).
