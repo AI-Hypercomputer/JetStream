@@ -80,6 +80,6 @@ The following applies only for Jetstream deployed on a GKE cluster. Currently Go
   }
   ```
 
-The metrics can now be queried in the [Google Cloud Metrics Explorer](https://pantheon.corp.google.com/monitoring/metrics-explorer). When adding a metrics query with the `+Add Query` button , the new metrics should be found under the `Prometheus Target > Jetstream` submenu.
+The metrics can now be queried in the [Google Cloud Metrics Explorer](https://pantheon.corp.google.com/monitoring/metrics-explorer). When adding a metrics query with the `+Add Query` button the new metrics should be found under the `Prometheus Target > Jetstream` submenu.
 
 Additional guides on the metrics explorer can be found [https://cloud.google.com/monitoring/charts/metrics-selector](here).
