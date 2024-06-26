@@ -743,12 +743,6 @@ class Driver:
 
         first_token_return_time = time.perf_counter()
         logging.info("TTFT duration: {}ms".format((first_token_return_time - request_start_time)*1000))
-
-        # actually we should never reach here after prefill
-        if request.complete.all():
-          request.return_channel.close()
-          # Place the slot back on the free queue.
-          my_slots.put(0, block=False)  # This should always have space.
       
       # generate step tokens
       elif isinstance(data[1], engine_api.ResultTokens):
