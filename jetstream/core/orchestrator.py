@@ -748,7 +748,7 @@ class Driver:
         if request.complete.all():
           request.return_channel.close()
           # Place the slot back on the free queue.
-          my_slots.put(slot, block=False)  # This should always have space.
+          my_slots.put(0, block=False)  # This should always have space.
       
       # generate step tokens
       elif isinstance(data[1], engine_api.ResultTokens):
