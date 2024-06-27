@@ -54,6 +54,7 @@ class DecodeState:
   generate_cache: jax.Array
   generate_cache_index: int
   generate_lengths: jax.Array
+  generate_tokens: jax.Array
 
 
 class TestEngine(engine_api.Engine):
@@ -133,19 +134,27 @@ class TestEngine(engine_api.Engine):
             samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
         )
 
-    return prefill_cache, first_token
+    return (prefill_cache, new_timestep), first_token
 
   @functools.partial(jax.jit, static_argnums=(0,))
   def generate(
       self, params: Params, decode_state: DecodeState
   ) -> Tuple[DecodeState, engine_api.ResultTokens]:
     """Generates tokens for each sequence being decoded in parallel."""
-    prefill_cache, generate_cache, generate_cache_index, generate_lengths = (
+    prefill_cache, generate_cache, generate_cache_index, generate_lengths, previous_timestep = (
         decode_state.prefill_cache,
         decode_state.generate_cache,
         decode_state.generate_cache_index,
         decode_state.generate_lengths,
+        decode_state.generate_tokens
     )
+
+    # Update generate cache
+    generate_cache = jax.lax.dynamic_update_slice_in_dim(
+        generate_cache, previous_timestep, start_index=generate_cache_index, axis=1
+    )
+    generate_cache_index = (generate_cache_index + 1) % self.cache_length
+
     # Sum each row of prefill cache and generate cache to produce new timestep,
     # multiply by params.
     l_iota = jax.lax.broadcasted_iota(
@@ -167,10 +176,10 @@ class TestEngine(engine_api.Engine):
         prefill_cache.sum(axis=-1)
         + (length_masked_gen_cache.sum(axis=-1) / params)
     )[:, jnp.newaxis]
-    generate_cache = jax.lax.dynamic_update_slice_in_dim(
-        generate_cache, new_timestep, start_index=generate_cache_index, axis=1
-    )
-    generate_cache_index = (generate_cache_index + 1) % self.cache_length
+    # generate_cache = jax.lax.dynamic_update_slice_in_dim(
+    #     generate_cache, new_timestep, start_index=generate_cache_index, axis=1
+    # )
+    # generate_cache_index = (generate_cache_index + 1) % self.cache_length
     # Wait to simulate model step time.
     fake_size = 4096
     fake_work = jnp.ones((fake_size, fake_size)) @ jnp.ones(
@@ -192,6 +201,7 @@ class TestEngine(engine_api.Engine):
         generate_cache=generate_cache,
         generate_cache_index=generate_cache_index,
         generate_lengths=new_lengths,
+        generate_tokens=new_timestep
     ), engine_api.ResultTokens(
         data=token_data.astype(jnp.int32),
         # Tokens are shape [batch, speculations], so when we concatenate
@@ -214,8 +224,9 @@ class TestEngine(engine_api.Engine):
   ) -> DecodeState:
     """Adds `prefix` into `decode_state` at `slot`."""
     # [B, T], [T,] -> [B, T]
+    prefill_cache, previous_timestep = prefix
     prefill_cache = jax.lax.dynamic_update_slice_in_dim(
-        decode_state.prefill_cache, prefix, slot, axis=0
+        decode_state.prefill_cache, prefill_cache, slot, axis=0
     )
     generate_cache = jax.lax.dynamic_update_slice_in_dim(
         decode_state.generate_cache,
@@ -230,11 +241,17 @@ class TestEngine(engine_api.Engine):
         slot * samples_per_slot,
         axis=0,
     )
+    generate_tokens = jax.lax.dynamic_update_slice_in_dim(
+        decode_state.generate_tokens,
+        previous_token,
+        slot * samples_per_slot,
+        axis=0,
+    )
     return decode_state.replace(
         prefill_cache=prefill_cache,
         generate_cache=generate_cache,
-        generate_cache_index=1, # prefill return first token
         generate_lengths=generate_lengths,
+        generate_tokens=generate_tokens
     )
 
   def get_prefix_destination_sharding(self) -> Any:
@@ -259,6 +276,9 @@ class TestEngine(engine_api.Engine):
         generate_lengths=jnp.zeros(
             (self.generate_cache_batch), dtype=jnp.int32
         ),
+        generate_tokens=jnp.zeros(
+          (self.generate_cache_batch), dtype=jnp.int32
+        )
     )
 
   @property

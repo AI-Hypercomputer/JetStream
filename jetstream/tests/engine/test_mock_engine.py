@@ -91,21 +91,28 @@ class EngineTest(unittest.TestCase):
 
   def test_prefill(self):
     """Tests prefill with weight = 2."""
-    _, _, prefill_result, true_length, first_token = self._prefill()
+    engine, _, prefill_result, true_length, first_token = self._prefill()
+    prefill_cache, _ = prefill_result
     np.testing.assert_array_equal(
-        prefill_result[:, :true_length], np.array([[4.0, 130.0, 132.0]])
+        prefill_cache[:, :true_length], np.array([[4.0, 130.0, 132.0]])
     )
 
     # test first token
     token_data = first_token.get_result_at_slot(0)
     tok = token_data.tokens
+
+    metadata = engine.get_tokenizer()
+    tokenizer = token_utils.load_vocab(
+        metadata.path, metadata.extra_ids
+    ).tokenizer
     assert tokenizer.IdToPiece(int(tok.item())) == "Ċ"
 
   def test_prefill_np(self):
     """Tests prefill with weight = 2."""
-    _, _, prefill_result, true_length = self._prefill_np()
+    _, _, prefill_result, true_length, first_token_data = self._prefill_np()
+    prefill_cache, _ = prefill_result
     np.testing.assert_array_equal(
-        prefill_result[:, :true_length], np.array([[4.0, 130.0, 132.0]])
+        prefill_cache[:, :true_length], np.array([[4.0, 130.0, 132.0]])
     )
 
   def test_generate(self, slot=1):
@@ -122,7 +129,7 @@ class EngineTest(unittest.TestCase):
     # decode_state, sampled_tokens = engine.generate(
     #     params=params, decode_state=decode_state
     # )
-    
+
     # Char for 399
     token_data = sampled_tokens.get_result_at_slot(slot)
     tok = token_data.tokens
