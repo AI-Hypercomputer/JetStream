@@ -121,7 +121,7 @@ class TestEngine(engine_api.Engine):
     )
     speculations = new_timestep.shape[1]
     first_token = engine_api.ResultTokens(
-            data=token_data.astype(jnp.int32),
+            data=first_token_data.astype(jnp.int32),
             # Tokens are shape [batch, speculations], so when we concatenate
             # tokens, validity and length along their index 1 dimension then they
             # occupy 0:speculations.
