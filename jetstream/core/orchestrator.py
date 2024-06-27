@@ -512,12 +512,11 @@ class Driver:
       request.prefill_result = prefill_result
 
       # put first token to detokenize queue
-      request.complete = np.zeros(
-        (prefill_engine.samples_per_slot,), np.bool_
-      )
+      request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
       my_detokenize_backlog = self._detokenize_backlogs[idx]
       my_detokenize_backlog.put(
-        (first_token, request, request_start_time), block=True)
+          (first_token, request, request_start_time), block=True
+      )
 
       # Once prefill is complete, place it on the generation queue and block if
       # full.
@@ -732,7 +731,7 @@ class Driver:
 
         results, complete = token_utils.process_result_tokens(
             tokenizer=tokenizer,
-            slot=0, # always 0 as prefill only run 1 sample
+            slot=0,  # always 0 as prefill only run 1 sample
             slot_max_length=request.max_tokens,
             result_tokens=request_first_token,
             is_client_side_tokenization=request.is_client_side_tokenization,
@@ -744,8 +743,9 @@ class Driver:
 
         first_token_return_time = time.perf_counter()
         logging.info(
-          "TTFT duration: %fms",
-          (first_token_return_time - request_start_time)*1000)
+            "TTFT duration: %fms",
+            (first_token_return_time - request_start_time) * 1000,
+        )
       # generate step tokens
       elif isinstance(data[1], engine_api.ResultTokens):
         # We want to detokenize them.

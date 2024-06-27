@@ -113,22 +113,20 @@ class TestEngine(engine_api.Engine):
     prefill_cache = padded_tokens[None, :] * params
 
     # get dummy first token
-    first_step = (
-        prefill_cache.sum(axis=-1)
-    )[:, jnp.newaxis]
+    first_step = (prefill_cache.sum(axis=-1))[:, jnp.newaxis]
     first_token_data = jnp.concatenate(
         [first_step, jnp.ones_like(first_step), jnp.ones_like(first_step)],
         axis=-1,
     )
     speculations = first_step.shape[1]
     first_token = engine_api.ResultTokens(
-      data=first_token_data.astype(jnp.int32),
-      tokens_idx=(0, speculations),
-      # Validity occupies the same amount of space, but next in line.
-      valid_idx=(speculations, 2 * speculations),
-      # And lengths is rank 1.
-      length_idx=(2 * speculations, 2 * speculations + 1),
-      samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
+        data=first_token_data.astype(jnp.int32),
+        tokens_idx=(0, speculations),
+        # Validity occupies the same amount of space, but next in line.
+        valid_idx=(speculations, 2 * speculations),
+        # And lengths is rank 1.
+        length_idx=(2 * speculations, 2 * speculations + 1),
+        samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
     )
 
     return (prefill_cache, first_step), first_token
@@ -138,13 +136,18 @@ class TestEngine(engine_api.Engine):
       self, params: Params, decode_state: DecodeState
   ) -> Tuple[DecodeState, engine_api.ResultTokens]:
     """Generates tokens for each sequence being decoded in parallel."""
-    (prefill_cache, generate_cache, generate_cache_index,
-    generate_lengths, previous_timestep) = (
+    (
+        prefill_cache,
+        generate_cache,
+        generate_cache_index,
+        generate_lengths,
+        previous_timestep,
+    ) = (
         decode_state.prefill_cache,
         decode_state.generate_cache,
         decode_state.generate_cache_index,
         decode_state.generate_lengths,
-        decode_state.generate_tokens
+        decode_state.generate_tokens,
     )
 
     # Update generate cache
@@ -152,7 +155,7 @@ class TestEngine(engine_api.Engine):
         generate_cache,
         previous_timestep,
         start_index=generate_cache_index,
-        axis=1
+        axis=1,
     )
     generate_cache_index = (generate_cache_index + 1) % self.cache_length
 
@@ -202,7 +205,7 @@ class TestEngine(engine_api.Engine):
         generate_cache=generate_cache,
         generate_cache_index=generate_cache_index,
         generate_lengths=new_lengths,
-        generate_tokens=new_timestep
+        generate_tokens=new_timestep,
     ), engine_api.ResultTokens(
         data=token_data.astype(jnp.int32),
         # Tokens are shape [batch, speculations], so when we concatenate
@@ -252,7 +255,7 @@ class TestEngine(engine_api.Engine):
         prefill_cache=prefill_cache,
         generate_cache=generate_cache,
         generate_lengths=generate_lengths,
-        generate_tokens=generate_tokens
+        generate_tokens=generate_tokens,
     )
 
   def get_prefix_destination_sharding(self) -> Any:
@@ -278,8 +281,8 @@ class TestEngine(engine_api.Engine):
             (self.generate_cache_batch), dtype=jnp.int32
         ),
         generate_tokens=jnp.zeros(
-          (self.generate_cache_batch, 1), dtype=jnp.float32
-        )
+            (self.generate_cache_batch, 1), dtype=jnp.float32
+        ),
     )
 
   @property
