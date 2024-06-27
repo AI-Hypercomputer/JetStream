@@ -744,7 +744,7 @@ class Driver:
 
         first_token_return_time = time.perf_counter()
         logging.info(
-          "TTFT duration: %fms", 
+          "TTFT duration: %fms",
           (first_token_return_time - request_start_time)*1000)
       
       # generate step tokens

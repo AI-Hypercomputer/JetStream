@@ -131,15 +131,14 @@ class TestEngine(engine_api.Engine):
       samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
     )
 
-    return (prefill_cache, new_timestep), first_token
+    return (prefill_cache, first_step), first_token
 
   @functools.partial(jax.jit, static_argnums=(0,))
   def generate(
       self, params: Params, decode_state: DecodeState
   ) -> Tuple[DecodeState, engine_api.ResultTokens]:
     """Generates tokens for each sequence being decoded in parallel."""
-    prefill_cache, generate_cache, generate_cache_index,
-    generate_lengths, previous_timestep = (
+    prefill_cache, generate_cache, generate_cache_index, generate_lengths, previous_timestep = (
         decode_state.prefill_cache,
         decode_state.generate_cache,
         decode_state.generate_cache_index,
