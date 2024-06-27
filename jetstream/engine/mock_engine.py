@@ -180,10 +180,6 @@ class TestEngine(engine_api.Engine):
         prefill_cache.sum(axis=-1)
         + (length_masked_gen_cache.sum(axis=-1) / params)
     )[:, jnp.newaxis]
-    # generate_cache = jax.lax.dynamic_update_slice_in_dim(
-    #     generate_cache, new_timestep, start_index=generate_cache_index, axis=1
-    # )
-    # generate_cache_index = (generate_cache_index + 1) % self.cache_length
     # Wait to simulate model step time.
     fake_size = 4096
     fake_work = jnp.ones((fake_size, fake_size)) @ jnp.ones(
