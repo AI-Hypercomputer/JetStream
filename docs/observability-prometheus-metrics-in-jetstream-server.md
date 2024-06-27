@@ -49,3 +49,37 @@ jetstream_prefill_backlog_size{id="SOME-HOSTNAME-HERE>"} 0.0
 # TYPE jetstream_slots_used_percentage gauge
 jetstream_slots_used_percentage{id="<SOME-HOSTNAME-HERE>",idx="0"} 0.04166666666666663
 ```
+
+## Observe metrics on GKE clusters
+
+The following applies only for Jetstream deployed on a GKE cluster. Currently [Google Cloud Managed Service for Prometheus](https://cloud.google.com/stackdriver/docs/managed-prometheus) is enabled by default on all GKE clusters, it determines scrape targets via the [PodMonitoring](https://github.com/GoogleCloudPlatform/prometheus-engine/blob/v0.10.0/doc/api.md#podmonitoring) custom resource. After you deployed the JetStream GKE workload, you need to apply the PodMonitoring resource to your cluster as follows:
+
+```
+echo '{
+    "apiVersion": "monitoring.googleapis.com/v1",
+    "kind": "PodMonitoring",
+    "metadata": {
+      "name": "jetstream-podmonitoring"
+    },
+    "spec": {
+      "endpoints": [
+        {
+          "interval": "1s",
+          "path": "/",
+          "port": <your-prometheus-port>
+        }
+      ],
+      "targetLabels": {
+        "metadata": [
+          "pod",
+          "container",
+          "node"
+        ]
+      }
+    }
+  }' | kubectl apply -f -
+  ```
+
+The metrics can now be queried in the [Google Cloud Metrics Explorer](https://pantheon.corp.google.com/monitoring/metrics-explorer). When adding a metrics query with the `+Add Query` button the new metrics should be found under the `Prometheus Target > Jetstream` submenu.
+
+Additional guides on the metrics explorer can be found [here](https://cloud.google.com/monitoring/charts/metrics-selector).
