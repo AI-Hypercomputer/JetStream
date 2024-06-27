@@ -54,10 +54,10 @@ class EngineTest(unittest.TestCase):
     metadata = engine.get_tokenizer()
     tokenizer = engine.build_tokenizer(metadata)
     tokens, true_length = tokenizer.encode(text, is_bos=True)
-    prefill_result = engine.prefill(
+    prefill_result, first_token = engine.prefill(
         params=params, padded_tokens=tokens, true_length=3
     )
-    return engine, params, prefill_result, true_length
+    return engine, params, prefill_result, true_length, first_token
 
   def _prefill_np(self):
     """Performs prefill and returns a kv cache."""
@@ -67,14 +67,14 @@ class EngineTest(unittest.TestCase):
     metadata = engine.get_tokenizer()
     tokenizer = engine.build_tokenizer(metadata)
     tokens, true_length = tokenizer.encode(text, is_bos=True, jax_padding=False)
-    prefill_result = engine.prefill(
+    prefill_result, first_token = engine.prefill(
         params=params, padded_tokens=tokens, true_length=3
     )
-    return engine, params, prefill_result, true_length
+    return engine, params, prefill_result, true_length, first_token
 
   def _generate(self, slot=1):
     """Performs a single generation step."""
-    engine, params, prefill_result, _ = self._prefill()
+    engine, params, prefill_result, _, _ = self._prefill()
     decode_state = engine.init_decode_state()
     decode_state = engine.insert(
         prefix=prefill_result, decode_state=decode_state, slot=slot
@@ -91,10 +91,15 @@ class EngineTest(unittest.TestCase):
 
   def test_prefill(self):
     """Tests prefill with weight = 2."""
-    _, _, prefill_result, true_length = self._prefill()
+    _, _, prefill_result, true_length, first_token = self._prefill()
     np.testing.assert_array_equal(
         prefill_result[:, :true_length], np.array([[4.0, 130.0, 132.0]])
     )
+
+    # test first token
+    token_data = first_token.get_result_at_slot(0)
+    tok = token_data.tokens
+    assert tokenizer.IdToPiece(int(tok.item())) == "Ċ"
 
   def test_prefill_np(self):
     """Tests prefill with weight = 2."""
@@ -110,13 +115,14 @@ class EngineTest(unittest.TestCase):
     tokenizer = token_utils.load_vocab(
         metadata.path, metadata.extra_ids
     ).tokenizer
-    # Char for 266
-    token_data = sampled_tokens.get_result_at_slot(slot)
-    tok = token_data.tokens
-    assert tokenizer.IdToPiece(int(tok.item())) == "Ċ"
-    decode_state, sampled_tokens = engine.generate(
-        params=params, decode_state=decode_state
-    )
+    # # Char for 266
+    # token_data = sampled_tokens.get_result_at_slot(slot)
+    # tok = token_data.tokens
+    # assert tokenizer.IdToPiece(int(tok.item())) == "Ċ"
+    # decode_state, sampled_tokens = engine.generate(
+    #     params=params, decode_state=decode_state
+    # )
+    
     # Char for 399
     token_data = sampled_tokens.get_result_at_slot(slot)
     tok = token_data.tokens
