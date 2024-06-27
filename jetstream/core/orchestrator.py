@@ -746,7 +746,6 @@ class Driver:
         logging.info(
           "TTFT duration: %fms",
           (first_token_return_time - request_start_time)*1000)
-      
       # generate step tokens
       elif isinstance(data[1], engine_api.ResultTokens):
         # We want to detokenize them.

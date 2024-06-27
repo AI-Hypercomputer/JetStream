@@ -109,7 +109,7 @@ class EngineTest(unittest.TestCase):
 
   def test_prefill_np(self):
     """Tests prefill with weight = 2."""
-    _, _, prefill_result, true_length, first_token_data = self._prefill_np()
+    _, _, prefill_result, true_length, _ = self._prefill_np()
     prefill_cache, _ = prefill_result
     np.testing.assert_array_equal(
         prefill_cache[:, :true_length], np.array([[4.0, 130.0, 132.0]])
