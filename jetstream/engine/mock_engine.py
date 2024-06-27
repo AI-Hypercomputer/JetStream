@@ -113,26 +113,23 @@ class TestEngine(engine_api.Engine):
     prefill_cache = padded_tokens[None, :] * params
 
     # get dummy first token
-    new_timestep = (
+    first_step = (
         prefill_cache.sum(axis=-1)
     )[:, jnp.newaxis]
     first_token_data = jnp.concatenate(
-        [new_timestep, jnp.ones_like(new_timestep), jnp.ones_like(new_timestep)],
+        [first_step, jnp.ones_like(first_step), jnp.ones_like(first_step)],
         axis=-1,
     )
-    speculations = new_timestep.shape[1]
+    speculations = first_step.shape[1]
     first_token = engine_api.ResultTokens(
-            data=first_token_data.astype(jnp.int32),
-            # Tokens are shape [batch, speculations], so when we concatenate
-            # tokens, validity and length along their index 1 dimension then they
-            # occupy 0:speculations.
-            tokens_idx=(0, speculations),
-            # Validity occupies the same amount of space, but next in line.
-            valid_idx=(speculations, 2 * speculations),
-            # And lengths is rank 1.
-            length_idx=(2 * speculations, 2 * speculations + 1),
-            samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
-        )
+      data=first_token_data.astype(jnp.int32),
+      tokens_idx=(0, speculations),
+      # Validity occupies the same amount of space, but next in line.
+      valid_idx=(speculations, 2 * speculations),
+      # And lengths is rank 1.
+      length_idx=(2 * speculations, 2 * speculations + 1),
+      samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
+    )
 
     return (prefill_cache, new_timestep), first_token
 
@@ -141,7 +138,8 @@ class TestEngine(engine_api.Engine):
       self, params: Params, decode_state: DecodeState
   ) -> Tuple[DecodeState, engine_api.ResultTokens]:
     """Generates tokens for each sequence being decoded in parallel."""
-    prefill_cache, generate_cache, generate_cache_index, generate_lengths, previous_timestep = (
+    prefill_cache, generate_cache, generate_cache_index,
+    generate_lengths, previous_timestep = (
         decode_state.prefill_cache,
         decode_state.generate_cache,
         decode_state.generate_cache_index,
@@ -151,7 +149,10 @@ class TestEngine(engine_api.Engine):
 
     # Update generate cache
     generate_cache = jax.lax.dynamic_update_slice_in_dim(
-        generate_cache, previous_timestep, start_index=generate_cache_index, axis=1
+        generate_cache,
+        previous_timestep,
+        start_index=generate_cache_index,
+        axis=1
     )
     generate_cache_index = (generate_cache_index + 1) % self.cache_length
 

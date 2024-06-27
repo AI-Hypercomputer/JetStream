@@ -122,13 +122,6 @@ class EngineTest(unittest.TestCase):
     tokenizer = token_utils.load_vocab(
         metadata.path, metadata.extra_ids
     ).tokenizer
-    # # Char for 266
-    # token_data = sampled_tokens.get_result_at_slot(slot)
-    # tok = token_data.tokens
-    # assert tokenizer.IdToPiece(int(tok.item())) == "Ċ"
-    # decode_state, sampled_tokens = engine.generate(
-    #     params=params, decode_state=decode_state
-    # )
 
     # Char for 399
     token_data = sampled_tokens.get_result_at_slot(slot)
