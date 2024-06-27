@@ -243,7 +243,7 @@ class TestEngine(engine_api.Engine):
     )
     generate_tokens = jax.lax.dynamic_update_slice_in_dim(
         decode_state.generate_tokens,
-        previous_token,
+        previous_timestep,
         slot * samples_per_slot,
         axis=0,
     )
@@ -277,7 +277,7 @@ class TestEngine(engine_api.Engine):
             (self.generate_cache_batch), dtype=jnp.int32
         ),
         generate_tokens=jnp.zeros(
-          (self.generate_cache_batch), dtype=jnp.int32
+          (self.generate_cache_batch, 1), dtype=jnp.float32
         )
     )
 
