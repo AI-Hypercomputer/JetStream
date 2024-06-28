@@ -486,6 +486,7 @@ class Driver:
       my_transfer_backlog = self._transfer_backlogs[idx]
       # The prefill thread can just sleep until it has work to do.
       request = self._prefill_backlog.get(block=True)
+      request_start_time = time.perf_counter()
 
       if request is None:
         break
@@ -503,12 +504,20 @@ class Driver:
           request, tokenizer, is_bos, prefill_engine.max_prefill_length
       )
       # Compute new kv cache for the prefill_content.
-      prefill_result = prefill_engine.prefill(
+      prefill_result, first_token = prefill_engine.prefill(
           params=prefill_params,
           padded_tokens=padded_tokens,
           true_length=true_length,
       )
       request.prefill_result = prefill_result
+
+      # put first token to detokenize queue
+      request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
+      my_detokenize_backlog = self._detokenize_backlogs[idx]
+      my_detokenize_backlog.put(
+          (first_token, request, request_start_time), block=True
+      )
+
       # Once prefill is complete, place it on the generation queue and block if
       # full.
       my_transfer_backlog.put(request, block=True)
@@ -517,6 +526,7 @@ class Driver:
           idx,
           my_transfer_backlog.qsize(),
       )
+
       del prefill_result
       del request
 
@@ -714,7 +724,30 @@ class Driver:
       if data is None:
         break
       start_detokenize_time = time.time()
-      if isinstance(data[1], engine_api.ResultTokens):
+      # prefill first token
+      if isinstance(data[0], engine_api.ResultTokens):
+        request_first_token, request, request_start_time = data
+        request_first_token = request_first_token.convert_to_numpy()
+
+        results, complete = token_utils.process_result_tokens(
+            tokenizer=tokenizer,
+            slot=0,  # always 0 as prefill only run 1 sample
+            slot_max_length=request.max_tokens,
+            result_tokens=request_first_token,
+            is_client_side_tokenization=request.is_client_side_tokenization,
+            complete=request.complete,
+        )
+        request.complete = complete
+        # Return some output samples.
+        request.enqueue_samples(results)
+
+        first_token_return_time = time.perf_counter()
+        logging.info(
+            "TTFT duration: %fms",
+            (first_token_return_time - request_start_time) * 1000,
+        )
+      # generate step tokens
+      elif isinstance(data[1], engine_api.ResultTokens):
         # We want to detokenize them.
         generate_timestep_added, result_tokens = data
         # Disable attribute error because pytype doesn't know this
