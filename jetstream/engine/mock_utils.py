@@ -63,7 +63,7 @@ class TestVocab(Vocabulary):
 
   def _decode(self, ids: np.ndarray):
     """Converts a numpy array into a string."""
-    return "".join([chr(r) for r in list(ids)])
+    return "".join([chr(r) for r in list(ids) if r not in self.stop_tokens])
 
   def _encode_tf(self, s: str) -> np.ndarray:
     """Converts a string into a numpy array."""
