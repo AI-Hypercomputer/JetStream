@@ -214,6 +214,7 @@ def process_result_tokens(
           )
         if tok_id in stop_tokens or not valid:
           complete[idx] = True
+          tok_id_so_far.append(tok_id)
           break
         else:
           if not is_client_side_tokenization:
