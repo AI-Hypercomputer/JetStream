@@ -93,7 +93,7 @@ from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.core.utils.return_sample import ReturnSample
-from jetstream.engine import engine_api, tokenizer_api, token_utils
+from jetstream.engine import engine_api, tokenizer_api, token_utils, aot_utils
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
 
@@ -226,6 +226,7 @@ class Driver:
       jax_padding: bool = True,
       metrics_collector: JetstreamMetricsCollector | None = None,
       is_ray_backend: bool = False,
+      enable_model_warmup: bool = False,
   ):
     if prefill_engines is None:
       prefill_engines = []
@@ -247,6 +248,28 @@ class Driver:
     self._generate_params = generate_params
     self._interleaved_mode = interleaved_mode
     self._metrics_collector = metrics_collector
+
+    self.warmup_enabled = False
+    if enable_model_warmup:
+      self._prefill_engines = [
+          engine_api.WarmedUpEngine(pe) for pe in self._prefill_engines
+      ]
+      self._generate_engines = [
+          engine_api.WarmedUpEngine(ge) for ge in self._generate_engines
+      ]
+
+      try:
+        self.warmup_enabled = aot_utils.layout_params_and_compile_executables(
+            self._prefill_engines,  # pylint: disable=protected-access
+            self._generate_engines,  # pylint: disable=protected-access
+            self._prefill_params,  # pylint: disable=protected-access
+            self._generate_params,  # pylint: disable=protected-access
+        )
+
+      except ValueError as e:
+        print(f"Model warmup encountered an error: {e}")
+        traceback.print_exc()
+        os.kill(os.getpid(), signal.SIGKILL)
 
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
@@ -387,7 +410,6 @@ class Driver:
         )
     )
     self.live = True
-    self.warmup_enabled = False
     self._is_ray_backend = is_ray_backend
     # Start all threads
     for t in self._all_threads:
@@ -509,28 +531,20 @@ class Driver:
       request.true_length = true_length
 
       # Compute new kv cache for the prefill_content.
+
       if self.warmup_enabled:
         padded_token_length = token_utils.take_nearest_length(
             prefill_engine.prefill_buckets, true_length
         )
+        prefill_engine.padded_token_length = padded_token_length
         request.padded_token_length = padded_token_length
-        prefill_result = prefill_engine.prefill_compiled[padded_token_length](
-            params=prefill_params,
-            padded_tokens=padded_tokens,
-            true_length=true_length,
-        )
-      else:
-        prefill_result = prefill_engine.prefill(
-            params=prefill_params,
-            padded_tokens=padded_tokens,
-            true_length=true_length,
-        )
 
       prefill_result, first_token = prefill_engine.prefill(
           params=prefill_params,
           padded_tokens=padded_tokens,
           true_length=true_length,
       )
+
       request.prefill_result = prefill_result
 
       # put first token to detokenize queue
@@ -693,18 +707,14 @@ class Driver:
             slot,
             generate_timestep,
         )
+
         if self.warmup_enabled:
-          decode_state = generate_engine.insert_compiled[
-              new_request.padded_token_length
-          ](
-              prefix=new_request.prefill_result,
-              decode_state=decode_state,
-              slot=slot,
-          )
-        else:
-          decode_state = generate_engine.insert(
-              new_request.prefill_result, decode_state, slot=slot
-          )
+          generate_engine.true_length = new_request.true_length
+          generate_engine.padded_token_length = new_request.padded_token_length
+
+        decode_state = generate_engine.insert(
+            new_request.prefill_result, decode_state, slot=slot
+        )
         delete_pytree(new_request.prefill_result)
         new_request.generate_timestep_added = generate_timestep
         new_request.complete = np.zeros(
@@ -719,14 +729,9 @@ class Driver:
       ), "At this point we must have some requests inserted into the slots."
 
       # Now we actually take a generate step on requests in the slots.
-      if self.warmup_enabled:
-        decode_state, sampled_tokens = generate_engine.generate_compiled(
-            params=generate_params, decode_state=decode_state
-        )
-      else:
-        decode_state, sampled_tokens = generate_engine.generate(
-            generate_params, decode_state
-        )
+      decode_state, sampled_tokens = generate_engine.generate(
+          generate_params, decode_state
+      )
       sampled_tokens.copy_to_host_async()
       # Respond to detokenization backpressure.
       my_detokenize_backlog.put((generate_timestep, sampled_tokens), block=True)

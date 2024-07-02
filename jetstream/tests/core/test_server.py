@@ -87,6 +87,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       healthcheck_response = await healthcheck_response
 
       assert healthcheck_response.is_live is True
+      assert server._driver.warmup_enabled is False  # pylint: disable=protected-access
 
       # The string representation of np.array([[65, 66]]), [2] will be prepended
       # as BOS
@@ -161,6 +162,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         config=config_lib.InterleavedCPUTestServer,
         devices=[None],
         credentials=credentials,
+        enable_model_warmup=True,
     )
 
     async with grpc.aio.secure_channel(
@@ -173,19 +175,6 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       healthcheck_response = await healthcheck_response
 
       assert healthcheck_response.is_live is True
-
-      # Test enabling model warmup and its success
-      stub = jetstream_pb2_grpc.UtilitiesStub(channel)
-      modelwarmup_request = jetstream_pb2.ModelWarmupRequest(enable=True)
-      modelwarmup_response = stub.ModelWarmup(modelwarmup_request)
-      modelwarmup_response = await modelwarmup_response
-
-      assert modelwarmup_response.warmup_enabled is True
-
-      # Test disabling model warmup
-      modelwarmup_request = jetstream_pb2.ModelWarmupRequest(enable=False)
-      modelwarmup_response = stub.ModelWarmup(modelwarmup_request)
-      modelwarmup_response = await modelwarmup_response
-      assert modelwarmup_response.warmup_enabled is False
+      assert server._driver.warmup_enabled is True  # pylint: disable=protected-access
 
       server.stop()

@@ -25,13 +25,6 @@ service Orchestrator {
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {}
 }
 
-// Utility RPCs for JetStream
-
-service Utilities {
-  // Warms up the model server.
-  rpc ModelWarmup(ModelWarmupRequest) returns (ModelWarmupResponse) {}
-}
-
 message DecodeRequest {
   // Where to load any pre-existing kv cache from.
   string session_cache = 1;
@@ -90,14 +83,4 @@ message HealthCheckRequest {}
 message HealthCheckResponse {
   // Denotes whether the model server is live
   bool is_live = 1;
-}
-
-message ModelWarmupRequest {
-  // Denotes whether to enable model server warmup.
-  bool enable = 1;
-}
-
-message ModelWarmupResponse {
-  // Whether model server warmup is currently enabled.
-  bool warmup_enabled = 1;
 }

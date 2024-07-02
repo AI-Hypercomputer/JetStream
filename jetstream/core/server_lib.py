@@ -20,11 +20,8 @@ See implementations/*/sever.py for examples.
 import asyncio
 from concurrent import futures
 import logging
-import os
-import signal
 import threading
-import traceback
-from typing import Any, Type, Optional
+from typing import Any, Type
 
 import grpc
 import jax
@@ -32,8 +29,6 @@ from jetstream.core import config_lib
 from jetstream.core import orchestrator
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 from jetstream.core.proto import jetstream_pb2_grpc
-from jetstream.core.proto import jetstream_pb2
-from jetstream.engine import aot_utils
 
 from prometheus_client import start_http_server
 
@@ -62,9 +57,6 @@ class JetStreamServer:
     self._driver = driver
     jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
         orchestrator.LLMOrchestrator(driver=self._driver), self._grpc_server
-    )
-    jetstream_pb2_grpc.add_UtilitiesServicer_to_server(
-        LLMUtilities(driver=self._driver), self._grpc_server
     )
     self._grpc_server.add_secure_port(f"{_HOST}:{port}", credentials)
 
@@ -105,6 +97,7 @@ def run(
     metrics_server_config: config_lib.MetricsServerConfig | None = None,
     enable_jax_profiler: bool = False,
     jax_profiler_port: int = 9999,
+    enable_model_warmup: bool = False,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
@@ -119,6 +112,7 @@ def run(
     metrics_server_config: The config to enable Promethus metric server.
     enable_jax_profiler: The flag to enable JAX profiler server.
     jax_profiler_port: The port JAX profiler server (default to 9999).
+    enable_model_warmup: The flag to enable model server warmup with AOT.
 
   Returns:
     JetStreamServer that wraps the grpc server and orchestrator driver.
@@ -155,6 +149,7 @@ def run(
       jax_padding=jax_padding,
       metrics_collector=metrics_collector,
       is_ray_backend=config.is_ray_backend,
+      enable_model_warmup=enable_model_warmup,
   )
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.
@@ -189,48 +184,3 @@ def get_devices() -> Any:
   devices = jax.devices()
   logging.info("Using devices: %d", len(devices))
   return devices
-
-
-class LLMUtilities(jetstream_pb2_grpc.UtilitiesServicer):
-  """Coordinates LLM utility helper endpoints for JetStream."""
-
-  def __init__(self, driver: orchestrator.Driver):
-    self._driver = driver
-
-  def model_warmup(self):
-    try:
-      self._driver.warmup_enabled = (
-          aot_utils.layout_params_and_compile_executables(
-              self._driver._prefill_engines,  # pylint: disable=protected-access
-              self._driver._generate_engines,  # pylint: disable=protected-access
-              self._driver._prefill_params,  # pylint: disable=protected-access
-              self._driver._generate_params,  # pylint: disable=protected-access
-          )
-      )
-    except ValueError as e:
-      print(f"Model warmup encountered an error: {e}")
-      traceback.print_exc()
-      os.kill(os.getpid(), signal.SIGKILL)
-    return self._driver.warmup_enabled
-
-  async def ModelWarmup(  # pylint: disable=invalid-overridden-method
-      self,
-      request: jetstream_pb2.ModelWarmupRequest,
-      context: Optional[grpc.aio.ServicerContext] = None,
-  ) -> jetstream_pb2.ModelWarmupResponse:
-    """ModelWarmup."""
-    if context is None:
-      logging.warning(
-          "LLM utilities is being used in offline test mode, and will not"
-          " respond to gRPC queries - only direct function calls."
-      )
-    if request.enable is False:
-      self._driver.warmup_enabled = False
-      return jetstream_pb2.ModelWarmupResponse(
-          warmup_enabled=self._driver.warmup_enabled
-      )
-    if self._driver.warmup_enabled:
-      warmup_enabled = self._driver.warmup_enabled
-    else:
-      warmup_enabled = self.model_warmup()
-    return jetstream_pb2.ModelWarmupResponse(warmup_enabled=warmup_enabled)

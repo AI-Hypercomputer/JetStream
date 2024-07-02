@@ -134,14 +134,6 @@ class Engine(abc.ABC):
   JetStream efficient serving infrastructure.
   """
 
-  # Compiled prefills
-  prefill_compiled: dict[int, jax.stages.Compiled]
-  # Compiled inserts
-  insert_compiled: dict[int, jax.stages.Compiled]
-  # Compiled generate
-  generate_compiled: jax.stages.Compiled
-  prefill_buckets: list[int]
-
   @abc.abstractmethod
   def prefill(
       self,
@@ -248,3 +240,104 @@ class Engine(abc.ABC):
   @abc.abstractmethod
   def colocated_cpus(self) -> Union[list[CpuDevices], None]:
     """CPU devices colocated with the engine's accelerators."""
+
+
+class WarmedUpEngine(Engine):
+  """A wrapper engine of the Engine class.
+
+  WarmedUpEngine defines the AOT warmed up model server engine.
+  """
+
+  # Compiled prefills
+  prefill_compiled: dict[int, jax.stages.Compiled]
+  # Compiled inserts
+  insert_compiled: dict[int, jax.stages.Compiled]
+  # Compiled generate
+  generate_compiled: jax.stages.Compiled
+  prefill_buckets: list[int]
+  padded_token_length: int
+  true_length: int
+
+  def __init__(self, downstream_engine: Engine):
+    self._downstream_engine = downstream_engine
+
+  def prefill(
+      self,
+      *,
+      params: Params,
+      existing_prefix: Optional[Prefix] = None,
+      padded_tokens: jax.Array,
+      true_length: int,
+  ) -> Tuple[Prefix, ResultTokens]:
+
+    prefill_result, first_token = self.prefill_compiled[
+        self.padded_token_length
+    ](
+        params=params,
+        padded_tokens=padded_tokens,
+        true_length=true_length,
+    )
+    return prefill_result, first_token
+
+  def insert(
+      self,
+      prefix: Prefix,
+      decode_state: DecodeState,
+      slot: int,
+  ) -> DecodeState:
+
+    decode_state = self.insert_compiled[self.padded_token_length](
+        prefix=prefix,
+        decode_state=decode_state,
+        slot=slot,
+    )
+    return decode_state
+
+  def generate(
+      self, params: Params, decode_state: DecodeState
+  ) -> Tuple[DecodeState, ResultTokens]:
+    decode_state, sampled_tokens = self.generate_compiled(
+        params=params, decode_state=decode_state
+    )
+    return decode_state, sampled_tokens
+
+  def load_params(self, *args, **kwargs) -> Params:
+    return self._downstream_engine.load_params(*args, **kwargs)
+
+  def get_prefix_destination_sharding(self) -> Any:
+    return self._downstream_engine.get_prefix_destination_sharding()
+
+  def get_tokenizer(
+      self,
+  ) -> tokenizer_pb2.TokenizerParameters:
+    return self._downstream_engine.get_tokenizer()
+
+  def build_tokenizer(
+      self,
+      metadata: tokenizer_pb2.TokenizerParameters,
+  ) -> Tokenizer:
+    """Builds a new tokenizer object and returns it."""
+    return self._downstream_engine.build_tokenizer(metadata)
+
+  def init_decode_state(self, *args, **kwargs) -> DecodeState:
+    return self._downstream_engine.init_decode_state(*args, **kwargs)
+
+  @property
+  def max_concurrent_decodes(self) -> int:
+    return self._downstream_engine.max_concurrent_decodes
+
+  @property
+  def samples_per_slot(self) -> int:
+    return self._downstream_engine.samples_per_slot
+
+  @property
+  def max_prefill_length(self) -> int:
+    return self._downstream_engine.max_prefill_length
+
+  @property
+  def mesh(self) -> jax.sharding.Mesh:
+    return self._downstream_engine.mesh
+
+  @property
+  def colocated_cpus(self) -> Union[list[CpuDevices], None]:
+    return self._downstream_engine.colocated_cpus

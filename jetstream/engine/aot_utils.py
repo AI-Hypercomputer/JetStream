@@ -1,6 +1,21 @@
+# Copyright 2024 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """AOT compilation utils."""
 
 import jax
+import jax.numpy as jnp
 import concurrent.futures
 from typing import Any, Optional
 import logging
@@ -8,8 +23,8 @@ from jetstream.engine import engine_api, token_utils
 
 
 def layout_params_and_compile_executables(
-    prefill_engines: Optional[list[engine_api.Engine]] = None,
-    generate_engines: Optional[list[engine_api.Engine]] = None,
+    prefill_engines: Optional[list[engine_api.WarmedUpEngine]] = None,
+    generate_engines: Optional[list[engine_api.WarmedUpEngine]] = None,
     prefill_params: Optional[list[Any]] = None,
     generate_params: Optional[list[Any]] = None,
 ) -> bool:
@@ -20,19 +35,21 @@ def layout_params_and_compile_executables(
       generate_engines: Generate only engines.
       prefill_params: Prefill only params.
       generate_params: Generate only params.
-
-  Returns:
-      bool:
   """
   prefill_engines = prefill_engines if prefill_engines else []
   generate_engines = generate_engines if generate_engines else []
   prefill_params = prefill_params if prefill_params else []
   generate_params = generate_params if generate_params else []
 
+  any_prefill_engine = None
+  any_prefill_params = None
+
   compiled_prefills = []
   compiled_inserts_generate = []
 
   for i, pe in enumerate(prefill_engines):
+    any_prefill_engine = pe
+    any_prefill_params = prefill_params[i]
     prefill_compiled = initialize_prefill_jit_cache(
         prefill_engine=pe,
         prefill_params=prefill_params[i],
@@ -42,7 +59,9 @@ def layout_params_and_compile_executables(
 
   for i, ge in enumerate(generate_engines):
     insert_compiled, generate_compiled = initialize_insert_generate_jit_cache(
+        prefill_engine=any_prefill_engine,
         generate_engine=ge,
+        prefill_params=any_prefill_params,
         generate_params=generate_params[i],
         generate_idx=i,
     )
@@ -55,7 +74,7 @@ def layout_params_and_compile_executables(
 
 def initialize_prefill_jit_cache(
     *,
-    prefill_engine: engine_api.Engine,
+    prefill_engine: engine_api.WarmedUpEngine,
     prefill_params: Any,
     prefill_idx: int,
 ):
@@ -79,16 +98,10 @@ def initialize_prefill_jit_cache(
     prefill_buckets.append(prefill_engine.max_prefill_length)
 
   def compile_prefill(length):
-    metadata = prefill_engine.get_tokenizer()
-    vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
-    padded_tokens, true_length = token_utils.tokenize_and_pad(
-        "Example text, often referred to as lorem ipsum, is placeholder content used by designers and developers in the layout of documents and websites. It's a scrambled Latin passage that mimics the rhythm and flow of real text, allowing for accurate visualization of fonts, spacing, and formatting. This nonsensical text helps maintain focus on the visual aspects without distraction from actual content. Lorem ipsum has become a standard in the industry, appearing in countless projects as a temporary stand-in before the final text is incorporated.",  # pylint: disable=line-too-long
-        vocab=vocab,
-        max_prefill_length=length,
-    )
+    padded_tokens, true_length = jnp.ones((length), dtype="int32"), length
 
     lowered = jax.jit(
-        prefill_engine.prefill,
+        prefill_engine._downstream_engine.prefill,  # pylint: disable=protected-access
         out_shardings=prefill_engine.get_prefix_destination_sharding(),
     ).lower(
         params=prefill_params,
@@ -127,7 +140,9 @@ def initialize_prefill_jit_cache(
 
 def initialize_insert_generate_jit_cache(
     *,
-    generate_engine: engine_api.Engine,
+    prefill_engine: engine_api.WarmedUpEngine,
+    generate_engine: engine_api.WarmedUpEngine,
+    prefill_params: Any,
     generate_params: Any,
     generate_idx: int,
 ):
@@ -152,22 +167,15 @@ def initialize_insert_generate_jit_cache(
   decode_state = generate_engine.init_decode_state()
 
   def compile_insert(length):
-    metadata = generate_engine.get_tokenizer()
-    vocab = token_utils.load_vocab(metadata.path, metadata.extra_ids)
+    padded_tokens, true_length = jnp.ones((length), dtype="int32"), length
 
-    padded_tokens, true_length = token_utils.tokenize_and_pad(
-        "Example text, often referred to as lorem ipsum, is placeholder content used by designers and developers in the layout of documents and websites. It's a scrambled Latin passage that mimics the rhythm and flow of real text, allowing for accurate visualization of fonts, spacing, and formatting. This nonsensical text helps maintain focus on the visual aspects without distraction from actual content. Lorem ipsum has become a standard in the industry, appearing in countless projects as a temporary stand-in before the final text is incorporated.",  # pylint: disable=line-too-long
-        vocab=vocab,
-        max_prefill_length=length,
-    )
-
-    prefill = generate_engine.prefill(
-        params=generate_params,
+    prefill, _ = prefill_engine._downstream_engine.prefill(  # pylint: disable=protected-access
+        params=prefill_params,
         padded_tokens=padded_tokens,
         true_length=true_length,
     )
 
-    lowered = jax.jit(generate_engine.insert).lower(
+    lowered = jax.jit(generate_engine._downstream_engine.insert).lower(  # pylint: disable=protected-access
         prefix=prefill, decode_state=decode_state, slot=1
     )
     logging.info(
@@ -190,7 +198,7 @@ def initialize_insert_generate_jit_cache(
         "---------Generate compilation %d begun.---------", generate_idx
     )
 
-    lowered = jax.jit(generate_engine.generate).lower(
+    lowered = jax.jit(generate_engine._downstream_engine.generate).lower(  # pylint: disable=protected-access
         params=generate_params,
         decode_state=decode_state,
     )
