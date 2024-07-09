@@ -319,7 +319,7 @@ wrapt==1.16.0
     #   clu
     #   tensorflow
     #   tfds-nightly
-zipp==3.17.0
+zipp==3.19.1
     # via etils
 
 # The following packages are considered to be unsafe in a requirements file:
