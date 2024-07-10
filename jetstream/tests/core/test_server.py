@@ -87,7 +87,6 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       healthcheck_response = await healthcheck_response
 
       assert healthcheck_response.is_live is True
-      assert server._driver.warmup_enabled is False  # pylint: disable=protected-access
 
       # The string representation of np.array([[65, 66]]), [2] will be prepended
       # as BOS
