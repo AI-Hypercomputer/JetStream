@@ -175,6 +175,13 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       healthcheck_response = await healthcheck_response
 
       assert healthcheck_response.is_live is True
-      assert server._driver.warmup_enabled is True  # pylint: disable=protected-access
+
+      for pe in server._driver._prefill_engines:  # pylint: disable=protected-access
+        assert type(pe) is engine_api.WarmedUpEngine
+        assert pe.warm is True
+
+      for ge in server._driver._generate_engines:  # pylint: disable=protected-access
+        assert type(ge) is engine_api.WarmedUpEngine
+        assert ge.warm is True
 
       server.stop()

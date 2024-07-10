@@ -248,18 +248,20 @@ class WarmedUpEngine(Engine):
   WarmedUpEngine defines the AOT warmed up model server engine.
   """
 
-  # Compiled prefills
-  prefill_compiled: dict[int, jax.stages.Compiled]
-  # Compiled inserts
-  insert_compiled: dict[int, jax.stages.Compiled]
-  # Compiled generate
-  generate_compiled: jax.stages.Compiled
-  prefill_buckets: list[int]
-  padded_token_length: int
-  true_length: int
-
   def __init__(self, downstream_engine: Engine):
     self._downstream_engine = downstream_engine
+
+    # Executables
+    self.prefill_executable = None
+    self.insert_executable = None
+    self.generate_executable = None
+
+    self.prefill_buckets = None
+
+    # Nearest right token length
+    self.padded_token_length = None
+
+    self.warm = False
 
   def prefill(
       self,
@@ -270,7 +272,7 @@ class WarmedUpEngine(Engine):
       true_length: int,
   ) -> Tuple[Prefix, ResultTokens]:
 
-    prefill_result, first_token = self.prefill_compiled[
+    prefill_result, first_token = self.prefill_executable[
         self.padded_token_length
     ](
         params=params,
@@ -286,7 +288,7 @@ class WarmedUpEngine(Engine):
       slot: int,
   ) -> DecodeState:
 
-    decode_state = self.insert_compiled[self.padded_token_length](
+    decode_state = self.insert_executable[self.padded_token_length](
         prefix=prefix,
         decode_state=decode_state,
         slot=slot,
@@ -296,7 +298,7 @@ class WarmedUpEngine(Engine):
   def generate(
       self, params: Params, decode_state: DecodeState
   ) -> Tuple[DecodeState, ResultTokens]:
-    decode_state, sampled_tokens = self.generate_compiled(
+    decode_state, sampled_tokens = self.generate_executable(
         params=params, decode_state=decode_state
     )
     return decode_state, sampled_tokens
@@ -341,3 +343,6 @@ class WarmedUpEngine(Engine):
   @property
   def colocated_cpus(self) -> Union[list[CpuDevices], None]:
     return self._downstream_engine.colocated_cpus
+
+  def set_padded_token_length(self, padded_token_length: int):
+    self.padded_token_length = padded_token_length

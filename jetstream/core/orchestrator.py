@@ -93,7 +93,7 @@ from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.core.utils.return_sample import ReturnSample
-from jetstream.engine import engine_api, tokenizer_api, token_utils, aot_utils
+from jetstream.engine import engine_api, tokenizer_api, token_utils
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
 
@@ -135,7 +135,6 @@ class ActiveRequest:
   #################### Information relevant for prefill ########################
   history_path: Optional[str] = None
   prefill_content: Optional[str | list[int]] = None
-  true_length: Optional[int] = None
   padded_token_length: Optional[int] = None
   ################## Information relevant for detokenization ###################
   # Which generate step this was added at.
@@ -226,16 +225,7 @@ class Driver:
       jax_padding: bool = True,
       metrics_collector: JetstreamMetricsCollector | None = None,
       is_ray_backend: bool = False,
-      enable_model_warmup: bool = False,
   ):
-    if prefill_engines is None:
-      prefill_engines = []
-    if generate_engines is None:
-      generate_engines = []
-    if prefill_params is None:
-      prefill_params = []
-    if generate_params is None:
-      generate_params = []
 
     logging.info(
         "Initialising driver with %d prefill engines and %d generate engines.",
@@ -248,28 +238,6 @@ class Driver:
     self._generate_params = generate_params
     self._interleaved_mode = interleaved_mode
     self._metrics_collector = metrics_collector
-
-    self.warmup_enabled = False
-    if enable_model_warmup:
-      self._prefill_engines = [
-          engine_api.WarmedUpEngine(pe) for pe in self._prefill_engines
-      ]
-      self._generate_engines = [
-          engine_api.WarmedUpEngine(ge) for ge in self._generate_engines
-      ]
-
-      try:
-        self.warmup_enabled = aot_utils.layout_params_and_compile_executables(
-            self._prefill_engines,  # pylint: disable=protected-access
-            self._generate_engines,  # pylint: disable=protected-access
-            self._prefill_params,  # pylint: disable=protected-access
-            self._generate_params,  # pylint: disable=protected-access
-        )
-
-      except ValueError as e:
-        print(f"Model warmup encountered an error: {e}")
-        traceback.print_exc()
-        os.kill(os.getpid(), signal.SIGKILL)
 
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
@@ -528,17 +496,13 @@ class Driver:
       padded_tokens, true_length = self._process_prefill_content(
           request, tokenizer, is_bos, prefill_engine.max_prefill_length
       )
-      request.true_length = true_length
-
-      # Compute new kv cache for the prefill_content.
-
-      if self.warmup_enabled:
-        padded_token_length = token_utils.take_nearest_length(
+      if type(prefill_engine) is engine_api.WarmedUpEngine:
+        request.padded_token_length = token_utils.take_nearest_length(
             prefill_engine.prefill_buckets, true_length
         )
-        prefill_engine.padded_token_length = padded_token_length
-        request.padded_token_length = padded_token_length
+        prefill_engine.set_padded_token_length(request.padded_token_length)
 
+      # Compute new kv cache for the prefill_content.
       prefill_result, first_token = prefill_engine.prefill(
           params=prefill_params,
           padded_tokens=padded_tokens,
@@ -708,9 +672,10 @@ class Driver:
             generate_timestep,
         )
 
-        if self.warmup_enabled:
-          generate_engine.true_length = new_request.true_length
-          generate_engine.padded_token_length = new_request.padded_token_length
+        if type(generate_engine) is engine_api.WarmedUpEngine:
+          generate_engine.set_padded_token_length(
+              new_request.padded_token_length
+          )
 
         decode_state = generate_engine.insert(
             new_request.prefill_result, decode_state, slot=slot
