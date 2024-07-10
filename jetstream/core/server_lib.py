@@ -161,7 +161,7 @@ def run(
 
   if enable_model_warmup:
     prefill_engines, generate_engines = run_model_warmup(
-        prefill_engines, generate_engines
+        prefill_engines, generate_engines, prefill_params, generate_params
     )
 
   driver = orchestrator.Driver(
@@ -212,6 +212,8 @@ def get_devices() -> Any:
 def run_model_warmup(
     prefill_engines: list[engine_api.Engine],
     generate_engines: list[engine_api.Engine],
+    prefill_params: list[Any],
+    generate_params: list[Any],
 ):
   prefill_engines = [engine_api.WarmedUpEngine(pe) for pe in prefill_engines]
   generate_engines = [engine_api.WarmedUpEngine(ge) for ge in generate_engines]
