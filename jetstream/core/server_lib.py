@@ -159,10 +159,23 @@ def run(
   if generate_params is None:
     generate_params = []
 
+  # Run AOT for model warmup
   if enable_model_warmup:
-    prefill_engines, generate_engines = run_model_warmup(
-        prefill_engines, generate_engines, prefill_params, generate_params
-    )
+    prefill_engines = [engine_api.WarmedUpEngine(pe) for pe in prefill_engines]
+    generate_engines = [engine_api.WarmedUpEngine(ge) for ge in generate_engines]
+
+    try:
+      _ = aot_utils.layout_params_and_compile_executables(
+          prefill_engines,  # pylint: disable=protected-access
+          generate_engines,  # pylint: disable=protected-access
+          prefill_params,  # pylint: disable=protected-access
+          generate_params,  # pylint: disable=protected-access
+      )
+
+  except ValueError as e:
+    print(f"Model warmup encountered an error: {e}")
+    traceback.print_exc()
+    os.kill(os.getpid(), signal.SIGKILL)
 
   driver = orchestrator.Driver(
       prefill_engines=prefill_engines,
@@ -207,27 +220,3 @@ def get_devices() -> Any:
   devices = jax.devices()
   logging.info("Using devices: %d", len(devices))
   return devices
-
-
-def run_model_warmup(
-    prefill_engines: list[engine_api.Engine],
-    generate_engines: list[engine_api.Engine],
-    prefill_params: list[Any],
-    generate_params: list[Any],
-):
-  prefill_engines = [engine_api.WarmedUpEngine(pe) for pe in prefill_engines]
-  generate_engines = [engine_api.WarmedUpEngine(ge) for ge in generate_engines]
-
-  try:
-    _ = aot_utils.layout_params_and_compile_executables(
-        prefill_engines,  # pylint: disable=protected-access
-        generate_engines,  # pylint: disable=protected-access
-        prefill_params,  # pylint: disable=protected-access
-        generate_params,  # pylint: disable=protected-access
-    )
-    return prefill_engines, generate_engines
-
-  except ValueError as e:
-    print(f"Model warmup encountered an error: {e}")
-    traceback.print_exc()
-    os.kill(os.getpid(), signal.SIGKILL)
