@@ -24,7 +24,7 @@ import os
 import signal
 import threading
 import traceback
-from typing import Any, Type, Optional
+from typing import Any, Type
 
 
 import grpc
@@ -161,7 +161,9 @@ def run(
 
   if enable_model_warmup:
     prefill_engines = [engine_api.WarmedUpEngine(pe) for pe in prefill_engines]
-    generate_engines = [engine_api.WarmedUpEngine(ge) for ge in generate_engines]
+    generate_engines = [
+        engine_api.WarmedUpEngine(ge) for ge in generate_engines
+    ]
 
     try:
       _ = aot_utils.layout_params_and_compile_executables(

@@ -504,7 +504,7 @@ class Driver:
       padded_tokens, true_length = self._process_prefill_content(
           request, tokenizer, is_bos, prefill_engine.max_prefill_length
       )
-      if type(prefill_engine) is engine_api.WarmedUpEngine:
+      if isinstance(prefill_engine, engine_api.WarmedUpEngine):
         request.padded_token_length = token_utils.take_nearest_length(
             prefill_engine.prefill_buckets, true_length
         )
@@ -680,7 +680,7 @@ class Driver:
             generate_timestep,
         )
 
-        if type(generate_engine) is engine_api.WarmedUpEngine:
+        if isinstance(generate_engine, engine_api.WarmedUpEngine):
           generate_engine.set_padded_token_length(
               new_request.padded_token_length
           )

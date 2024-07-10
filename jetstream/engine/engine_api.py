@@ -259,7 +259,7 @@ class WarmedUpEngine(Engine):
     self.prefill_buckets = None
 
     # Nearest right token length
-    self.padded_token_length = None
+    self._padded_token_length = None
 
     self.warm = False
 
@@ -298,7 +298,7 @@ class WarmedUpEngine(Engine):
   def generate(
       self, params: Params, decode_state: DecodeState
   ) -> Tuple[DecodeState, ResultTokens]:
-    decode_state, sampled_tokens = self.generate_executable(
+    decode_state, sampled_tokens = self.generate_executable(  # pylint: disable=not-callable
         params=params, decode_state=decode_state
     )
     return decode_state, sampled_tokens

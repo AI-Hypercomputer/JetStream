@@ -178,7 +178,7 @@ def initialize_insert_generate_jit_cache(
   def compile_insert(length):
     padded_tokens, true_length = jnp.ones((length), dtype="int32"), length
 
-    prefill, first_token = prefill_engine._downstream_engine.prefill(  # pylint: disable=protected-access
+    prefill, _ = prefill_engine._downstream_engine.prefill(  # pylint: disable=protected-access
         params=prefill_params,
         padded_tokens=padded_tokens,
         true_length=true_length,
