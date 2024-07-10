@@ -217,15 +217,23 @@ class Driver:
 
   def __init__(
       self,
-      prefill_engines: Optional[list[engine_api.Engine]] = [],
-      generate_engines: Optional[list[engine_api.Engine]] = [],
-      prefill_params: Optional[list[Any]] = [],
-      generate_params: Optional[list[Any]] = [],
+      prefill_engines: Optional[list[engine_api.Engine]] = None,
+      generate_engines: Optional[list[engine_api.Engine]] = None,
+      prefill_params: Optional[list[Any]] = None,
+      generate_params: Optional[list[Any]] = None,
       interleaved_mode: bool = False,
       jax_padding: bool = True,
       metrics_collector: JetstreamMetricsCollector | None = None,
       is_ray_backend: bool = False,
   ):
+    if prefill_engines is None:
+      prefill_engines = []
+    if generate_engines is None:
+      generate_engines = []
+    if prefill_params is None:
+      prefill_params = []
+    if generate_params is None:
+      generate_params = []
 
     logging.info(
         "Initialising driver with %d prefill engines and %d generate engines.",
