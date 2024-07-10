@@ -29,6 +29,7 @@ from jetstream.core import config_lib
 from jetstream.core import server_lib
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
+from jetstream.engine import engine_api
 import portpicker
 
 
