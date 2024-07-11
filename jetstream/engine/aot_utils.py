@@ -23,8 +23,8 @@ from jetstream.engine import engine_api, token_utils
 
 
 def layout_params_and_compile_executables(
-    prefill_engines: Optional[list[engine_api.WarmedUpEngine]] = None,
-    generate_engines: Optional[list[engine_api.WarmedUpEngine]] = None,
+    prefill_engines: Optional[list[engine_api.JetStreamEngine]] = None,
+    generate_engines: Optional[list[engine_api.JetStreamEngine]] = None,
     prefill_params: Optional[list[Any]] = None,
     generate_params: Optional[list[Any]] = None,
 ) -> bool:
@@ -78,7 +78,7 @@ def layout_params_and_compile_executables(
 
 def initialize_prefill_jit_cache(
     *,
-    prefill_engine: engine_api.WarmedUpEngine,
+    prefill_engine: engine_api.JetStreamEngine,
     prefill_params: Any,
     prefill_idx: int,
 ):
@@ -149,8 +149,8 @@ def initialize_prefill_jit_cache(
 
 def initialize_insert_generate_jit_cache(
     *,
-    prefill_engine: engine_api.WarmedUpEngine,
-    generate_engine: engine_api.WarmedUpEngine,
+    prefill_engine: engine_api.JetStreamEngine,
+    generate_engine: engine_api.JetStreamEngine,
     prefill_params: Any,
     generate_params: Any,
     generate_idx: int,

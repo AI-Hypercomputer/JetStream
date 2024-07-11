@@ -160,9 +160,9 @@ def run(
     generate_params = []
 
   if enable_model_warmup:
-    prefill_engines = [engine_api.WarmedUpEngine(pe) for pe in prefill_engines]
+    prefill_engines = [engine_api.JetStreamEngine(pe) for pe in prefill_engines]
     generate_engines = [
-        engine_api.WarmedUpEngine(ge) for ge in generate_engines
+        engine_api.JetStreamEngine(ge) for ge in generate_engines
     ]
 
     try:

@@ -242,10 +242,10 @@ class Engine(abc.ABC):
     """CPU devices colocated with the engine's accelerators."""
 
 
-class WarmedUpEngine(Engine):
+class JetStreamEngine(Engine):
   """A wrapper engine of the Engine class.
 
-  WarmedUpEngine defines the AOT warmed up model server engine.
+  JetStreamEngine defines the AOT warmed up model server engine.
   """
 
   def __init__(self, downstream_engine: Engine):
