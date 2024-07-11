@@ -20,8 +20,12 @@ See implementations/*/sever.py for examples.
 import asyncio
 from concurrent import futures
 import logging
+import os
+import signal
 import threading
+import traceback
 from typing import Any, Type
+
 
 import grpc
 import jax
@@ -29,6 +33,7 @@ from jetstream.core import config_lib
 from jetstream.core import orchestrator
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 from jetstream.core.proto import jetstream_pb2_grpc
+from jetstream.engine import aot_utils, engine_api
 
 from prometheus_client import start_http_server
 
@@ -97,6 +102,7 @@ def run(
     metrics_server_config: config_lib.MetricsServerConfig | None = None,
     enable_jax_profiler: bool = False,
     jax_profiler_port: int = 9999,
+    enable_model_warmup: bool = False,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
@@ -111,6 +117,7 @@ def run(
     metrics_server_config: The config to enable Promethus metric server.
     enable_jax_profiler: The flag to enable JAX profiler server.
     jax_profiler_port: The port JAX profiler server (default to 9999).
+    enable_model_warmup: The flag to enable model server warmup with AOT.
 
   Returns:
     JetStreamServer that wraps the grpc server and orchestrator driver.
@@ -138,11 +145,44 @@ def run(
         "Not starting Prometheus server: --prometheus_port flag not set"
     )
 
+  prefill_engines = engines.prefill_engines + engines.interleaved_engines
+  generate_engines = engines.generate_engines + engines.interleaved_engines
+  prefill_params = prefill_params + shared_params
+  generate_params = generate_params + shared_params
+
+  if prefill_engines is None:
+    prefill_engines = []
+  if generate_engines is None:
+    generate_engines = []
+  if prefill_params is None:
+    prefill_params = []
+  if generate_params is None:
+    generate_params = []
+
+  if enable_model_warmup:
+    prefill_engines = [engine_api.JetStreamEngine(pe) for pe in prefill_engines]
+    generate_engines = [
+        engine_api.JetStreamEngine(ge) for ge in generate_engines
+    ]
+
+    try:
+      _ = aot_utils.layout_params_and_compile_executables(
+          prefill_engines,  # pylint: disable=protected-access
+          generate_engines,  # pylint: disable=protected-access
+          prefill_params,  # pylint: disable=protected-access
+          generate_params,  # pylint: disable=protected-access
+      )
+
+    except ValueError as e:
+      print(f"Model warmup encountered an error: {e}")
+      traceback.print_exc()
+      os.kill(os.getpid(), signal.SIGKILL)
+
   driver = orchestrator.Driver(
-      prefill_engines=engines.prefill_engines + engines.interleaved_engines,
-      generate_engines=engines.generate_engines + engines.interleaved_engines,
-      prefill_params=prefill_params + shared_params,
-      generate_params=generate_params + shared_params,
+      prefill_engines=prefill_engines,
+      generate_engines=generate_engines,
+      prefill_params=prefill_params,
+      generate_params=generate_params,
       interleaved_mode=interleaved_mode,
       jax_padding=jax_padding,
       metrics_collector=metrics_collector,

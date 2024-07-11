@@ -29,6 +29,7 @@ from jetstream.core import config_lib
 from jetstream.core import server_lib
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
+from jetstream.engine import engine_api
 import portpicker
 
 
@@ -149,3 +150,38 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
 
   def test_get_devices(self):
     assert len(server_lib.get_devices()) == 1
+
+  async def test_model_warmup(self):
+    port = portpicker.pick_unused_port()
+
+    print("port: " + str(port))
+    credentials = grpc.local_server_credentials()
+
+    server = server_lib.run(
+        port=port,
+        config=config_lib.InterleavedCPUTestServer,
+        devices=[None],
+        credentials=credentials,
+        enable_model_warmup=True,
+    )
+
+    async with grpc.aio.secure_channel(
+        f"localhost:{port}", grpc.local_channel_credentials()
+    ) as channel:
+      stub = jetstream_pb2_grpc.OrchestratorStub(channel)
+
+      healthcheck_request = jetstream_pb2.HealthCheckRequest()
+      healthcheck_response = stub.HealthCheck(healthcheck_request)
+      healthcheck_response = await healthcheck_response
+
+      assert healthcheck_response.is_live is True
+
+      for pe in server._driver._prefill_engines:  # pylint: disable=protected-access
+        assert isinstance(pe, engine_api.JetStreamEngine)
+        assert pe.warm is True
+
+      for ge in server._driver._generate_engines:  # pylint: disable=protected-access
+        assert isinstance(ge, engine_api.JetStreamEngine)
+        assert ge.warm is True
+
+      server.stop()
