@@ -26,9 +26,6 @@ service Orchestrator {
 }
 
 message DecodeRequest {
-  // Where to load any pre-existing kv cache from.
-  string session_cache = 1;
-  int32 priority = 3;
   // The maximum output length of a sequence. It's used in JetStream to control
   // the output/decode length of a sequence. It would not be used in the engine.
   // We should always set max_tokens <= (max_target_length -
@@ -51,7 +48,7 @@ message DecodeRequest {
     TextContent text_content = 5;
     TokenContent token_content = 6;
   }
-  reserved 2;
+  reserved 1, 2, 3;
   // Next ID: 7
 }
 
