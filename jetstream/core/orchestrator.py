@@ -133,7 +133,6 @@ class ActiveRequest:
   complete: Optional[np.ndarray] = None
   prefill_result: Any = None
   #################### Information relevant for prefill ########################
-  history_path: Optional[str] = None
   prefill_content: Optional[str | list[int]] = None
   padded_token_length: Optional[int] = None
   ################## Information relevant for detokenization ###################
@@ -491,14 +490,13 @@ class Driver:
 
       if request is None:
         break
-      is_bos = not bool(request.history_path)
+      is_bos = True
       logging.info(
           "Prefilling on prefill engine %d : prefill queue size, %d,"
-          " is_bos: %s, history: %s",
+          " is_bos: %s",
           idx,
           self._prefill_backlog.qsize(),
           is_bos,
-          request.history_path,
       )
       # Tokenize and padding the text or token input.
       padded_tokens, true_length = self._process_prefill_content(
@@ -895,7 +893,6 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     # Wrap request as an ActiveRequest.
     active_request = ActiveRequest(
         max_tokens=request.max_tokens,
-        history_path=request.session_cache,
         prefill_content=prefill_content,
         is_client_side_tokenization=is_client_side_tokenization,
         return_channel=return_channel,

@@ -93,9 +93,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       # as BOS
       text = "AB"
       request = jetstream_pb2.DecodeRequest(
-          session_cache="",
           text_content=jetstream_pb2.DecodeRequest.TextContent(text=text),
-          priority=1,
           max_tokens=3,
       )
       iterator = stub.Decode(request)

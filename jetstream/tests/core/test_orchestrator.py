@@ -78,9 +78,7 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
     text = "AB"
 
     request = jetstream_pb2.DecodeRequest(
-        session_cache="",
         text_content=jetstream_pb2.DecodeRequest.TextContent(text=text),
-        priority=1,
         max_tokens=3,
     )
     iterator = client.Decode(request)
@@ -109,11 +107,9 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
     token_ids = [65, 66]
 
     request = jetstream_pb2.DecodeRequest(
-        session_cache="",
         token_content=jetstream_pb2.DecodeRequest.TokenContent(
             token_ids=token_ids
         ),
-        priority=1,
         max_tokens=3,
     )
     iterator = client.Decode(request)
