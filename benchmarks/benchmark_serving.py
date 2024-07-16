@@ -426,18 +426,14 @@ async def send_request(
     tokenizer: Any,
     input_request: InputRequest,
     pbar: tqdm,
-    session_cache: str,
-    priority: int,
 ) -> RequestFuncOutput:
   """Send the request to JetStream server."""
   # Tokenization on client side following MLPerf standard.
   token_ids = tokenizer.encode(input_request.prompt)
   request = jetstream_pb2.DecodeRequest(
-      session_cache=session_cache,
       token_content=jetstream_pb2.DecodeRequest.TokenContent(
           token_ids=token_ids
       ),
-      priority=priority,
       max_tokens=input_request.output_len,
   )
   output = RequestFuncOutput()
@@ -463,8 +459,6 @@ async def benchmark(
     input_requests: list[InputRequest],
     request_rate: float,
     disable_tqdm: bool,
-    session_cache: str,
-    priority: int,
 ):
   """Benchmark the online serving performance."""
   pbar = None if disable_tqdm else tqdm(total=len(input_requests))
@@ -481,8 +475,6 @@ async def benchmark(
                 tokenizer=tokenizer,
                 input_request=request,
                 pbar=pbar,
-                session_cache=session_cache,
-                priority=priority,
             )
         )
     )
@@ -614,8 +606,6 @@ def main(args: argparse.Namespace):
             input_requests=warmup_requests,
             request_rate=args.request_rate,
             disable_tqdm=args.disable_tqdm,
-            session_cache=args.session_cache,
-            priority=args.priority,
         )
     )
     print(f"{args.warmup_mode} warmup completed.")
@@ -631,8 +621,6 @@ def main(args: argparse.Namespace):
           input_requests=input_requests,
           request_rate=args.request_rate,
           disable_tqdm=args.disable_tqdm,
-          session_cache=args.session_cache,
-          priority=args.priority,
       )
   )
 
@@ -788,24 +776,6 @@ if __name__ == "__main__":
       help=(
           "Additional metadata about the workload. Should be a dictionary in"
           " the form of a string."
-      ),
-  )
-  parser.add_argument(
-      "--priority",
-      type=int,
-      default=0,
-      help=(
-          "Message priority. (currently no business logic implemented, use"
-          " default 0)"
-      ),
-  )
-  parser.add_argument(
-      "--session-cache",
-      type=str,
-      default="",
-      help=(
-          "Location of any pre-cached results. (currently _load_cache_history"
-          " not implemented, use default empty str)"
       ),
   )
   parser.add_argument(
