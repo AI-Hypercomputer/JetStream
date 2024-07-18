@@ -19,6 +19,10 @@ absl-py==1.4.0
     #   tensorflow
     #   tensorflow-metadata
     #   tfds-nightly
+anyio==3.7.1
+    # via
+    #   fastapi
+    #   starlette
 array-record==0.5.0
     # via tfds-nightly
 astunparse==1.6.3
@@ -34,7 +38,9 @@ charset-normalizer==3.3.2
 chex==0.1.7
     # via optax
 click==8.1.7
-    # via tfds-nightly
+    # via
+    #   tfds-nightly
+    #   uvicorn
 clu==0.0.10
     # via seqio
 contextlib2==21.6.0
@@ -56,7 +62,11 @@ etils[array-types,enp,epath,epy,etqdm,etree]==1.6.0
     #   orbax-checkpoint
     #   tfds-nightly
 exceptiongroup==1.2.0
-    # via pytest
+    # via
+    #   anyio
+    #   pytest
+fastapi==0.103.2
+    # via -r requirements.in
 filelock==3.14.0
     # via blobfile
 flatbuffers==23.5.26
@@ -86,10 +96,14 @@ grpcio==1.60.1
     #   tensorflow
 gviz-api==1.10.0
     # via tensorboard-plugin-profile
+h11==0.14.0
+    # via uvicorn
 h5py==3.10.0
     # via tensorflow
 idna==3.7
-    # via requests
+    # via
+    #   anyio
+    #   requests
 importlib-resources==6.1.1
     # via etils
 iniconfig==2.0.0
@@ -208,6 +222,8 @@ pyasn1-modules==0.3.0
     # via google-auth
 pycryptodomex==3.20.0
     # via blobfile
+pydantic==1.10.17
+    # via fastapi
 pyglove==0.4.4
     # via seqio
 pygments==2.17.2
@@ -252,6 +268,10 @@ six==1.16.0
     #   promise
     #   tensorboard-plugin-profile
     #   tensorflow
+sniffio==1.3.1
+    # via anyio
+starlette==0.27.0
+    # via fastapi
 tensorboard==2.13.0
     # via tensorflow
 tensorboard-data-server==0.7.2
@@ -299,13 +319,18 @@ typing-extensions==4.5.0
     #   chex
     #   clu
     #   etils
+    #   fastapi
     #   flax
     #   orbax-checkpoint
+    #   pydantic
     #   tensorflow
+    #   uvicorn
 urllib3==2.2.2
     # via
     #   blobfile
     #   requests
+uvicorn==0.30.1
+    # via -r requirements.in
 werkzeug==3.0.1
     # via
     #   tensorboard
