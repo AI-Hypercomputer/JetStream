@@ -13,5 +13,7 @@ tiktoken
 blobfile
 parameterized
 shortuuid
+fastapi
+uvicorn
 # For profiling
 tensorboard-plugin-profile

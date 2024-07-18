@@ -92,37 +92,25 @@ class JetStreamServer:
       self.stop()
 
 
-def run(
-    port: int,
+def create_driver(
     config: Type[config_lib.ServerConfig],
     devices: Any,
-    credentials: Any = grpc.insecure_server_credentials(),
-    threads: int | None = None,
     jax_padding: bool = True,
     metrics_server_config: config_lib.MetricsServerConfig | None = None,
-    enable_jax_profiler: bool = False,
-    jax_profiler_port: int = 9999,
     enable_model_warmup: bool = False,
-) -> JetStreamServer:
-  """Runs a server with a specified config.
+):
+  """Creates a driver with a specified config.
 
   Args:
-    port: Port on which the server will be made available.
     config: A ServerConfig to config engine, model, device slices, etc.
     devices: Device objects, will be used to get engine with proper slicing.
-    credentials: Should use grpc credentials by default.
-    threads: Number of RPC handlers worker threads. This should be at least
-      equal to the decoding batch size to fully saturate the decoding queue.
     jax_padding: The flag to enable JAX padding during tokenization.
     metrics_server_config: The config to enable Promethus metric server.
-    enable_jax_profiler: The flag to enable JAX profiler server.
-    jax_profiler_port: The port JAX profiler server (default to 9999).
     enable_model_warmup: The flag to enable model server warmup with AOT.
 
   Returns:
-    JetStreamServer that wraps the grpc server and orchestrator driver.
+    An orchestrator driver.
   """
-  logging.info("Kicking off gRPC server.")
   engines = config_lib.get_engines(config, devices=devices)
   prefill_params = [pe.load_params() for pe in engines.prefill_engines]
   generate_params = [ge.load_params() for ge in engines.generate_engines]
@@ -178,7 +166,7 @@ def run(
       traceback.print_exc()
       os.kill(os.getpid(), signal.SIGKILL)
 
-  driver = orchestrator.Driver(
+  return orchestrator.Driver(
       prefill_engines=prefill_engines,
       generate_engines=generate_engines,
       prefill_params=prefill_params,
@@ -187,6 +175,43 @@ def run(
       jax_padding=jax_padding,
       metrics_collector=metrics_collector,
       is_ray_backend=config.is_ray_backend,
+  )
+
+
+def run(
+    port: int,
+    config: Type[config_lib.ServerConfig],
+    devices: Any,
+    credentials: Any = grpc.insecure_server_credentials(),
+    threads: int | None = None,
+    jax_padding: bool = True,
+    metrics_server_config: config_lib.MetricsServerConfig | None = None,
+    enable_jax_profiler: bool = False,
+    jax_profiler_port: int = 9999,
+    enable_model_warmup: bool = False,
+) -> JetStreamServer:
+  """Runs a server with a specified config.
+
+  Args:
+    port: Port on which the server will be made available.
+    config: A ServerConfig to config engine, model, device slices, etc.
+    devices: Device objects, will be used to get engine with proper slicing.
+    credentials: Should use grpc credentials by default.
+    threads: Number of RPC handlers worker threads. This should be at least
+      equal to the decoding batch size to fully saturate the decoding queue.
+    jax_padding: The flag to enable JAX padding during tokenization.
+    metrics_server_config: The config to enable Promethus metric server.
+    enable_jax_profiler: The flag to enable JAX profiler server.
+    jax_profiler_port: The port JAX profiler server (default to 9999).
+    enable_model_warmup: The flag to enable model server warmup with AOT.
+
+  Returns:
+    JetStreamServer that wraps the grpc server and orchestrator driver.
+  """
+  logging.info("Kicking off gRPC server.")
+
+  driver = create_driver(
+      config, devices, jax_padding, metrics_server_config, enable_model_warmup
   )
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.
