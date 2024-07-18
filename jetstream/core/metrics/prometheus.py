@@ -53,7 +53,6 @@ class JetstreamMetricsCollector:
   _model_load_time = Gauge(
       name="jetstream_model_load_time",
       documentation="Total time taken to load model parameters",
-      labelnames=["id"],
   )
 
   def get_prefill_backlog_metric(self):
@@ -68,5 +67,5 @@ class JetstreamMetricsCollector:
   def get_slots_used_percentage_metric(self, idx: int):
     return self._slots_used_percentage.labels(id=self._id, idx=idx)
 
-  def get_model_load_time_metric(self, idx: int):
-    return self._model_load_time.labels(id=self._id)
+  def get_model_load_time_metric(self):
+    return self._model_load_time
