@@ -14,16 +14,13 @@
 
 """Config for JetStream Server (including engine init)."""
 
-import functools
-import os
-from typing import Sequence, Type
+from typing import Type
 
-import jax
 from jetstream.core import config_lib
 
 
 def get_server_config(
-    config_str: str, argv: Sequence[str]
+    config_str: str,
 ) -> config_lib.ServerConfig | Type[config_lib.ServerConfig]:
   match config_str:
     case "InterleavedCPUTestServer":

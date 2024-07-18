@@ -12,17 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""JetStream Http API server."""
+
 import json
 from typing import Sequence
-from absl import app
+from absl import app as abslapp
 from absl import flags
 from fastapi import APIRouter, Response
 import fastapi
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 import uvicorn
+from google.protobuf.json_format import Parse
 
 from jetstream.core import config_lib, orchestrator, server_lib
+from jetstream.core.proto import jetstream_pb2
 from jetstream.entrypoints.config import get_server_config
+from jetstream.entrypoints.http.protocol import DecodeRequest
+from jetstream.entrypoints.http.utils import proto_to_json_generator
 
 flags.DEFINE_string("host", "0.0.0.0", "server host address")
 flags.DEFINE_integer("port", 8080, "http server port")
@@ -37,9 +43,9 @@ flags.DEFINE_integer(
     "prometheus_port",
 )
 
-driver: orchestrator.Driver
+llm_orchestrator: orchestrator.LLMOrchestrator
 
-# Define Fast API endpoints (use driver to handle).
+# Define Fast API endpoints (use llm_orchestrator to handle).
 router = APIRouter()
 
 
@@ -52,11 +58,25 @@ def root():
   )
 
 
+@router.post("/v1/generate")
+async def generate(request: DecodeRequest):
+  proto_request = Parse(
+      request.model_dump_json(), jetstream_pb2.DecodeRequest()
+  )
+  generator = llm_orchestrator.Decode(proto_request)
+  return StreamingResponse(
+      content=proto_to_json_generator(generator), media_type="text/event-stream"
+  )
+
+
 @router.get("/v1/health")
 async def health() -> Response:
   """Health check."""
+  response = await llm_orchestrator.HealthCheck(
+      jetstream_pb2.HealthCheckRequest()
+  )
   return Response(
-      content=json.dumps({"is_live": str(driver.live)}, indent=4),
+      content=json.dumps({"is_live": str(response.is_live)}, indent=4),
       media_type="application/json",
       status_code=200,
   )
@@ -67,10 +87,10 @@ def server(argv: Sequence[str]):
   app = fastapi.FastAPI()
   app.include_router(router)
 
-  # Init driver which would be the main handler in the api endpoints.
+  # Init LLMOrchestrator which would be the main handler in the api endpoints.
   devices = server_lib.get_devices()
   print(f"devices: {devices}")
-  server_config = get_server_config(flags.FLAGS.config, argv)
+  server_config = get_server_config(flags.FLAGS.config)
   print(f"server_config: {server_config}")
   del argv
 
@@ -80,11 +100,13 @@ def server(argv: Sequence[str]):
         port=flags.FLAGS.prometheus_port
     )
 
-  global driver
-  driver = server_lib.create_driver(
-      config=server_config,
-      devices=devices,
-      metrics_server_config=metrics_server_config,
+  global llm_orchestrator
+  llm_orchestrator = orchestrator.LLMOrchestrator(
+      driver=server_lib.create_driver(
+          config=server_config,
+          devices=devices,
+          metrics_server_config=metrics_server_config,
+      )
   )
 
   # Start uvicorn http server.
@@ -95,4 +117,4 @@ def server(argv: Sequence[str]):
 
 if __name__ == "__main__":
   # Run Abseil app w flags parser.
-  app.run(server)
+  abslapp.run(server)
