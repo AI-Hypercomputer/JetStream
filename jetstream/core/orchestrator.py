@@ -384,6 +384,10 @@ class Driver:
             self.detokenize_threads,
         )
     )
+    if self.metrics_collector:
+      self.metrics_collector.get_model_load_time_metric().set(
+          time.time() - metrics_collector.server_start_time
+      )
     self.live = True
     self._is_ray_backend = is_ray_backend
     # Start all threads

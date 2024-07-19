@@ -124,6 +124,18 @@ def run(
     JetStreamServer that wraps the grpc server and orchestrator driver.
   """
 
+  server_start_time = time.Time()
+
+  logging.info("Kicking off gRPC server.")
+  engines = config_lib.get_engines(config, devices=devices)
+  prefill_params = [pe.load_params() for pe in engines.prefill_engines]
+  generate_params = [ge.load_params() for ge in engines.generate_engines]
+  shared_params = [ie.load_params() for ie in engines.interleaved_engines]
+  logging.info("Loaded all weights.")
+  interleaved_mode = (
+      len(config.prefill_slices) + len(config.generate_slices) == 0
+  )
+
   # Setup Prometheus server
   metrics_collector: JetstreamMetricsCollector = None
   if metrics_server_config and metrics_server_config.port:
@@ -131,26 +143,11 @@ def run(
         "Starting Prometheus server on port %d", metrics_server_config.port
     )
     start_http_server(metrics_server_config.port)
-    metrics_collector = JetstreamMetricsCollector()
+    metrics_collector = JetstreamMetricsCollector(server_start_time)
   else:
     logging.info(
         "Not starting Prometheus server: --prometheus_port flag not set"
     )
-
-  logging.info("Kicking off gRPC server.")
-  engines = config_lib.get_engines(config, devices=devices)
-  model_load_start_time = time.time()
-  prefill_params = [pe.load_params() for pe in engines.prefill_engines]
-  generate_params = [ge.load_params() for ge in engines.generate_engines]
-  shared_params = [ie.load_params() for ie in engines.interleaved_engines]
-  if metrics_collector:
-    metrics_collector.get_model_load_time_metric().set(
-        time.time() - model_load_start_time
-    )
-  logging.info("Loaded all weights.")
-  interleaved_mode = (
-      len(config.prefill_slices) + len(config.generate_slices) == 0
-  )
 
   prefill_engines = engines.prefill_engines + engines.interleaved_engines
   generate_engines = engines.generate_engines + engines.interleaved_engines
