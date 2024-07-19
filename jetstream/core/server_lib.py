@@ -144,7 +144,9 @@ def run(
   generate_params = [ge.load_params() for ge in engines.generate_engines]
   shared_params = [ie.load_params() for ie in engines.interleaved_engines]
   if metrics_collector:
-    metrics_collector.get_model_load_time_metric().set(time.time() - model_load_start_time)
+    metrics_collector.get_model_load_time_metric().set(
+        time.time() - model_load_start_time
+    )
   logging.info("Loaded all weights.")
   interleaved_mode = (
       len(config.prefill_slices) + len(config.generate_slices) == 0
