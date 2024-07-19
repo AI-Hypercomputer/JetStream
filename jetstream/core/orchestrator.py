@@ -385,7 +385,7 @@ class Driver:
         )
     )
     if self.metrics_collector:
-      self.metrics_collector.get_model_load_time_metric().set(
+      self.metrics_collector.get_server_startup_latency_metric().set(
           time.time() - metrics_collector.server_start_time
       )
     self.live = True
