@@ -23,12 +23,10 @@ class JetstreamMetricsCollector:
   """Wrapper class should be used to assure all metrics have proper tags"""
 
   _id: str = os.getenv("HOSTNAME", shortuuid.uuid())
-  server_start_time: float
 
-  def __new__(cls, server_start_time: float):
+  def __new__(cls):
     if not hasattr(cls, "instance"):
       cls.instance = super(JetstreamMetricsCollector, cls).__new__(cls)
-    cls.server_start_time = server_start_time
     return cls.instance
 
   # Metric definitions
@@ -55,6 +53,7 @@ class JetstreamMetricsCollector:
   _server_startup_latency = Gauge(
       name="jetstream_server_startup_latency",
       documentation="Total time taken to start the Jetstream server",
+      labelnames=["id"],
   )
 
   def get_prefill_backlog_metric(self):
@@ -70,4 +69,4 @@ class JetstreamMetricsCollector:
     return self._slots_used_percentage.labels(id=self._id, idx=idx)
 
   def get_server_startup_latency_metric(self):
-    return self._server_startup_latency
+    return self._server_startup_latency(id=self._id)

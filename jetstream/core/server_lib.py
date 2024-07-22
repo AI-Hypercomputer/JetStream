@@ -143,7 +143,7 @@ def run(
         "Starting Prometheus server on port %d", metrics_server_config.port
     )
     start_http_server(metrics_server_config.port)
-    metrics_collector = JetstreamMetricsCollector(server_start_time)
+    metrics_collector = JetstreamMetricsCollector()
   else:
     logging.info(
         "Not starting Prometheus server: --prometheus_port flag not set"
@@ -199,6 +199,11 @@ def run(
   logging.info("Starting server on port %d with %d threads", port, threads)
 
   jetstream_server.start()
+
+  if metrics_collector:
+    metrics_collector.get_server_startup_latency_metric().set(
+        time.time() - server_start_time
+    )
 
   # Setup Jax Profiler
   if enable_jax_profiler:
