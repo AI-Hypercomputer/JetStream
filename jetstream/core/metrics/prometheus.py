@@ -27,9 +27,7 @@ class JetstreamMetricsCollector:
 
   def __new__(cls, server_start_time: int):
     if not hasattr(cls, "instance"):
-      cls.instance = super(JetstreamMetricsCollector, cls).__new__(
-          cls, server_start_time
-      )
+      cls.instance = super(JetstreamMetricsCollector, cls).__new__(cls)
     cls.server_start_time = server_start_time
     return cls.instance
 
