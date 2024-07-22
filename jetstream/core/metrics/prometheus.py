@@ -69,4 +69,4 @@ class JetstreamMetricsCollector:
     return self._slots_used_percentage.labels(id=self._id, idx=idx)
 
   def get_server_startup_latency_metric(self):
-    return self._server_startup_latency(id=self._id)
+    return self._server_startup_latency.labels(id=self._id)
