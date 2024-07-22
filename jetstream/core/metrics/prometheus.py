@@ -50,6 +50,11 @@ class JetstreamMetricsCollector:
       documentation="The percentage of decode slots currently being used",
       labelnames=["id", "idx"],
   )
+  _server_startup_latency = Gauge(
+      name="jetstream_server_startup_latency",
+      documentation="Total time taken to start the Jetstream server",
+      labelnames=["id"],
+  )
 
   def get_prefill_backlog_metric(self):
     return self._prefill_backlog.labels(id=self._id)
@@ -62,3 +67,6 @@ class JetstreamMetricsCollector:
 
   def get_slots_used_percentage_metric(self, idx: int):
     return self._slots_used_percentage.labels(id=self._id, idx=idx)
+
+  def get_server_startup_latency_metric(self):
+    return self._server_startup_latency.labels(id=self._id)

@@ -23,6 +23,7 @@ import logging
 import os
 import signal
 import threading
+import time
 import traceback
 from typing import Any, Type
 
@@ -122,6 +123,9 @@ def run(
   Returns:
     JetStreamServer that wraps the grpc server and orchestrator driver.
   """
+
+  server_start_time = time.time()
+
   logging.info("Kicking off gRPC server.")
   engines = config_lib.get_engines(config, devices=devices)
   prefill_params = [pe.load_params() for pe in engines.prefill_engines]
@@ -195,6 +199,11 @@ def run(
   logging.info("Starting server on port %d with %d threads", port, threads)
 
   jetstream_server.start()
+
+  if metrics_collector:
+    metrics_collector.get_server_startup_latency_metric().set(
+        time.time() - server_start_time
+    )
 
   # Setup Jax Profiler
   if enable_jax_profiler:
