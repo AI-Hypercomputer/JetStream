@@ -23,7 +23,7 @@ class JetstreamMetricsCollector:
   """Wrapper class should be used to assure all metrics have proper tags"""
 
   _id: str = os.getenv("HOSTNAME", shortuuid.uuid())
-  server_start_time: int
+  server_start_time: float
 
   def __new__(cls, server_start_time: float):
     if not hasattr(cls, "instance"):
