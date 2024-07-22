@@ -384,9 +384,9 @@ class Driver:
             self.detokenize_threads,
         )
     )
-    if self.metrics_collector:
-      self.metrics_collector.get_server_startup_latency_metric().set(
-          time.time() - metrics_collector.server_start_time
+    if self._metrics_collector:
+      self._metrics_collector.get_server_startup_latency_metric().set(
+          time.time() - self._metrics_collector.server_start_time
       )
     self.live = True
     self._is_ray_backend = is_ray_backend
