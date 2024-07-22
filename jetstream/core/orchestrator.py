@@ -514,7 +514,7 @@ class Driver:
           padded_tokens=padded_tokens,
           true_length=true_length,
       )
-
+      first_token.copy_to_host_async()
       request.prefill_result = prefill_result
 
       # detokenize first token
