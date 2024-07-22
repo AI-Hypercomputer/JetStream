@@ -641,10 +641,11 @@ def main(args: argparse.Namespace):
     dimensions_json["date"] = current_dt
     dimensions_json["model_id"] = model_id
     dimensions_json["tokenizer_id"] = tokenizer_id
-    dimensions_json = {
-        **dimensions_json,
-        **json.loads(args.additional_metadata_metrics_to_save),
-    }
+    if args.additional_metadata_metrics_to_save is not None:
+      dimensions_json = {
+          **dimensions_json,
+          **json.loads(args.additional_metadata_metrics_to_save),
+      }
     metrics_json["num_prompts"] = args.num_prompts
 
     # Traffic

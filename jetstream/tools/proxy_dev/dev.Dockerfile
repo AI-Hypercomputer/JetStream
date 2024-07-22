@@ -11,6 +11,7 @@ ENV JAX_BACKEND_TARGET=grpc://localhost:38681
 # Copy all files from local workspace into docker container
 COPY  JetStream ./JetStream
 COPY  maxtext ./maxtext
+COPY  inference_mlperf4.1 ./inference_mlperf4.1
 
 RUN pip install ./JetStream
 RUN pip install -r ./maxtext/requirements.txt

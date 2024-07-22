@@ -686,7 +686,7 @@ class Driver:
         decode_state = generate_engine.insert(
             new_request.prefill_result, decode_state, slot=slot
         )
-        delete_pytree(new_request.prefill_result)
+        del new_request.prefill_result
         new_request.generate_timestep_added = generate_timestep
         new_request.complete = np.zeros(
             (generate_engine.samples_per_slot,), dtype=np.bool_
