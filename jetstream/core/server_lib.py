@@ -124,7 +124,7 @@ def run(
     JetStreamServer that wraps the grpc server and orchestrator driver.
   """
 
-  server_start_time = time.Time()
+  server_start_time = time.time()
 
   logging.info("Kicking off gRPC server.")
   engines = config_lib.get_engines(config, devices=devices)
