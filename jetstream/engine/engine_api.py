@@ -187,6 +187,18 @@ class Engine(abc.ABC):
     a [0, n) range of slots and converted internally.
     """
 
+  def free_resource(
+      self,
+      slot: int,  # pylint: disable=unused-argument
+  ) -> Any:
+    """Free cache and other decode resource for the slot.
+
+    This function is needed for advanced attetnion kenel like PageAttetion.
+    After finishing one request, the engine need to free all used page block
+    resource and reuse for coming requests.
+    """
+    return None
+
   @abc.abstractmethod
   def load_params(self, *args, **kwargs) -> Params:
     """Loads parameters.
