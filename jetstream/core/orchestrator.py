@@ -784,6 +784,7 @@ class Driver:
               # Place the slot back on the free queue.
               my_live_requests[slot] = None
               my_slots.put(slot, block=False)  # This should always have space.
+              my_generate_engine.free_resource(slot)
         logging.info(
             "Detokenizing generate step %d took %.2fms",
             generate_timestep_added,

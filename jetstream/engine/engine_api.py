@@ -186,6 +186,18 @@ class Engine(abc.ABC):
     and batch), but at the engine interface level all of these are exposed as
     a [0, n) range of slots and converted internally.
     """
+ 
+  def free_resource(
+      self,
+      slot: int,
+  ) -> Any:
+    """Free cache and other decode resource for the slot.
+
+    This function is needed for advanced attetnion kenel like PageAttetion. After
+    finishing one request, the engine need to free all used page block resource 
+    and reuse for coming requests. 
+    """
+    return None   
 
   @abc.abstractmethod
   def load_params(self, *args, **kwargs) -> Params:
