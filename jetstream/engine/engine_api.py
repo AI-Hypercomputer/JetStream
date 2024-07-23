@@ -189,7 +189,7 @@ class Engine(abc.ABC):
 
   def free_resource(
       self,
-      slot: int, # pylint: disable=unused-argument
+      slot: int,  # pylint: disable=unused-argument
   ) -> Any:
     """Free cache and other decode resource for the slot.
 
