@@ -16,7 +16,7 @@
 
 import os
 import shortuuid
-from prometheus_client import Gauge
+from prometheus_client import Gauge, Histogram
 
 
 class JetstreamMetricsCollector:
@@ -56,6 +56,16 @@ class JetstreamMetricsCollector:
       labelnames=["id"],
   )
 
+  _time_to_first_token = Histogram(
+    name="jetstream_time_to_first_token",
+    documentation="Time to first token for all requests throughout the lifetime of this instance",
+    labelnames=["id"],
+    buckets=[
+                0.001, 0.005, 0.01, 0.02, 0.04, 0.06, 0.08, 0.1, 0.25, 0.5,
+                0.75, 1.0, 2.5, 5.0, 7.5, 10.0
+            ]
+  )
+
   def get_prefill_backlog_metric(self):
     return self._prefill_backlog.labels(id=self._id)
 
@@ -70,3 +80,6 @@ class JetstreamMetricsCollector:
 
   def get_server_startup_latency_metric(self):
     return self._server_startup_latency.labels(id=self._id)
+
+  def get_time_to_first_token(self):
+    return self._time_to_first_token.labels(id=self._id)

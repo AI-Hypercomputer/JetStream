@@ -514,6 +514,10 @@ class Driver:
           padded_tokens=padded_tokens,
           true_length=true_length,
       )
+      if self._metrics_collector:
+        self._metrics_collector.get_time_to_first_token(
+            idx
+        ).observe(time.perf_counter()-request_start_time)
 
       request.prefill_result = prefill_result
 
