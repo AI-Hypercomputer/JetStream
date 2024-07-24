@@ -198,6 +198,7 @@ class Driver:
   # to, it allows us to natively have the index from the min operation, rather
   # than have to call .index()
   _generate_backlogs: dict[int, asyncio.Queue[ActiveRequest]] = {}
+  _decode_states: dict[int, asyncio.Queue[Any]] = {}
   # Stage 4
   # This can be a list because we can pass it as an arg to generate and
   # detokenize threads. It is a list of tokens to be detokenized.
@@ -287,6 +288,10 @@ class Driver:
         )
         for idx, engine in enumerate(self._generate_engines)
     }
+    self._decode_states = {
+        idx: asyncio.Queue(1)
+        for idx in range(len(self._generate_engines))
+    }
     if self._metrics_collector:
       for idx, backlog in self._generate_backlogs.items():
         self._metrics_collector.get_generate_backlog_metric(idx).set_function(
@@ -375,7 +380,8 @@ class Driver:
     # Keep track of what step tokens were generated at.
     generate_timestep = 0
     # State to store things like running kv cache in.
-    decode_state = generate_engine.init_decode_state()
+    # decode_state = self._decode_states[idx]
+    self._decode_states[idx].put_nowait(generate_engine.init_decode_state())
 
     time_of_last_generate = time.time()
     time_of_last_print = time.time()
@@ -391,17 +397,48 @@ class Driver:
         i: None for i in range(generate_engine.max_concurrent_decodes)
     }
     logging.info("---------[Engine %d]Detokenize deps initiated.---------", idx)
+    asyncio.create_task(self._prefill_workflow(idx, prefill_engine, prefill_params, tokenizer, transfer_backlog, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog,  generate_timestep))
+    logging.info("---------[Engine %d]before _generate_workflow.---------", idx)
+    asyncio.create_task(self._generate_workflow(idx, tokenizer, generate_params, generate_engine, my_slots, my_detokenize_backlog,  generate_timestep, time_of_last_generate, time_of_last_print, my_live_requests))
+    logging.info("---------[Engine %d]after _generate_workflow.---------", idx)
+    # while self.live:
+    #   if self._prefill_backlog.empty() and my_slots.full():
+    #     await asyncio.sleep(0.001)
+    #   while not self._prefill_backlog.empty() and not my_slots.empty():
+    #     logging.info("---------[Engine %d]before _prefill_task.---------", idx)
+    #     # await self._prefill_task(idx, prefill_engine, prefill_params, tokenizer)
+    #     # await self._transfer_task(idx, transfer_backlog)
+    #     asyncio.create_task(self._prefill_task(idx, prefill_engine, prefill_params, tokenizer))
+    #     asyncio.create_task(self._transfer_task(idx, transfer_backlog))
+    #     decode_state = await self._insert_task(idx, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog, decode_state,  generate_timestep)
+    #   if not my_slots.full():
+    #     decode_state, generate_timestep, time_of_last_generate, time_of_last_print = await self._generate_task(idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, decode_state, generate_timestep, time_of_last_generate, time_of_last_print)
+    #     asyncio.create_task(self._detokenize_task(tokenizer, my_live_requests, my_slots, my_detokenize_backlog))
+
+  async def _prefill_workflow(self,idx, prefill_engine, prefill_params, tokenizer, transfer_backlog, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog,  generate_timestep):
+    # _decode_state = decode_state
     while self.live:
-      if self._prefill_backlog.empty() and my_slots.full():
-        await asyncio.sleep(0.001)
       while not self._prefill_backlog.empty() and not my_slots.empty():
         logging.info("---------[Engine %d]before _prefill_task.---------", idx)
         await self._prefill_task(idx, prefill_engine, prefill_params, tokenizer)
         await self._transfer_task(idx, transfer_backlog)
-        decode_state = await self._insert_task(idx, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog, decode_state,  generate_timestep)
+        # asyncio.create_task(self._prefill_task(idx, prefill_engine, prefill_params, tokenizer))
+        # asyncio.create_task(self._transfer_task(idx, transfer_backlog))
+        logging.info("---------[Engine %d]before _insert_task.---------", idx)
+        await self._insert_task(idx, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog,  generate_timestep)
+        logging.info("---------[Engine %d]after _insert_task.---------", idx)
+      await asyncio.sleep(0.001)
+
+
+  async def _generate_workflow(self,idx, tokenizer, generate_params, generate_engine, my_slots, my_detokenize_backlog,  generate_timestep, time_of_last_generate, time_of_last_print, my_live_requests):
+    # _decode_state = decode_state
+    while self.live:
       if not my_slots.full():
-        decode_state, generate_timestep, time_of_last_generate, time_of_last_print = await self._generate_task(idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, decode_state, generate_timestep, time_of_last_generate, time_of_last_print)
-        await self._detokenize_task(tokenizer, my_live_requests, my_slots, my_detokenize_backlog)
+        logging.info("---------[Engine %d]before _generate_task.---------", idx)
+        generate_timestep, time_of_last_generate, time_of_last_print = await self._generate_task(idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, generate_timestep, time_of_last_generate, time_of_last_print)
+        logging.info("---------[Engine %d]before _detokenize_task.---------", idx)
+        asyncio.create_task(self._detokenize_task(tokenizer, my_live_requests, my_slots, my_detokenize_backlog))
+      await asyncio.sleep(0.001)
 
 
   async def engine_orchestrator(self):
@@ -702,16 +739,16 @@ class Driver:
     )
 
 
-  async def _transfer_coroutine(self, idx: int):
-    """Transfers the kv cache on an active request to the least full
-    generate backlog."""
-    transfer_backlog = self._transfer_backlogs[idx]
+  # async def _transfer_coroutine(self, idx: int):
+  #   """Transfers the kv cache on an active request to the least full
+  #   generate backlog."""
+  #   transfer_backlog = self._transfer_backlogs[idx]
 
-    while self.live:
-      await self._transfer_task(idx, transfer_backlog)
+  #   while self.live:
+  #     await self._transfer_task(idx, transfer_backlog)
 
 
-  async def _insert_task(self, idx, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog, decode_state,  generate_timestep):
+  async def _insert_task(self, idx, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog, generate_timestep):
     slot = await my_slots.get()
     new_request = await my_generate_backlog.get()
 
@@ -732,9 +769,11 @@ class Driver:
           new_request.padded_token_length
       )
 
+    decode_state = await self._decode_states[idx].get()
     decode_state = generate_engine.insert(
         new_request.prefill_result, decode_state, slot=slot
     )
+    await self._decode_states[idx].put(decode_state)
     del new_request.prefill_result
     new_request.generate_timestep_added = generate_timestep
     new_request.complete = np.zeros(
@@ -742,29 +781,29 @@ class Driver:
     )
     # Respond to detokenization backpressure.
     await my_detokenize_backlog.put((slot, new_request))
-    return decode_state
 
-  async def _insert_coroutine(self, idx: int):
-    """Step token generation and insert prefills from backlog."""
-    logging.info("---------Spinning up generate thread %d.---------", idx)
-    generate_engine = self._generate_engines[idx]
-    my_slots = self._generate_slots[idx]
-    my_generate_backlog = self._generate_backlogs[idx]
-    my_detokenize_backlog = self._detokenize_backlogs[idx]
 
-    # Keep track of what step tokens were generated at.
-    generate_timestep = 0
-    # State to store things like running kv cache in.
-    decode_state = generate_engine.init_decode_state()
+  # async def _insert_coroutine(self, idx: int):
+  #   """Step token generation and insert prefills from backlog."""
+  #   logging.info("---------Spinning up generate thread %d.---------", idx)
+  #   generate_engine = self._generate_engines[idx]
+  #   my_slots = self._generate_slots[idx]
+  #   my_generate_backlog = self._generate_backlogs[idx]
+  #   my_detokenize_backlog = self._detokenize_backlogs[idx]
 
-    generate_params = self._generate_params[idx]
-    logging.info("---------Generate params %d loaded.---------", idx)
-    time_of_last_generate = time.time()
-    time_of_last_print = time.time()
-    while self.live:
-      decode_state = await self._insert_task(idx, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog, decode_state, generate_timestep)
+  #   # Keep track of what step tokens were generated at.
+  #   generate_timestep = 0
+  #   # State to store things like running kv cache in.
+  #   decode_state = generate_engine.init_decode_state()
 
-  async def _generate_task(self, idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, decode_state, generate_timestep, time_of_last_generate, time_of_last_print):
+  #   generate_params = self._generate_params[idx]
+  #   logging.info("---------Generate params %d loaded.---------", idx)
+  #   time_of_last_generate = time.time()
+  #   time_of_last_print = time.time()
+  #   while self.live:
+  #     decode_state = await self._insert_task(idx, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog, decode_state, generate_timestep)
+
+  async def _generate_task(self, idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, generate_timestep, time_of_last_generate, time_of_last_print):
     my_slots_size = my_slots.qsize()
     if (time.time() - time_of_last_print) > 1:
       logging.info(
@@ -799,9 +838,11 @@ class Driver:
     ), "At this point we must have some requests inserted into the slots."
 
     # Now we actually take a generate step on requests in the slots.
+    decode_state = await self._decode_states[idx].get()
     decode_state, sampled_tokens = generate_engine.generate(
         generate_params, decode_state
     )
+    await self._decode_states[idx].put(decode_state)
     sampled_tokens.copy_to_host_async()
     # Respond to detokenization backpressure.
     await my_detokenize_backlog.put((generate_timestep, sampled_tokens))
@@ -815,28 +856,28 @@ class Driver:
         (time.time() - time_of_last_generate) * 10**3,
     )
     time_of_last_generate = time.time()
-    return decode_state, generate_timestep, time_of_last_generate, time_of_last_print
+    return generate_timestep, time_of_last_generate, time_of_last_print
 
-  async def _generate_coroutine(self, idx: int):
-    """Step token generation and insert prefills from backlog."""
-    logging.info("---------Spinning up generate thread %d.---------", idx)
-    generate_engine = self._generate_engines[idx]
-    my_slots = self._generate_slots[idx]
-    my_generate_backlog = self._generate_backlogs[idx]
-    my_detokenize_backlog = self._detokenize_backlogs[idx]
+  # async def _generate_coroutine(self, idx: int):
+  #   """Step token generation and insert prefills from backlog."""
+  #   logging.info("---------Spinning up generate thread %d.---------", idx)
+  #   generate_engine = self._generate_engines[idx]
+  #   my_slots = self._generate_slots[idx]
+  #   my_generate_backlog = self._generate_backlogs[idx]
+  #   my_detokenize_backlog = self._detokenize_backlogs[idx]
 
-    # Keep track of what step tokens were generated at.
-    generate_timestep = 0
-    # State to store things like running kv cache in.
-    decode_state = generate_engine.init_decode_state()
+  #   # Keep track of what step tokens were generated at.
+  #   generate_timestep = 0
+  #   # State to store things like running kv cache in.
+  #   decode_state = generate_engine.init_decode_state()
 
-    generate_params = self._generate_params[idx]
-    logging.info("---------Generate params %d loaded.---------", idx)
-    time_of_last_generate = time.time()
-    time_of_last_print = time.time()
+  #   generate_params = self._generate_params[idx]
+  #   logging.info("---------Generate params %d loaded.---------", idx)
+  #   time_of_last_generate = time.time()
+  #   time_of_last_print = time.time()
 
-    while self.live:
-      decode_state, generate_timestep, time_of_last_generate, time_of_last_print = await self._generate_task(idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, decode_state, generate_timestep, time_of_last_generate, time_of_last_print)
+  #   while self.live:
+  #     decode_state, generate_timestep, time_of_last_generate, time_of_last_print = await self._generate_task(idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, decode_state, generate_timestep, time_of_last_generate, time_of_last_print)
 
   async def _detokenize_task(self, tokenizer, my_live_requests, my_slots, my_detokenize_backlog):
     data = await my_detokenize_backlog.get()
@@ -880,23 +921,23 @@ class Driver:
       my_live_requests[slot] = active_request
 
 
-  async def _detokenize_coroutine(self, idx: int):
-    """Detokenize sampled tokens and returns them to the user."""
-    # One of these per generate engine.
-    # For all filled my_slots, pop the sampled token onto the relevant
-    # requests return channel. If it done, place it back onto free slots.
-    my_detokenize_backlog = self._detokenize_backlogs[idx]
-    my_generate_engine = self._generate_engines[idx]
-    my_slots = self._generate_slots[idx]
+  # async def _detokenize_coroutine(self, idx: int):
+  #   """Detokenize sampled tokens and returns them to the user."""
+  #   # One of these per generate engine.
+  #   # For all filled my_slots, pop the sampled token onto the relevant
+  #   # requests return channel. If it done, place it back onto free slots.
+  #   my_detokenize_backlog = self._detokenize_backlogs[idx]
+  #   my_generate_engine = self._generate_engines[idx]
+  #   my_slots = self._generate_slots[idx]
 
-    metadata = my_generate_engine.get_tokenizer()
-    tokenizer = my_generate_engine.build_tokenizer(metadata)
-    my_live_requests = {
-        i: None for i in range(my_generate_engine.max_concurrent_decodes)
-    }
+  #   metadata = my_generate_engine.get_tokenizer()
+  #   tokenizer = my_generate_engine.build_tokenizer(metadata)
+  #   my_live_requests = {
+  #       i: None for i in range(my_generate_engine.max_concurrent_decodes)
+  #   }
 
-    while self.live:
-      await self._detokenize_task(tokenizer, my_live_requests, my_slots, my_detokenize_backlog)
+  #   while self.live:
+  #     await self._detokenize_task(tokenizer, my_live_requests, my_slots, my_detokenize_backlog)
 
 
 class AsyncLLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
