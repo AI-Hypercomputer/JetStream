@@ -23,6 +23,7 @@ import logging
 import os
 import signal
 import threading
+import time
 import traceback
 from typing import Any, Type
 
@@ -67,34 +68,26 @@ class JetStreamAsyncServer:
     finally:
       self.stop()
 
-async def run(
-    port: int,
+
+def create_driver(
     config: Type[config_lib.ServerConfig],
     devices: Any,
-    credentials: Any = grpc.insecure_server_credentials(),
     jax_padding: bool = True,
-    metrics_server_config: config_lib.MetricsServerConfig | None = None,
-    enable_jax_profiler: bool = False,
-    jax_profiler_port: int = 9999,
+    metrics_collector: JetstreamMetricsCollector | None = None,
     enable_model_warmup: bool = False,
-) -> JetStreamAsyncServer:
-  """Runs a server with a specified config.
+):
+  """Creates a driver with a specified config.
 
   Args:
-    port: Port on which the server will be made available.
     config: A ServerConfig to config engine, model, device slices, etc.
     devices: Device objects, will be used to get engine with proper slicing.
-    credentials: Should use grpc credentials by default.
     jax_padding: The flag to enable JAX padding during tokenization.
-    metrics_server_config: The config to enable Promethus metric server.
-    enable_jax_profiler: The flag to enable JAX profiler server.
-    jax_profiler_port: The port JAX profiler server (default to 9999).
+    metrics_collector: The JetStream Promethus metric collector.
     enable_model_warmup: The flag to enable model server warmup with AOT.
 
   Returns:
-    JetStreamServer that wraps the grpc server and orchestrator driver.
+    An orchestrator driver.
   """
-  logging.info("Kicking off gRPC server.")
   engines = config_lib.get_engines(config, devices=devices)
   prefill_params = [pe.load_params() for pe in engines.prefill_engines]
   generate_params = [ge.load_params() for ge in engines.generate_engines]
@@ -103,19 +96,6 @@ async def run(
   interleaved_mode = (
       len(config.prefill_slices) + len(config.generate_slices) == 0
   )
-
-  # Setup Prometheus server
-  metrics_collector: JetstreamMetricsCollector = None
-  if metrics_server_config and metrics_server_config.port:
-    logging.info(
-        "Starting Prometheus server on port %d", metrics_server_config.port
-    )
-    start_http_server(metrics_server_config.port)
-    metrics_collector = JetstreamMetricsCollector()
-  else:
-    logging.info(
-        "Not starting Prometheus server: --prometheus_port flag not set"
-    )
 
   prefill_engines = engines.prefill_engines + engines.interleaved_engines
   generate_engines = engines.generate_engines + engines.interleaved_engines
@@ -150,8 +130,7 @@ async def run(
       traceback.print_exc()
       os.kill(os.getpid(), signal.SIGKILL)
 
-  logging.info("======Before driver init")
-  driver = async_orchestrator.Driver(
+  return async_orchestrator.Driver(
       prefill_engines=prefill_engines,
       generate_engines=generate_engines,
       prefill_params=prefill_params,
@@ -161,10 +140,60 @@ async def run(
       metrics_collector=metrics_collector,
       is_ray_backend=config.is_ray_backend,
   )
+
+
+async def run(
+    port: int,
+    config: Type[config_lib.ServerConfig],
+    devices: Any,
+    credentials: Any = grpc.insecure_server_credentials(),
+    jax_padding: bool = True,
+    metrics_server_config: config_lib.MetricsServerConfig | None = None,
+    enable_jax_profiler: bool = False,
+    jax_profiler_port: int = 9999,
+    enable_model_warmup: bool = False,
+) -> JetStreamAsyncServer:
+  """Runs a server with a specified config.
+
+  Args:
+    port: Port on which the server will be made available.
+    config: A ServerConfig to config engine, model, device slices, etc.
+    devices: Device objects, will be used to get engine with proper slicing.
+    credentials: Should use grpc credentials by default.
+    jax_padding: The flag to enable JAX padding during tokenization.
+    metrics_server_config: The config to enable Promethus metric server.
+    enable_jax_profiler: The flag to enable JAX profiler server.
+    jax_profiler_port: The port JAX profiler server (default to 9999).
+    enable_model_warmup: The flag to enable model server warmup with AOT.
+
+  Returns:
+    JetStreamAsyncServer that wraps the grpc server and orchestrator driver.
+  """
+  server_start_time = time.time()
+  logging.info("Kicking off gRPC server.")
+  # Setup Prometheus server
+  metrics_collector: JetstreamMetricsCollector = None
+  if metrics_server_config and metrics_server_config.port:
+    logging.info(
+        "Starting Prometheus server on port %d", metrics_server_config.port
+    )
+    start_http_server(metrics_server_config.port)
+    metrics_collector = JetstreamMetricsCollector()
+  else:
+    logging.info(
+        "Not starting Prometheus server: --prometheus_port flag not set"
+    )
+
+  driver = await asyncio.to_thread(create_driver, config, devices, jax_padding, metrics_collector, enable_model_warmup)
   logging.info("======After driver init")
   jetstream_server = JetStreamAsyncServer(driver, port, credentials)
   await jetstream_server.start()
   logging.info("Starting server on port %d", port)
+
+  if metrics_collector:
+    metrics_collector.get_server_startup_latency_metric().set(
+        time.time() - server_start_time
+    )
 
   # Setup Jax Profiler
   if enable_jax_profiler:
