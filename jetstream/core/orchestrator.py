@@ -515,9 +515,9 @@ class Driver:
           true_length=true_length,
       )
       if self._metrics_collector:
-        self._metrics_collector.get_time_to_first_token(
-            idx
-        ).observe(time.perf_counter()-request_start_time)
+        self._metrics_collector.get_time_to_first_token().observe(
+            time.perf_counter() - request_start_time
+        )
 
       request.prefill_result = prefill_result
 
