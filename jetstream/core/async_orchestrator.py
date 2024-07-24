@@ -355,34 +355,96 @@ class Driver:
     # for t in self._all_threads:
     #   t.start()
 
+  async def _engine_coroutine(self, idx):
+    logging.info("---------[Engine %d]Spinning up engine coroutine.---------", idx)
+    prefill_engine = self._prefill_engines[idx]
+    prefill_params = self._prefill_params[idx]
+    metadata = prefill_engine.get_tokenizer()
+    tokenizer = prefill_engine.build_tokenizer(metadata)
+    logging.info("---------[Engine %d]Prefill deps initiated and params loaded.---------", idx)
+
+    transfer_backlog = self._transfer_backlogs[idx]
+    logging.info("---------[Engine %d]Transfer deps initiated.---------", idx)
+
+    generate_engine = self._generate_engines[idx]
+    generate_params = self._generate_params[idx]
+    my_slots = self._generate_slots[idx]
+    my_generate_backlog = self._generate_backlogs[idx]
+    my_detokenize_backlog = self._detokenize_backlogs[idx]
+
+    # Keep track of what step tokens were generated at.
+    generate_timestep = 0
+    # State to store things like running kv cache in.
+    decode_state = generate_engine.init_decode_state()
+
+    time_of_last_generate = time.time()
+    time_of_last_print = time.time()
+    logging.info("---------[Engine %d]Generate deps initiated and params loaded.---------", idx)
+
+    # my_detokenize_backlog = self._detokenize_backlogs[idx]
+    # my_generate_engine = self._generate_engines[idx]
+    # my_slots = self._generate_slots[idx]
+
+    # metadata = my_generate_engine.get_tokenizer()
+    # tokenizer = my_generate_engine.build_tokenizer(metadata)
+    my_live_requests = {
+        i: None for i in range(generate_engine.max_concurrent_decodes)
+    }
+    logging.info("---------[Engine %d]Detokenize deps initiated.---------", idx)
+    while self.live:
+      if self._prefill_backlog.empty() and my_slots.full():
+        await asyncio.sleep(0.001)
+      while not self._prefill_backlog.empty() and not my_slots.empty():
+        logging.info("---------[Engine %d]before _prefill_task.---------", idx)
+        await self._prefill_task(idx, prefill_engine, prefill_params, tokenizer)
+        await self._transfer_task(idx, transfer_backlog)
+        decode_state = await self._insert_task(idx, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog, decode_state,  generate_timestep)
+      if not my_slots.full():
+        decode_state, generate_timestep, time_of_last_generate, time_of_last_print = await self._generate_task(idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, decode_state, generate_timestep, time_of_last_generate, time_of_last_print)
+        await self._detokenize_task(tokenizer, my_live_requests, my_slots, my_detokenize_backlog)
+
+
   async def engine_orchestrator(self):
+    # When prefill backlog has requests and generate backlog is not full
+    # interleave mode strategy: saturate decode slots ASAP, prioritize prefill, transfer, insert
+    # prefill, copy token to host, return token - add to transfer backlog
+    # tranfer - add to generate backlog
+    # insert - update decode state
+    # generate when decode state update? - add to detokenize backlog
+    # detokenize
+    # Create engine coroutine
+    self._engine_coroutines = [
+        asyncio.create_task(self._engine_coroutine(idx))
+        for idx in range(len(self._prefill_engines))
+    ]
+    await asyncio.gather(*self._engine_coroutines)
     # Create all coroutines
-    self._prefill_threads = [
-        asyncio.create_task(self._prefill_coroutine(idx))
-        for idx in range(len(self._prefill_engines))
-    ]
-    self._transfer_threads = [
-        asyncio.create_task(self._transfer_coroutine(idx))
-        for idx in range(len(self._prefill_engines))
-    ]
-    self._generate_threads = [
-        asyncio.create_task(self._generate_coroutine(idx))
-        for idx in range(len(self._generate_engines))
-    ]
-    self.detokenize_threads = [
-        asyncio.create_task(self._detokenize_coroutine(idx)) 
-        for idx in range(len(self._generate_engines))
-    ]
-    self._all_threads = list(
-        itertools.chain(
-            self._prefill_threads,
-            self._transfer_threads,
-            self._generate_threads,
-            self.detokenize_threads,
-        )
-    )
-    logging.info("---------before gather.---------")
-    await asyncio.gather(*self._all_threads)
+    # self._prefill_threads = [
+    #     asyncio.create_task(self._prefill_coroutine(idx))
+    #     for idx in range(len(self._prefill_engines))
+    # ]
+    # self._transfer_threads = [
+    #     asyncio.create_task(self._transfer_coroutine(idx))
+    #     for idx in range(len(self._prefill_engines))
+    # ]
+    # self._generate_threads = [
+    #     asyncio.create_task(self._generate_coroutine(idx))
+    #     for idx in range(len(self._generate_engines))
+    # ]
+    # self.detokenize_threads = [
+    #     asyncio.create_task(self._detokenize_coroutine(idx)) 
+    #     for idx in range(len(self._generate_engines))
+    # ]
+    # self._all_threads = list(
+    #     itertools.chain(
+    #         self._prefill_threads,
+    #         self._transfer_threads,
+    #         self._generate_threads,
+    #         self.detokenize_threads,
+    #     )
+    # )
+    # logging.info("---------before gather.---------")
+    # await asyncio.gather(*self._all_threads)
     # # Apply Round-robin load balancing across prefill and generate engines.
     # prefill_idx = 0
     # transfer_idx = 0
@@ -648,14 +710,69 @@ class Driver:
     while self.live:
       await self._transfer_task(idx, transfer_backlog)
 
-  async def _generate_task(self, idx, my_slots, generate_engine, generate_params, my_generate_backlog, my_detokenize_backlog, decode_state, generate_timestep, time_of_last_generate, time_of_last_print):
+
+  async def _insert_task(self, idx, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog, decode_state,  generate_timestep):
+    slot = await my_slots.get()
+    new_request = await my_generate_backlog.get()
+
+    # Invalid request, put back the slot and exit.
+    if new_request is None:
+      await my_slots.put(slot)
+      return
+
+    logging.info(
+        "Generate slice %d filling slot %d at step %d.",
+        idx,
+        slot,
+        generate_timestep,
+    )
+
+    if isinstance(generate_engine, engine_api.JetStreamEngine):
+      generate_engine.set_padded_token_length(
+          new_request.padded_token_length
+      )
+
+    decode_state = generate_engine.insert(
+        new_request.prefill_result, decode_state, slot=slot
+    )
+    del new_request.prefill_result
+    new_request.generate_timestep_added = generate_timestep
+    new_request.complete = np.zeros(
+        (generate_engine.samples_per_slot,), dtype=np.bool_
+    )
+    # Respond to detokenization backpressure.
+    await my_detokenize_backlog.put((slot, new_request))
+    return decode_state
+
+  async def _insert_coroutine(self, idx: int):
+    """Step token generation and insert prefills from backlog."""
+    logging.info("---------Spinning up generate thread %d.---------", idx)
+    generate_engine = self._generate_engines[idx]
+    my_slots = self._generate_slots[idx]
+    my_generate_backlog = self._generate_backlogs[idx]
+    my_detokenize_backlog = self._detokenize_backlogs[idx]
+
+    # Keep track of what step tokens were generated at.
+    generate_timestep = 0
+    # State to store things like running kv cache in.
+    decode_state = generate_engine.init_decode_state()
+
+    generate_params = self._generate_params[idx]
+    logging.info("---------Generate params %d loaded.---------", idx)
+    time_of_last_generate = time.time()
+    time_of_last_print = time.time()
+    while self.live:
+      decode_state = await self._insert_task(idx, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog, decode_state, generate_timestep)
+
+  async def _generate_task(self, idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, decode_state, generate_timestep, time_of_last_generate, time_of_last_print):
+    my_slots_size = my_slots.qsize()
     if (time.time() - time_of_last_print) > 1:
       logging.info(
           "Generate thread making a decision with:"
           " prefill_backlog=%d"
           " generate_free_slots=%d",
           self._prefill_backlog.qsize(),
-          my_slots.qsize(),
+          my_slots_size,
       )
       time_of_last_print = time.time()
 
@@ -665,7 +782,7 @@ class Driver:
       self._metrics_collector.get_slots_used_percentage_metric(
           idx
       ).set_function(
-          lambda: float(1 - (my_slots.qsize() / max_concurrent_decodes))
+          lambda: float(1 - (my_slots_size / max_concurrent_decodes))
       )
     # logging.info(
     #       "=====before while true"
@@ -673,80 +790,12 @@ class Driver:
     # Check if there are any free my_slots. We don't want to block here since
     # we can still generate if we can't insert. We do this in a while loop to
     # insert as many sequences as possible.
-    while True:
-      my_slots_size = my_slots.qsize()
-
-      try:
-        slot = my_slots.get_nowait()
-      #   logging.info(
-      #     "=====after get_nowait"
-      # )
-        # Found a slot, now see if we can fill it.
-      except asyncio.QueueEmpty:
-        # Exit this while loop as we have no free slots to insert into.
-        break
-
-      # We block when the decode slots are all free since we need to get a
-      # prefilled request to insert. We add timeout for the block to handle
-      # the case when the prefill backlog is cancelled and we end up with no
-      # more useful prefill work to do.
-      block = my_slots_size == max_concurrent_decodes
-      if self._interleaved_mode:
-        # For interleaved mode, we also blocks when prefill backlog
-        # is not empty or there are transfer work to do.
-        block |= not self._prefill_backlog.empty()
-        block |= not self._transfer_backlogs[idx].empty()
-      try:
-      #   logging.info(
-      #     "=====before my_generate_backlog get"
-      # )
-        new_request = my_generate_backlog.get_nowait()
-        # Got free slot and new request, use them.
-      except asyncio.QueueEmpty:
-        # No new requests, we can't insert, so put back slot.
-        await my_slots.put(slot)
-      #   logging.info(
-      #     "=====after my_generate_backlog QueueEmpty"
-      # )
-        # If no request was inserted to generate, await, then retry the loop.
-        # Otherwise, we can exit and proceed to generation.
-        if my_slots.qsize() == max_concurrent_decodes:
-          await asyncio.sleep(0.5)
-          # logging.info("=====after sleep")
-          continue
-        else:
-          break
-
-      # Signal to kill the thread.
-      if new_request is None:
-        return
-
-      logging.info(
-          "Generate slice %d filling slot %d at step %d.",
-          idx,
-          slot,
-          generate_timestep,
-      )
-
-      if isinstance(generate_engine, engine_api.JetStreamEngine):
-        generate_engine.set_padded_token_length(
-            new_request.padded_token_length
-        )
-
-      decode_state = generate_engine.insert(
-          new_request.prefill_result, decode_state, slot=slot
-      )
-      del new_request.prefill_result
-      new_request.generate_timestep_added = generate_timestep
-      new_request.complete = np.zeros(
-          (generate_engine.samples_per_slot,), dtype=np.bool_
-      )
-      # Respond to detokenization backpressure.
-      await my_detokenize_backlog.put((slot, new_request))
-
+    # while True:
+    #   await self._insert_task()
+    
     # At this point, we know that we have at least some slots filled.
     assert (
-        my_slots.qsize() < max_concurrent_decodes
+        my_slots_size < max_concurrent_decodes
     ), "At this point we must have some requests inserted into the slots."
 
     # Now we actually take a generate step on requests in the slots.
@@ -787,7 +836,7 @@ class Driver:
     time_of_last_print = time.time()
 
     while self.live:
-      decode_state, generate_timestep, time_of_last_generate, time_of_last_print = await self._generate_task(idx, my_slots, generate_engine, generate_params, my_generate_backlog, my_detokenize_backlog, decode_state, generate_timestep, time_of_last_generate, time_of_last_print)
+      decode_state, generate_timestep, time_of_last_generate, time_of_last_print = await self._generate_task(idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, decode_state, generate_timestep, time_of_last_generate, time_of_last_print)
 
   async def _detokenize_task(self, tokenizer, my_live_requests, my_slots, my_detokenize_backlog):
     data = await my_detokenize_backlog.get()
