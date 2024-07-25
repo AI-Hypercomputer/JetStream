@@ -595,9 +595,9 @@ class Driver:
     while self.live:
       # The transfer thread can just sleep until it has work to do.
       new_request = transfer_backlog.get(block=True)
-      new_request.metadata.transfer_start_time = time.perf_counter()
       if new_request is None:
         break
+      new_request.metadata.transfer_start_time = time.perf_counter()
       target_idx = min(
           self._generate_backlogs.items(), key=lambda q: q[1].qsize()
       )[0]
