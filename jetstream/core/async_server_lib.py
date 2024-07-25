@@ -240,8 +240,8 @@ async def run(
         "Not starting Prometheus server: --prometheus_port flag not set"
     )
 
-  driver = create_driver(config, devices, jax_padding, metrics_collector, enable_model_warmup)
-  # driver = await asyncio.to_thread(create_driver, config, devices, jax_padding, metrics_collector, enable_model_warmup)
+  # driver = create_driver(config, devices, jax_padding, metrics_collector, enable_model_warmup)
+  driver = await asyncio.to_thread(create_driver, config, devices, jax_padding, metrics_collector, enable_model_warmup)
   logging.info("======After driver init")
   jetstream_server = JetStreamAsyncServer(driver, threads, port, credentials)
   # jetstream_server.start()
