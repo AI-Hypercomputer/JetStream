@@ -55,7 +55,7 @@ class JetStreamAsyncServer:
     self._grpc_server.add_secure_port(f"{_HOST}:{port}", credentials)
 
   async def start(self) -> None:
-    asyncio.create_task(self._driver.engine_orchestrator())
+    asyncio.to_thread(self._driver.engine_orchestrator())
     await self._grpc_server.start()
 
   async def stop(self) -> None:
