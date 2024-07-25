@@ -504,10 +504,10 @@ class Driver:
       my_transfer_backlog = self._transfer_backlogs[idx]
       # The prefill thread can just sleep until it has work to do.
       request = self._prefill_backlog.get(block=True)
-      request.metadata.prefill_start_time = time.perf_counter()
 
       if request is None:
         break
+      request.metadata.prefill_start_time = time.perf_counter()
       is_bos = True
       logging.info(
           "Prefilling on prefill engine %d : prefill queue size, %d,"
