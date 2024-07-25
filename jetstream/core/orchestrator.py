@@ -685,6 +685,8 @@ class Driver:
           block |= not self._transfer_backlogs[idx].empty()
         try:
           new_request = my_generate_backlog.get(block=block, timeout=1.0)
+          if new_request is None:
+              break
           new_request.metadata.generate_start_time = time.perf_counter()
           if self._metrics_collector:
             prefillQueueTime = (
