@@ -577,10 +577,10 @@ class Driver:
     )
     return total_max_concurrent_decodes
 
-  async def place_request_on_prefill_queue(self, request: ActiveRequest):
+  def place_request_on_prefill_queue(self, request: ActiveRequest):
     """Used to place new requests for prefilling and generation."""
     # Don't block so we can fail and shed load when the queue is full.
-    await self._prefill_backlog.put(request)
+    self._prefill_backlog.put_nowait(request)
 
   def _process_prefill_content(
       self,
@@ -1074,7 +1074,7 @@ class AsyncLLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     # The first stage is being prefilled, all other stages are handled
     # inside the driver (transfer, generate*N, detokenize).
     try:
-      await self._driver.place_request_on_prefill_queue(active_request)
+      self._driver.place_request_on_prefill_queue(active_request)
     except asyncio.QueueFull:
       # Safely abort the gRPC server thread with a retriable error.
       await _abort_or_raise(
