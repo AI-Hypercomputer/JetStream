@@ -613,6 +613,7 @@ class Driver:
         # Transfer the info to the relevant generate slice.
         self._transfer_prefill_result(new_request, target_idx)
       # Place the request on the correct generate backlog and block if full.
+      new_request.metadata.transfer_end_time = time.perf_counter()
       self._generate_backlogs[target_idx].put(new_request, block=True)
       logging.info(
           "Successfully transferred prefill "
@@ -686,7 +687,7 @@ class Driver:
         try:
           new_request = my_generate_backlog.get(block=block, timeout=1.0)
           if new_request is None:
-              break
+            break
           new_request.metadata.generate_start_time = time.perf_counter()
           if self._metrics_collector:
             prefillQueueTime = (
