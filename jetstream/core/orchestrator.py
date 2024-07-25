@@ -124,14 +124,14 @@ class ActiveRequestMetadata:
 
   start_time: float
 
-  prefill_start_time: Optional[float]
-  prefill_end_time: Optional[float]
+  prefill_start_time: Optional[float] = None
+  prefill_end_time: Optional[float] = None
 
-  transfer_start_time: Optional[float]
-  transfer_end_time: Optional[float]
+  transfer_start_time: Optional[float] = None
+  transfer_end_time: Optional[float] = None
 
-  generate_start_time: Optional[float]
-  generate_end_time: Optional[float]
+  generate_start_time: Optional[float] = None
+  generate_end_time: Optional[float] = None
 
 
 @dataclasses.dataclass
