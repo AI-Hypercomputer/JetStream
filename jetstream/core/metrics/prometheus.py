@@ -141,4 +141,4 @@ class JetstreamMetricsCollector:
     return self._time_per_output_token.labels(id=self._id)
 
   def get_time_per_prefill_token(self):
-    return self._time_per_output_token.labels(id=self._id)
+    return self._time_per_prefill_token.labels(id=self._id)
