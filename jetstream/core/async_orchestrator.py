@@ -454,38 +454,43 @@ class Driver:
     # generate when decode state update? - add to detokenize backlog
     # detokenize
     # Create engine coroutine
-    self._engine_coroutines = [
-        asyncio.create_task(self._engine_coroutine(idx))
+    # self._engine_coroutines = [
+    #     asyncio.create_task(self._engine_coroutine(idx))
+    #     for idx in range(len(self._prefill_engines))
+    # ]
+    # await asyncio.gather(*self._engine_coroutines)
+    # Create all coroutines
+    self._prefill_threads = [
+        asyncio.create_task(self._prefill_coroutine(idx))
         for idx in range(len(self._prefill_engines))
     ]
-    await asyncio.gather(*self._engine_coroutines)
-    # Create all coroutines
-    # self._prefill_threads = [
-    #     asyncio.create_task(self._prefill_coroutine(idx))
-    #     for idx in range(len(self._prefill_engines))
-    # ]
-    # self._transfer_threads = [
-    #     asyncio.create_task(self._transfer_coroutine(idx))
-    #     for idx in range(len(self._prefill_engines))
-    # ]
-    # self._generate_threads = [
-    #     asyncio.create_task(self._generate_coroutine(idx))
-    #     for idx in range(len(self._generate_engines))
-    # ]
-    # self.detokenize_threads = [
-    #     asyncio.create_task(self._detokenize_coroutine(idx)) 
-    #     for idx in range(len(self._generate_engines))
-    # ]
-    # self._all_threads = list(
-    #     itertools.chain(
-    #         self._prefill_threads,
-    #         self._transfer_threads,
-    #         self._generate_threads,
-    #         self.detokenize_threads,
-    #     )
-    # )
-    # logging.info("---------before gather.---------")
-    # await asyncio.gather(*self._all_threads)
+    self._transfer_threads = [
+        asyncio.create_task(self._transfer_coroutine(idx))
+        for idx in range(len(self._prefill_engines))
+    ]
+    self._insert_threads = [
+        asyncio.create_task(self._insert_coroutine(idx))
+        for idx in range(len(self._generate_engines))
+    ]
+    self._generate_threads = [
+        asyncio.create_task(self._generate_coroutine(idx))
+        for idx in range(len(self._generate_engines))
+    ]
+    self.detokenize_threads = [
+        asyncio.create_task(self._detokenize_coroutine(idx)) 
+        for idx in range(len(self._generate_engines))
+    ]
+    self._all_threads = list(
+        itertools.chain(
+            self._prefill_threads,
+            self._transfer_threads,
+            self._insert_threads,
+            self._generate_threads,
+            self.detokenize_threads,
+        )
+    )
+    logging.info("---------before gather.---------")
+    await asyncio.gather(*self._all_threads)
     # # Apply Round-robin load balancing across prefill and generate engines.
     # prefill_idx = 0
     # transfer_idx = 0
@@ -614,7 +619,7 @@ class Driver:
       return
     is_bos = True
     logging.info(
-        "Prefilling on prefill engine %d : prefill queue size, %d,"
+        "Prefilling on prefill engine %d : prefill_backlog=%d,"
         " is_bos: %s",
         idx,
         self._prefill_backlog.qsize(),
@@ -743,18 +748,27 @@ class Driver:
     )
 
 
-  # async def _transfer_coroutine(self, idx: int):
-  #   """Transfers the kv cache on an active request to the least full
-  #   generate backlog."""
-  #   transfer_backlog = self._transfer_backlogs[idx]
+  async def _transfer_coroutine(self, idx: int):
+    """Transfers the kv cache on an active request to the least full
+    generate backlog."""
+    transfer_backlog = self._transfer_backlogs[idx]
 
-  #   while self.live:
-  #     await self._transfer_task(idx, transfer_backlog)
+    while self.live:
+      await self._transfer_task(idx, transfer_backlog)
 
 
   async def _insert_task(self, idx, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog, generate_timestep):
-    slot = await my_slots.get()
+    logging.info(
+          "Insert task making a decision with:"
+          " prefill_backlog=%d"
+          " detokenize_backlog=%d"
+          " generate_free_slots=%d",
+          self._prefill_backlog.qsize(),
+          my_detokenize_backlog.qsize(),
+          my_slots.qsize(),
+      )
     new_request = await my_generate_backlog.get()
+    slot = await my_slots.get()
 
     # Invalid request, put back the slot and exit.
     if new_request is None:
@@ -787,34 +801,32 @@ class Driver:
     await my_detokenize_backlog.put((slot, new_request))
 
 
-  # async def _insert_coroutine(self, idx: int):
-  #   """Step token generation and insert prefills from backlog."""
-  #   logging.info("---------Spinning up generate thread %d.---------", idx)
-  #   generate_engine = self._generate_engines[idx]
-  #   my_slots = self._generate_slots[idx]
-  #   my_generate_backlog = self._generate_backlogs[idx]
-  #   my_detokenize_backlog = self._detokenize_backlogs[idx]
+  async def _insert_coroutine(self, idx: int):
+    """Step token generation and insert prefills from backlog."""
+    logging.info("---------Spinning up insert thread %d.---------", idx)
+    generate_engine = self._generate_engines[idx]
+    my_slots = self._generate_slots[idx]
+    my_generate_backlog = self._generate_backlogs[idx]
+    my_detokenize_backlog = self._detokenize_backlogs[idx]
 
-  #   # Keep track of what step tokens were generated at.
-  #   generate_timestep = 0
-  #   # State to store things like running kv cache in.
-  #   decode_state = generate_engine.init_decode_state()
-
-  #   generate_params = self._generate_params[idx]
-  #   logging.info("---------Generate params %d loaded.---------", idx)
-  #   time_of_last_generate = time.time()
-  #   time_of_last_print = time.time()
-  #   while self.live:
-  #     decode_state = await self._insert_task(idx, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog, decode_state, generate_timestep)
+    # Keep track of what step tokens were generated at.
+    generate_timestep = 0
+    # State to store things like running kv cache in.
+    decode_state = generate_engine.init_decode_state()
+    await self._decode_states[idx].put(decode_state)
+    while self.live:
+      await self._insert_task(idx, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog, generate_timestep)
 
   async def _generate_task(self, idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, generate_timestep, time_of_last_generate, time_of_last_print):
     my_slots_size = my_slots.qsize()
     if (time.time() - time_of_last_print) > 1:
       logging.info(
-          "Generate thread making a decision with:"
+          "Generate task making a decision with:"
           " prefill_backlog=%d"
+          " detokenize_backlog=%d"
           " generate_free_slots=%d",
           self._prefill_backlog.qsize(),
+          my_detokenize_backlog.qsize(),
           my_slots_size,
       )
       time_of_last_print = time.time()
@@ -862,28 +874,41 @@ class Driver:
     time_of_last_generate = time.time()
     return generate_timestep, time_of_last_generate, time_of_last_print
 
-  # async def _generate_coroutine(self, idx: int):
-  #   """Step token generation and insert prefills from backlog."""
-  #   logging.info("---------Spinning up generate thread %d.---------", idx)
-  #   generate_engine = self._generate_engines[idx]
-  #   my_slots = self._generate_slots[idx]
-  #   my_generate_backlog = self._generate_backlogs[idx]
-  #   my_detokenize_backlog = self._detokenize_backlogs[idx]
+  async def _generate_coroutine(self, idx: int):
+    """Step token generation and insert prefills from backlog."""
+    logging.info("---------Spinning up generate thread %d.---------", idx)
+    generate_engine = self._generate_engines[idx]
+    my_slots = self._generate_slots[idx]
+    my_generate_backlog = self._generate_backlogs[idx]
+    my_detokenize_backlog = self._detokenize_backlogs[idx]
 
-  #   # Keep track of what step tokens were generated at.
-  #   generate_timestep = 0
-  #   # State to store things like running kv cache in.
-  #   decode_state = generate_engine.init_decode_state()
+    # Keep track of what step tokens were generated at.
+    generate_timestep = 0
+    # State to store things like running kv cache in.
+    # decode_state = generate_engine.init_decode_state()
 
-  #   generate_params = self._generate_params[idx]
-  #   logging.info("---------Generate params %d loaded.---------", idx)
-  #   time_of_last_generate = time.time()
-  #   time_of_last_print = time.time()
+    generate_params = self._generate_params[idx]
+    logging.info("---------Generate params %d loaded.---------", idx)
+    time_of_last_generate = time.time()
+    time_of_last_print = time.time()
 
-  #   while self.live:
-  #     decode_state, generate_timestep, time_of_last_generate, time_of_last_print = await self._generate_task(idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, decode_state, generate_timestep, time_of_last_generate, time_of_last_print)
+    while self.live:
+      # If slots are totally saturated or (has some requests in slots and prefill backlog empty)
+      if my_slots.empty() or (not my_slots.full() and self._prefill_backlog.empty()):
+        generate_timestep, time_of_last_generate, time_of_last_print = await self._generate_task(idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, generate_timestep, time_of_last_generate, time_of_last_print)
+      # yield to prefill workflow when 1) no request in slots; 2) has some requests in slots, but prefill backlog not empty
+      await asyncio.sleep(0.001)
 
   async def _detokenize_task(self, tokenizer, my_live_requests, my_slots, my_detokenize_backlog):
+    logging.info(
+          "Detokenize task making a decision with:"
+          " prefill_backlog=%d"
+          " detokenize_backlog=%d"
+          " generate_free_slots=%d",
+          self._prefill_backlog.qsize(),
+          my_detokenize_backlog.qsize(),
+          my_slots.qsize(),
+      )
     data = await my_detokenize_backlog.get()
     if data is None:
       return
@@ -925,23 +950,23 @@ class Driver:
       my_live_requests[slot] = active_request
 
 
-  # async def _detokenize_coroutine(self, idx: int):
-  #   """Detokenize sampled tokens and returns them to the user."""
-  #   # One of these per generate engine.
-  #   # For all filled my_slots, pop the sampled token onto the relevant
-  #   # requests return channel. If it done, place it back onto free slots.
-  #   my_detokenize_backlog = self._detokenize_backlogs[idx]
-  #   my_generate_engine = self._generate_engines[idx]
-  #   my_slots = self._generate_slots[idx]
+  async def _detokenize_coroutine(self, idx: int):
+    """Detokenize sampled tokens and returns them to the user."""
+    # One of these per generate engine.
+    # For all filled my_slots, pop the sampled token onto the relevant
+    # requests return channel. If it done, place it back onto free slots.
+    my_detokenize_backlog = self._detokenize_backlogs[idx]
+    my_generate_engine = self._generate_engines[idx]
+    my_slots = self._generate_slots[idx]
 
-  #   metadata = my_generate_engine.get_tokenizer()
-  #   tokenizer = my_generate_engine.build_tokenizer(metadata)
-  #   my_live_requests = {
-  #       i: None for i in range(my_generate_engine.max_concurrent_decodes)
-  #   }
+    metadata = my_generate_engine.get_tokenizer()
+    tokenizer = my_generate_engine.build_tokenizer(metadata)
+    my_live_requests = {
+        i: None for i in range(my_generate_engine.max_concurrent_decodes)
+    }
 
-  #   while self.live:
-  #     await self._detokenize_task(tokenizer, my_live_requests, my_slots, my_detokenize_backlog)
+    while self.live:
+      await self._detokenize_task(tokenizer, my_live_requests, my_slots, my_detokenize_backlog)
 
 
 class AsyncLLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
