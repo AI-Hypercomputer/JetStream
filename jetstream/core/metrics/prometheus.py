@@ -54,11 +54,13 @@ class JetstreamMetricsCollector:
       documentation="Size of prefill queue",
       labelnames=["id"],
   )
+
   _transfer_backlog = Gauge(
       name="jetstream_transfer_backlog_size",
       documentation="Size of transfer queue",
       labelnames=["id", "idx"],
   )
+
   _generate_backlog = Gauge(
       name="jetstream_generate_backlog_size",
       documentation="Size of generate queue",
@@ -80,6 +82,7 @@ class JetstreamMetricsCollector:
       documentation="The percentage of decode slots currently being used",
       labelnames=["id", "idx"],
   )
+
   _server_startup_latency = Gauge(
       name="jetstream_server_startup_latency",
       documentation="Total time taken to start the Jetstream server",
@@ -107,7 +110,7 @@ class JetstreamMetricsCollector:
   )
 
   _time_per_prefill_token = Histogram(
-      name="jetstream_time_to_first_token",
+      name="jetstream_time_per_prefill_token",
       documentation=(
           "Perfill time per token per request for all requests throughout the",
           "servers lifetime",
