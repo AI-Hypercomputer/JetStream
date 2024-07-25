@@ -642,7 +642,7 @@ class Driver:
         true_length=true_length,
     )
     first_token.copy_to_host_async()
-    await asyncio.to_thread(jax.block_until_ready(first_token))
+    await asyncio.to_thread(jax.block_until_ready, first_token)
     request.prefill_result = prefill_result
 
     # detokenize first token
@@ -653,14 +653,21 @@ class Driver:
     # )
     # request_first_token = request_first_token.convert_to_numpy()
 
-    results, complete = token_utils.process_result_tokens(
-        tokenizer=tokenizer,
+    # await the process_result_tokens which is a time cosuming blocking call
+    results, complete = await asyncio.to_thread(token_utils.process_result_tokens,tokenizer=tokenizer,
         slot=0,  # always 0 as prefill only run 1 sample
         slot_max_length=request.max_tokens,
         result_tokens=first_token,
         is_client_side_tokenization=request.is_client_side_tokenization,
-        complete=request.complete,
-    )
+        complete=request.complete)
+    # results, complete = token_utils.process_result_tokens(
+    #     tokenizer=tokenizer,
+    #     slot=0,  # always 0 as prefill only run 1 sample
+    #     slot_max_length=request.max_tokens,
+    #     result_tokens=first_token,
+    #     is_client_side_tokenization=request.is_client_side_tokenization,
+    #     complete=request.complete,
+    # )
     request.complete = complete
     # Return some output samples.
     request.enqueue_samples(results)
@@ -693,7 +700,8 @@ class Driver:
     logging.info("---------Prefill params %d loaded.---------", idx)
 
     while self.live:
-      await self._prefill_task(idx, prefill_engine, prefill_params, tokenizer)
+      # Currently dispatching prefill tasks (not neccessary to execute sequentailly)
+      asyncio.create_task(self._prefill_task(idx, prefill_engine, prefill_params, tokenizer))
 
   def _jax_transfer_prefill_result(
       self, new_request: ActiveRequest, target_idx: int
