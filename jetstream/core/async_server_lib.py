@@ -41,85 +41,85 @@ from prometheus_client import start_http_server
 _HOST = "[::]"
 
 
-class JetStreamAsyncServer:
-  """JetStream grpc server."""
-
-  def __init__(
-      self, driver: async_orchestrator.Driver, threads: int, port, credentials
-  ):
-    self._executor = futures.ThreadPoolExecutor(max_workers=256)
-
-    self._loop = asyncio.new_event_loop()
-    self._loop.set_default_executor(self._executor)
-    self._loop_thread = threading.Thread(target=self._loop.run_forever)
-    self._loop_thread.start()
-
-    async def do_init():
-      self._grpc_server = grpc.aio.server(
-          self._executor,
-      )
-
-    asyncio.run_coroutine_threadsafe(do_init(), loop=self._loop).result()
-    self._driver = driver
-    jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
-        async_orchestrator.AsyncLLMOrchestrator(driver=self._driver), self._grpc_server
-    )
-    self._grpc_server.add_secure_port(f"{_HOST}:{port}", credentials)
-
-  async def _async_start(self) -> None:
-    self._driver.engine_orchestrator()
-    await self._grpc_server.start()
-
-  def start(self) -> None:
-    asyncio.run_coroutine_threadsafe(
-        self._async_start(), loop=self._loop
-    ).result()
-
-  async def _async_stop(self) -> None:
-    await self._grpc_server.stop(grace=10)
-
-  def stop(self) -> None:
-    # Gracefully clean up threads in the orchestrator.
-    self._driver.stop()
-    asyncio.run_coroutine_threadsafe(self._async_stop(), self._loop).result()
-    self._loop.call_soon_threadsafe(self._loop.stop)
-    self._loop_thread.join()
-
-  def wait_for_termination(self) -> None:
-    try:
-      asyncio.run_coroutine_threadsafe(
-          self._grpc_server.wait_for_termination(), self._loop
-      ).result()
-    finally:
-      self.stop()
-
-
 # class JetStreamAsyncServer:
-#   """JetStream async grpc server."""
+#   """JetStream grpc server."""
 
 #   def __init__(
-#       self, driver: async_orchestrator.Driver, port, credentials
+#       self, driver: async_orchestrator.Driver, threads: int, port, credentials
 #   ):
-#     self._grpc_server = grpc.aio.server()
+#     self._executor = futures.ThreadPoolExecutor(max_workers=256)
+
+#     self._loop = asyncio.new_event_loop()
+#     self._loop_thread =  self._loop.run_in_executor(self._executor, self._loop.run_forever)
+#     self._loop_thread.start()
+
+#     async def do_init():
+#       self._grpc_server = grpc.aio.server(
+#           self._executor,
+#       )
+
+#     asyncio.run_coroutine_threadsafe(do_init(), loop=self._loop).result()
 #     self._driver = driver
 #     jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
 #         async_orchestrator.AsyncLLMOrchestrator(driver=self._driver), self._grpc_server
 #     )
 #     self._grpc_server.add_secure_port(f"{_HOST}:{port}", credentials)
 
-#   async def start(self) -> None:
-#     asyncio.to_thread(self._driver.engine_orchestrator())
+#   async def _async_start(self) -> None:
 #     await self._grpc_server.start()
 
-#   async def stop(self) -> None:
-#     self._driver.stop()
+#   def start(self) -> None:
+#     asyncio.run_coroutine_threadsafe(self._driver.engine_orchestrator())
+#     asyncio.run_coroutine_threadsafe(
+#         self._async_start(), loop=self._loop
+#     ).result()
+
+#   async def _async_stop(self) -> None:
 #     await self._grpc_server.stop(grace=10)
 
-#   async def wait_for_termination(self) -> None:
+#   def stop(self) -> None:
+#     # Gracefully clean up threads in the orchestrator.
+#     self._driver.stop()
+#     asyncio.run_coroutine_threadsafe(self._async_stop(), self._loop).result()
+#     self._loop.call_soon_threadsafe(self._loop.stop)
+#     self._loop_thread.join()
+
+#   def wait_for_termination(self) -> None:
 #     try:
-#       await self._grpc_server.wait_for_termination()
+#       asyncio.run_coroutine_threadsafe(
+#           self._grpc_server.wait_for_termination(), self._loop
+#       ).result()
 #     finally:
 #       self.stop()
+
+
+class JetStreamAsyncServer:
+  """JetStream async grpc server."""
+
+  def __init__(
+      self, driver: async_orchestrator.Driver, threads: int, port, credentials
+  ):
+    self._executor = futures.ThreadPoolExecutor(max_workers=threads)
+    self._grpc_server = grpc.aio.server(self._executor)
+    self._driver = driver
+    jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
+        async_orchestrator.AsyncLLMOrchestrator(driver=self._driver), self._grpc_server
+    )
+    self._grpc_server.add_secure_port(f"{_HOST}:{port}", credentials)
+
+  async def start(self) -> None:
+    asyncio.to_thread(self._driver.engine_orchestrator())
+    await self._grpc_server.start()
+
+  async def stop(self) -> None:
+    self._driver.stop()
+    await self._grpc_server.stop(grace=10)
+
+  async def wait_for_termination(self) -> None:
+    try:
+      await self._grpc_server.wait_for_termination()
+    finally:
+      self.stop()
 
 
 def create_driver(
@@ -195,7 +195,7 @@ def create_driver(
   )
 
 
-def run(
+async def run(
     port: int,
     config: Type[config_lib.ServerConfig],
     devices: Any,
@@ -244,8 +244,8 @@ def run(
   # driver = await asyncio.to_thread(create_driver, config, devices, jax_padding, metrics_collector, enable_model_warmup)
   logging.info("======After driver init")
   jetstream_server = JetStreamAsyncServer(driver, threads, port, credentials)
-  jetstream_server.start()
-  # await jetstream_server.start()
+  # jetstream_server.start()
+  await jetstream_server.start()
   logging.info("Starting server on port %d", port)
 
   if metrics_collector:
