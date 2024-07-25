@@ -418,6 +418,7 @@ class Driver:
   async def _prefill_workflow(self,idx, prefill_engine, prefill_params, tokenizer, transfer_backlog, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog,  generate_timestep):
     # _decode_state = decode_state
     while self.live:
+      # If prefill backlog not empty and slots are not totally saturated
       while not self._prefill_backlog.empty() and not my_slots.empty():
         logging.info("---------[Engine %d]before _prefill_task.---------", idx)
         await self._prefill_task(idx, prefill_engine, prefill_params, tokenizer)
@@ -427,17 +428,20 @@ class Driver:
         logging.info("---------[Engine %d]before _insert_task.---------", idx)
         await self._insert_task(idx, generate_engine, my_slots, my_generate_backlog, my_detokenize_backlog,  generate_timestep)
         logging.info("---------[Engine %d]after _insert_task.---------", idx)
+      # yield to generate workflow when 1) prefill backlog empty; 2) slots are totally saturated
       await asyncio.sleep(0.001)
 
 
   async def _generate_workflow(self,idx, tokenizer, generate_params, generate_engine, my_slots, my_detokenize_backlog,  generate_timestep, time_of_last_generate, time_of_last_print, my_live_requests):
     # _decode_state = decode_state
     while self.live:
-      if not my_slots.full():
+      # If slots are totally saturated or (has some requests in slots and prefill backlog empty)
+      if my_slots.empty() or (not my_slots.full() and self._prefill_backlog.empty()):
         logging.info("---------[Engine %d]before _generate_task.---------", idx)
         generate_timestep, time_of_last_generate, time_of_last_print = await self._generate_task(idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, generate_timestep, time_of_last_generate, time_of_last_print)
         logging.info("---------[Engine %d]before _detokenize_task.---------", idx)
-        asyncio.create_task(self._detokenize_task(tokenizer, my_live_requests, my_slots, my_detokenize_backlog))
+        await self._detokenize_task(tokenizer, my_live_requests, my_slots, my_detokenize_backlog)
+      # yield to prefill workflow when 1) no request in slots; 2) has some requests in slots, but prefill backlog not empty
       await asyncio.sleep(0.001)
 
 
