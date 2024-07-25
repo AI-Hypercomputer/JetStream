@@ -445,7 +445,7 @@ class Driver:
       await asyncio.sleep(0.001)
 
 
-  def engine_orchestrator(self):
+  async def engine_orchestrator(self):
     # When prefill backlog has requests and generate backlog is not full
     # interleave mode strategy: saturate decode slots ASAP, prioritize prefill, transfer, insert
     # prefill, copy token to host, return token - add to transfer backlog
@@ -490,7 +490,7 @@ class Driver:
         )
     )
     logging.info("---------before gather.---------")
-    # await asyncio.gather(*self._all_threads)
+    await asyncio.gather(*self._all_threads)
     # # Apply Round-robin load balancing across prefill and generate engines.
     # prefill_idx = 0
     # transfer_idx = 0
