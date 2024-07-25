@@ -642,6 +642,7 @@ class Driver:
         true_length=true_length,
     )
     first_token.copy_to_host_async()
+    await asyncio.to_thread(jax.block_until_ready(first_token))
     request.prefill_result = prefill_result
 
     # detokenize first token
