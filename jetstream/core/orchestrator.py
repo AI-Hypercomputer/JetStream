@@ -690,20 +690,20 @@ class Driver:
             break
           new_request.metadata.generate_start_time = time.perf_counter()
           if self._metrics_collector:
-            prefillQueueTime = (
+            prefill_queue_time = (
                 new_request.metadata.start_time
                 - new_request.metadata.prefill_start_time
             )
-            transferQueueTime = (
+            transfer_queue_time = (
                 new_request.metadata.prefill_end_time
                 - new_request.metadata.transfer_start_time
             )
-            generateQueueTime = (
+            generate_queue_time = (
                 new_request.metadata.transfer_end_time
                 - new_request.metadata.generate_start_time
             )
             self._metrics_collector.get_queue_duration().observe(
-                prefillQueueTime + transferQueueTime + generateQueueTime
+                prefill_queue_time + transfer_queue_time + generate_queue_time
             )
           # Got free slot and new request, use them.
         except queue.Empty:
