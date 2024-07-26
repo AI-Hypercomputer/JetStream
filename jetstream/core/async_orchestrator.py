@@ -919,6 +919,7 @@ class Driver:
       generate_timestep_added, result_tokens = data
       # Disable attribute error because pytype doesn't know this
       # is a result tokens, and we can't annotate the tuple.
+      result_tokens = await asyncio.to_thread(jax.block_until_ready, result_tokens)
       result_tokens = result_tokens.convert_to_numpy()
 
       for slot, request in my_live_requests.items():
