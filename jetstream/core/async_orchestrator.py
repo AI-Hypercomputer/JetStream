@@ -903,10 +903,10 @@ class Driver:
     time_of_last_print = time.time()
 
     while self.live:
-      # If slots are totally saturated or (has some requests in slots and prefill backlog empty)
-      if my_slots.empty() or (not my_slots.full() and self._prefill_backlog.empty()):
+      # If slots are totally saturated or (has some requests in slots and all prefill done and inserted)
+      if my_slots.empty() or (not my_slots.full() and my_generate_backlog.empty()):
         generate_timestep, time_of_last_generate, time_of_last_print = await self._generate_task(idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, generate_timestep, time_of_last_generate, time_of_last_print)
-      # yield to prefill workflow when 1) no request in slots; 2) has some requests in slots, but prefill backlog not empty
+      # yield to prefill workflow when 1) no request in slots; 2) has some requests in slots, but not all prefill done and inserted.
       await asyncio.sleep(0.001)
 
   async def _detokenize_task(self, tokenizer, my_live_requests, my_slots, my_detokenize_backlog):
