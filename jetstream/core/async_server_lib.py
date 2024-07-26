@@ -54,6 +54,10 @@ class JetStreamAsyncServer:
     self._loop_thread = threading.Thread(target=self._loop.run_forever)
     self._loop_thread.start()
 
+    self._orchestrator_loop = asyncio.new_event_loop()
+    self._orchestrator_loop_thread = threading.Thread(target=self._orchestrator_loop.run_forever)
+    self._orchestrator_loop_thread.start()
+
     async def do_init():
       self._grpc_server = grpc.aio.server(
           self._executor,
@@ -67,10 +71,12 @@ class JetStreamAsyncServer:
     self._grpc_server.add_secure_port(f"{_HOST}:{port}", credentials)
 
   async def _async_start(self) -> None:
-    self._driver.engine_orchestrator()
     await self._grpc_server.start()
 
   def start(self) -> None:
+    asyncio.run_coroutine_threadsafe(
+        self._driver.engine_orchestrator(), loop=self._orchestrator_loop
+    )
     asyncio.run_coroutine_threadsafe(
         self._async_start(), loop=self._loop
     ).result()
