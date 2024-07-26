@@ -18,25 +18,6 @@ import os
 import shortuuid
 from prometheus_client import Gauge, Histogram
 
-LatencyBuckets = [
-    0.001,
-    0.005,
-    0.01,
-    0.02,
-    0.04,
-    0.06,
-    0.08,
-    0.1,
-    0.25,
-    0.5,
-    0.75,
-    1.0,
-    2.5,
-    5.0,
-    7.5,
-    10.0,
-]
-
 
 class JetstreamMetricsCollector:
   """Wrapper class should be used to assure all metrics have proper tags"""
@@ -103,21 +84,69 @@ class JetstreamMetricsCollector:
       name="jetstream_time_to_first_token",
       documentation="Time to first token per request",
       labelnames=["id"],
-      buckets=LatencyBuckets,
+      buckets=[
+          0.001,
+          0.005,
+          0.01,
+          0.02,
+          0.04,
+          0.06,
+          0.08,
+          0.1,
+          0.25,
+          0.5,
+          0.75,
+          1.0,
+          2.5,
+          5.0,
+          7.5,
+          10.0,
+      ],
   )
 
   _time_per_output_token = Histogram(
       name="jetstream_time_per_output_token",
       documentation="Average time per output token per request",
       labelnames=["id"],
-      buckets=LatencyBuckets,
+      buckets=[
+          0.01,
+          0.025,
+          0.05,
+          0.075,
+          0.1,
+          0.15,
+          0.2,
+          0.3,
+          0.4,
+          0.5,
+          0.75,
+          1.0,
+          2.5,
+      ],
   )
 
   _time_per_prefill_token = Histogram(
       name="jetstream_time_per_prefill_token",
       documentation="Perfill time per token per request",
       labelnames=["id"],
-      buckets=LatencyBuckets,
+      buckets=[
+          0.00001,
+          0.00005,
+          0.0001,
+          0.0002,
+          0.0004,
+          0.0006,
+          0.0008,
+          0.001,
+          0.0025,
+          0.005,
+          0.0075,
+          0.010,
+          0.025,
+          0.050,
+          0.075,
+          0.01,
+      ],
   )
 
   def get_prefill_backlog_metric(self):

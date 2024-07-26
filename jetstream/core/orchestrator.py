@@ -545,20 +545,24 @@ class Driver:
 
       request.metadata.prefill_end_time = time.perf_counter()
       logging.info(
-            "TTFT duration: %fms",
-            (request.metadata.prefill_end_time - request.metadata.prefill_start_time)
-            * 1000,
-        )
+          "TTFT duration: %fms",
+          (
+              request.metadata.prefill_end_time
+              - request.metadata.prefill_start_time
+          )
+          * 1000,
+      )
       logging.info(
-            "Time per prefill token Observation: %d, %d, %d",
-            request.metadata.prefill_start_time,
-            request.metadata.prefill_end_time,
-            true_length,
-        )
+          "Time per prefill token Observation: %f, %f, %f",
+          request.metadata.prefill_start_time,
+          request.metadata.prefill_end_time,
+          true_length,
+      )
       if self._metrics_collector:
         self._metrics_collector.get_time_to_first_token().observe(
-            request.metadata.prefill_end_time - request.metadata.prefill_start_time
-        )    
+            request.metadata.prefill_end_time
+            - request.metadata.prefill_start_time
+        )
         self._metrics_collector.get_time_per_prefill_token().observe(
             (
                 request.metadata.prefill_start_time
@@ -569,7 +573,7 @@ class Driver:
 
       # Once prefill is complete, place it on the generation queue and block if
       # full.
-      
+
       my_transfer_backlog.put(request, block=True)
       logging.info(
           "Placed request on transfer queue %d, %d queued requests.",
@@ -718,6 +722,12 @@ class Driver:
                 new_request.metadata.transfer_end_time
                 - new_request.metadata.generate_start_time
             )
+            logging.info(
+                "Observation, queue time %f, %f, %f",
+                prefill_queue_time,
+                transfer_queue_time,
+                generate_queue_time,
+            )
             self._metrics_collector.get_queue_duration().observe(
                 prefill_queue_time + transfer_queue_time + generate_queue_time
             )
@@ -848,7 +858,11 @@ class Driver:
                     len(results),
                 )
                 self._metrics_collector.get_time_per_output_token().observe(
-                    (request.metadata.generate_end_time - request.metadata.prefill_end_time) / len(results)
+                    (
+                        request.metadata.generate_end_time
+                        - request.metadata.prefill_end_time
+                    )
+                    / len(results)
                 )
               request.return_channel.close()
               # Place the slot back on the free queue.
