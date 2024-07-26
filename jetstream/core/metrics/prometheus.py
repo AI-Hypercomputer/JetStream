@@ -88,30 +88,21 @@ class JetstreamMetricsCollector:
 
   _time_to_first_token = Histogram(
       name="jetstream_time_to_first_token",
-      documentation=(
-          "Time to first token per request for all requests throughout this",
-          "servers lifetime",
-      ),
+      documentation="Time to first token per request"
       labelnames=["id"],
       buckets=LatencyBuckets,
   )
 
   _time_per_output_token = Histogram(
       name="jetstream_time_per_output_token",
-      documentation=(
-          "Average time per output token per request for all requests",
-          "throughout this servers lifetime",
-      ),
+      documentation="Average time per output token per request",
       labelnames=["id"],
       buckets=LatencyBuckets,
   )
 
   _time_per_prefill_token = Histogram(
       name="jetstream_time_per_prefill_token",
-      documentation=(
-          "Perfill time per token per request for all requests throughout the",
-          "servers lifetime",
-      ),
+      documentation="Perfill time per token per request",
       labelnames=["id"],
       buckets=LatencyBuckets,
   )
