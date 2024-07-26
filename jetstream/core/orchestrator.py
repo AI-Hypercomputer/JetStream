@@ -515,6 +515,7 @@ class Driver:
           true_length=true_length,
       )
       first_token.copy_to_host_async()
+      first_token = jax.block_until_ready(first_token)
       request.prefill_result = prefill_result
 
       # detokenize first token
@@ -523,7 +524,7 @@ class Driver:
       # my_detokenize_backlog.put(
       #     (first_token, request, request_start_time), block=True
       # )
-      # request_first_token = request_first_token.convert_to_numpy()
+      first_token = first_token.convert_to_numpy()
 
       results, complete = token_utils.process_result_tokens(
           tokenizer=tokenizer,
@@ -761,6 +762,7 @@ class Driver:
         generate_timestep_added, result_tokens = data
         # Disable attribute error because pytype doesn't know this
         # is a result tokens, and we can't annotate the tuple.
+        result_tokens = jax.block_until_ready(result_tokens)
         result_tokens = result_tokens.convert_to_numpy()
 
         for slot, request in my_live_requests.items():
