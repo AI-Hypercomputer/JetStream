@@ -460,8 +460,13 @@ class Driver:
     # ]
     # await asyncio.gather(*self._engine_coroutines)
     # Create all coroutines
+    # prefill lock ensures the prefill engine api calls execute synchronously (not neccessary sequentailly since prefills don't depend on each other).
+    self._prefill_locks = [
+        asyncio.Lock()
+        for _ in range(len(self._prefill_engines))
+    ]
     self._prefill_threads = [
-        asyncio.create_task(self._prefill_coroutine(idx))
+        asyncio.create_task(self._prefill_coroutine(idx, self._prefill_locks[idx]))
         for idx in range(len(self._prefill_engines))
     ]
     self._transfer_threads = [
@@ -473,7 +478,7 @@ class Driver:
         for idx in range(len(self._generate_engines))
     ]
     self._generate_threads = [
-        asyncio.create_task(self._generate_coroutine(idx))
+        asyncio.create_task(self._generate_coroutine(idx, self._prefill_locks[idx]))
         for idx in range(len(self._generate_engines))
     ]
     self.detokenize_threads = [
@@ -689,7 +694,7 @@ class Driver:
     del prefill_result
     del request
 
-  async def _prefill_coroutine(self, idx: int):
+  async def _prefill_coroutine(self, idx: int, prefill_lock):
     """Thread which runs in the background performing prefills."""
     logging.info("---------Spinning up prefill thread %d.---------", idx)
     prefill_engine = self._prefill_engines[idx]
@@ -697,8 +702,6 @@ class Driver:
     metadata = prefill_engine.get_tokenizer()
     tokenizer = prefill_engine.build_tokenizer(metadata)
     logging.info("---------Prefill params %d loaded.---------", idx)
-    # prefill lock ensures the prefill engine api calls execute synchronously (not neccessary sequentailly since prefills don't depend on each other).
-    prefill_lock = asyncio.Lock()
     while self.live:
       if not self._prefill_backlog.empty():
         asyncio.create_task(self._prefill_task(idx, prefill_engine, prefill_params, tokenizer, prefill_lock))
@@ -884,7 +887,7 @@ class Driver:
     time_of_last_generate = time.time()
     return generate_timestep, time_of_last_generate, time_of_last_print
 
-  async def _generate_coroutine(self, idx: int):
+  async def _generate_coroutine(self, idx: int, prefill_lock):
     """Step token generation and insert prefills from backlog."""
     logging.info("---------Spinning up generate thread %d.---------", idx)
     generate_engine = self._generate_engines[idx]
@@ -904,7 +907,7 @@ class Driver:
 
     while self.live:
       # If slots are totally saturated or (has some requests in slots and all prefill done and inserted)
-      if my_slots.empty() or (not my_slots.full() and my_generate_backlog.empty()):
+      if my_slots.empty() or (not my_slots.full() and not prefill_lock.locked()):
         generate_timestep, time_of_last_generate, time_of_last_print = await self._generate_task(idx, my_slots, generate_engine, generate_params, my_detokenize_backlog, generate_timestep, time_of_last_generate, time_of_last_print)
       # yield to prefill workflow when 1) no request in slots; 2) has some requests in slots, but not all prefill done and inserted.
       await asyncio.sleep(0.001)
