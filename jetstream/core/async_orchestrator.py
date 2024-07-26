@@ -644,11 +644,11 @@ class Driver:
           true_length=true_length,
       )
       first_token.copy_to_host_async()
+      # Await for first_token copy to host to unblock the event loop.
+      first_token = await asyncio.to_thread(jax.block_until_ready, first_token)
+      request.prefill_result = prefill_result
     finally:
       prefill_lock.release()
-    # Await for first_token copy to host to unblock the event loop.
-    first_token = await asyncio.to_thread(jax.block_until_ready, first_token)
-    request.prefill_result = prefill_result
 
     # detokenize first token
     request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
