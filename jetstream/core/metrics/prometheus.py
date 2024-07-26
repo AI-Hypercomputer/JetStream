@@ -88,7 +88,7 @@ class JetstreamMetricsCollector:
 
   _time_to_first_token = Histogram(
       name="jetstream_time_to_first_token",
-      documentation="Time to first token per request"
+      documentation="Time to first token per request",
       labelnames=["id"],
       buckets=LatencyBuckets,
   )
