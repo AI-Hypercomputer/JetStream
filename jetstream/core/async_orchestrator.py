@@ -657,6 +657,7 @@ class Driver:
     #     (first_token, request, request_start_time), block=True
     # )
     # request_first_token = request_first_token.convert_to_numpy()
+    first_token = first_token.convert_to_numpy()
 
     results, complete = token_utils.process_result_tokens(
         tokenizer=tokenizer,
