@@ -69,10 +69,7 @@ class JetstreamMetricsCollector:
 
   _queue_duration = Histogram(
       name="jetstream_queue_duration",
-      documentation=(
-          "The total time each request spends in the prefill, transfer, and generate",
-          "queues",
-      ),
+      documentation="The total time each request spends enqueued",
       labelnames=["id"],
       buckets=LatencyBuckets,
   )
