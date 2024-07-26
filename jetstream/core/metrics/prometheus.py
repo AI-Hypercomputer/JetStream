@@ -71,7 +71,20 @@ class JetstreamMetricsCollector:
       name="jetstream_queue_duration",
       documentation="The total time each request spends enqueued",
       labelnames=["id"],
-      buckets=LatencyBuckets,
+      buckets=[
+          0.001,
+          0.01,
+          0.1,
+          1.0,
+          2.5,
+          5.0,
+          7.5,
+          10.0,
+          20.0,
+          50.0,
+          100.0,
+          200.0,
+      ],
   )
 
   _slots_used_percentage = Gauge(

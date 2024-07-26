@@ -548,6 +548,14 @@ class Driver:
       request.metadata.prefill_end_time = time.perf_counter()
       my_transfer_backlog.put(request, block=True)
       if self._metrics_collector:
+        logging.info(
+            "Time per prefill token Observation: %d",
+            (
+                request.metadata.prefill_start_time
+                - request.metadata.prefill_end_time
+            )
+            / true_length,
+        )
         self._metrics_collector.get_time_per_prefill_token().observe(
             (
                 request.metadata.prefill_start_time
@@ -839,6 +847,13 @@ class Driver:
                 ttft = (
                     first_token_return_time
                     - request.metadata.prefill_start_time
+                )
+                logging.info(
+                    "TPOT Observation: %f",
+                    (
+                        (request.metadata.generate_end_time - ttft)
+                        / len(results)
+                    ),
                 )
                 self._metrics_collector.get_time_per_output_token().observe(
                     (request.metadata.generate_end_time - ttft) / len(results)
