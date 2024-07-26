@@ -701,7 +701,8 @@ class Driver:
 
     while self.live:
       # Currently dispatching prefill tasks (not neccessary to execute sequentailly)
-      asyncio.create_task(self._prefill_task(idx, prefill_engine, prefill_params, tokenizer))
+      if not self._prefill_backlog.empty():
+        asyncio.create_task(self._prefill_task(idx, prefill_engine, prefill_params, tokenizer))
 
   def _jax_transfer_prefill_result(
       self, new_request: ActiveRequest, target_idx: int
@@ -928,6 +929,8 @@ class Driver:
       generate_timestep_added, result_tokens = data
       # Disable attribute error because pytype doesn't know this
       # is a result tokens, and we can't annotate the tuple.
+      # await for result_tokens copy from TPU to host.
+      await asyncio.to_thread(jax.block_until_ready, result_tokens)
       result_tokens = result_tokens.convert_to_numpy()
 
       for slot, request in my_live_requests.items():
@@ -975,7 +978,8 @@ class Driver:
     }
 
     while self.live:
-      await self._detokenize_task(tokenizer, my_live_requests, my_slots, my_detokenize_backlog)
+      if not my_detokenize_backlog.empty():
+        asyncio.create_task(self._detokenize_task(tokenizer, my_live_requests, my_slots, my_detokenize_backlog))
 
 
 class AsyncLLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
