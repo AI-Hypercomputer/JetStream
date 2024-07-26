@@ -543,17 +543,22 @@ class Driver:
           block=True,
       )
 
-      # Once prefill is complete, place it on the generation queue and block if
-      # full.
       request.metadata.prefill_end_time = time.perf_counter()
-      my_transfer_backlog.put(request, block=True)
-      if self._metrics_collector:
-        logging.info(
+      logging.info(
+            "TTFT duration: %fms",
+            (request.metadata.prefill_end_time - request.metadata.prefill_start_time)
+            * 1000,
+        )
+      logging.info(
             "Time per prefill token Observation: %d, %d, %d",
             request.metadata.prefill_start_time,
             request.metadata.prefill_end_time,
             true_length,
         )
+      if self._metrics_collector:
+        self._metrics_collector.get_time_to_first_token().observe(
+            request.metadata.prefill_end_time - request.metadata.prefill_start_time
+        )    
         self._metrics_collector.get_time_per_prefill_token().observe(
             (
                 request.metadata.prefill_start_time
@@ -561,6 +566,11 @@ class Driver:
             )
             / true_length
         )
+
+      # Once prefill is complete, place it on the generation queue and block if
+      # full.
+      
+      my_transfer_backlog.put(request, block=True)
       logging.info(
           "Placed request on transfer queue %d, %d queued requests.",
           idx,
@@ -807,17 +817,6 @@ class Driver:
         request.complete = complete
         # Return some output samples.
         request.enqueue_samples(results)
-
-        first_token_return_time = time.perf_counter()
-        logging.info(
-            "TTFT duration: %fms",
-            (first_token_return_time - request.metadata.prefill_start_time)
-            * 1000,
-        )
-        if self._metrics_collector:
-          self._metrics_collector.get_time_to_first_token().observe(
-              first_token_return_time - request.metadata.prefill_start_time
-          )
       # generate step tokens
       elif isinstance(data[1], engine_api.ResultTokens):
         # We want to detokenize them.
@@ -842,15 +841,14 @@ class Driver:
             if request.complete.all():
               request.metadata.generate_end_time = time.perf_counter()
               if self._metrics_collector:
-                ttft = (
-                    first_token_return_time
-                    - request.metadata.prefill_start_time
-                )
                 logging.info(
-                    "TPOT Observation: %f, %f, %f",request.metadata.generate_end_time, ttft ,len(results)
+                    "TPOT Observation: %f, %f, %f",
+                    request.metadata.generate_end_time,
+                    request.metadata.prefill_end_time,
+                    len(results),
                 )
                 self._metrics_collector.get_time_per_output_token().observe(
-                    (request.metadata.generate_end_time - ttft) / len(results)
+                    (request.metadata.generate_end_time - request.metadata.prefill_end_time) / len(results)
                 )
               request.return_channel.close()
               # Place the slot back on the free queue.
