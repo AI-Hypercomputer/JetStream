@@ -74,6 +74,7 @@ Either use :orchestrator test, which tests the multi-threading components,
 to debug hangs due to bugs in threads (it is easier to debug with live logs).
 """
 
+import asyncio
 import dataclasses
 import functools
 import itertools
@@ -473,6 +474,84 @@ class Driver:
           jax_padding=self._jax_padding,
       )
 
+
+  async def _prefill_task(self, idx, request, prefill_engine, prefill_params, tokenizer, prefill_lock):
+    my_transfer_backlog = self._transfer_backlogs[idx]
+    request_start_time = time.perf_counter()
+
+    is_bos = True
+    logging.info(
+        "Prefilling on prefill engine %d : prefill_backlog=%d,"
+        " is_bos: %s",
+        idx,
+        self._prefill_backlog.qsize(),
+        is_bos,
+    )
+    # Tokenize and padding the text or token input.
+    padded_tokens, true_length = self._process_prefill_content(
+        request, tokenizer, is_bos, prefill_engine.max_prefill_length
+    )
+    if isinstance(prefill_engine, engine_api.JetStreamEngine):
+      request.padded_token_length = token_utils.take_nearest_length(
+          prefill_engine.prefill_buckets, true_length
+      )
+      prefill_engine.set_padded_token_length(request.padded_token_length)
+
+    # Compute new kv cache for the prefill_content.
+    await prefill_lock.acquire()
+    try:
+      prefill_result, first_token = prefill_engine.prefill(
+          params=prefill_params,
+          padded_tokens=padded_tokens,
+          true_length=true_length,
+      )
+      first_token.copy_to_host_async()
+      # Await for first_token copy to host to unblock the event loop.
+      first_token = await asyncio.to_thread(jax.block_until_ready, first_token)
+      request.prefill_result = prefill_result
+    finally:
+      prefill_lock.release()
+
+    # detokenize first token
+    request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
+    # my_detokenize_backlog = self._prefill_detokenize_backlogs[idx]
+    # my_detokenize_backlog.put(
+    #     (first_token, request, request_start_time), block=True
+    # )
+    # request_first_token = request_first_token.convert_to_numpy()
+    first_token = first_token.convert_to_numpy()
+
+    results, complete = token_utils.process_result_tokens(
+        tokenizer=tokenizer,
+        slot=0,  # always 0 as prefill only run 1 sample
+        slot_max_length=request.max_tokens,
+        result_tokens=first_token,
+        is_client_side_tokenization=request.is_client_side_tokenization,
+        complete=request.complete,
+    )
+    request.complete = complete
+    # Return some output samples.
+    request.enqueue_samples(results)
+
+    first_token_return_time = time.perf_counter()
+    logging.info(
+        "TTFT duration: %fms",
+        (first_token_return_time - request_start_time) * 1000,
+    )
+
+    # Once prefill is complete, place it on the generation queue and block if
+    # full.
+    await my_transfer_backlog.put(request)
+    logging.info(
+        "Placed request on transfer queue %d, %d queued requests.",
+        idx,
+        my_transfer_backlog.qsize(),
+    )
+
+    del prefill_result
+    del request
+
+
   def _prefill_thread(self, idx: int):
     """Thread which runs in the background performing prefills."""
     logging.info("---------Spinning up prefill thread %d.---------", idx)
@@ -482,79 +561,91 @@ class Driver:
     tokenizer = prefill_engine.build_tokenizer(metadata)
     logging.info("---------Prefill params %d loaded.---------", idx)
 
+    # create a event loop to concurrently dispatch prefills
+    loop = asyncio.new_event_loop()
+    loop_thread = threading.Thread(target=loop.run_forever)
+    loop_thread.start()
+    # prefill lock ensures the prefill engine api calls execute synchronously (not neccessary sequentailly since prefills don't depend on each other).
+    prefill_lock = asyncio.Lock()
     while self.live:
-      my_transfer_backlog = self._transfer_backlogs[idx]
       # The prefill thread can just sleep until it has work to do.
       request = self._prefill_backlog.get(block=True)
-      request_start_time = time.perf_counter()
-
       if request is None:
         break
-      is_bos = True
-      logging.info(
-          "Prefilling on prefill engine %d : prefill queue size, %d,"
-          " is_bos: %s",
-          idx,
-          self._prefill_backlog.qsize(),
-          is_bos,
-      )
-      # Tokenize and padding the text or token input.
-      padded_tokens, true_length = self._process_prefill_content(
-          request, tokenizer, is_bos, prefill_engine.max_prefill_length
-      )
-      if isinstance(prefill_engine, engine_api.JetStreamEngine):
-        request.padded_token_length = token_utils.take_nearest_length(
-            prefill_engine.prefill_buckets, true_length
-        )
-        prefill_engine.set_padded_token_length(request.padded_token_length)
+      asyncio.run_coroutine_threadsafe((self._prefill_task(idx, request, prefill_engine, prefill_params, tokenizer, prefill_lock)), loop)
+    loop_thread.join()
+      # my_transfer_backlog = self._transfer_backlogs[idx]
+      # # The prefill thread can just sleep until it has work to do.
+      # request = self._prefill_backlog.get(block=True)
+      # request_start_time = time.perf_counter()
 
-      # Compute new kv cache for the prefill_content.
-      prefill_result, first_token = prefill_engine.prefill(
-          params=prefill_params,
-          padded_tokens=padded_tokens,
-          true_length=true_length,
-      )
-      first_token.copy_to_host_async()
-      first_token = jax.block_until_ready(first_token)
-      request.prefill_result = prefill_result
-
-      # detokenize first token
-      request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
-      # my_detokenize_backlog = self._prefill_detokenize_backlogs[idx]
-      # my_detokenize_backlog.put(
-      #     (first_token, request, request_start_time), block=True
+      # if request is None:
+      #   break
+      # is_bos = True
+      # logging.info(
+      #     "Prefilling on prefill engine %d : prefill queue size, %d,"
+      #     " is_bos: %s",
+      #     idx,
+      #     self._prefill_backlog.qsize(),
+      #     is_bos,
       # )
-      first_token = first_token.convert_to_numpy()
+      # # Tokenize and padding the text or token input.
+      # padded_tokens, true_length = self._process_prefill_content(
+      #     request, tokenizer, is_bos, prefill_engine.max_prefill_length
+      # )
+      # if isinstance(prefill_engine, engine_api.JetStreamEngine):
+      #   request.padded_token_length = token_utils.take_nearest_length(
+      #       prefill_engine.prefill_buckets, true_length
+      #   )
+      #   prefill_engine.set_padded_token_length(request.padded_token_length)
 
-      results, complete = token_utils.process_result_tokens(
-          tokenizer=tokenizer,
-          slot=0,  # always 0 as prefill only run 1 sample
-          slot_max_length=request.max_tokens,
-          result_tokens=first_token,
-          is_client_side_tokenization=request.is_client_side_tokenization,
-          complete=request.complete,
-      )
-      request.complete = complete
-      # Return some output samples.
-      request.enqueue_samples(results)
+      # # Compute new kv cache for the prefill_content.
+      # prefill_result, first_token = prefill_engine.prefill(
+      #     params=prefill_params,
+      #     padded_tokens=padded_tokens,
+      #     true_length=true_length,
+      # )
+      # first_token.copy_to_host_async()
+      # first_token = jax.block_until_ready(first_token)
+      # request.prefill_result = prefill_result
 
-      first_token_return_time = time.perf_counter()
-      logging.info(
-          "TTFT duration: %fms",
-          (first_token_return_time - request_start_time) * 1000,
-      )
+      # # detokenize first token
+      # request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
+      # # my_detokenize_backlog = self._prefill_detokenize_backlogs[idx]
+      # # my_detokenize_backlog.put(
+      # #     (first_token, request, request_start_time), block=True
+      # # )
+      # first_token = first_token.convert_to_numpy()
 
-      # Once prefill is complete, place it on the generation queue and block if
-      # full.
-      my_transfer_backlog.put(request, block=True)
-      logging.info(
-          "Placed request on transfer queue %d, %d queued requests.",
-          idx,
-          my_transfer_backlog.qsize(),
-      )
+      # results, complete = token_utils.process_result_tokens(
+      #     tokenizer=tokenizer,
+      #     slot=0,  # always 0 as prefill only run 1 sample
+      #     slot_max_length=request.max_tokens,
+      #     result_tokens=first_token,
+      #     is_client_side_tokenization=request.is_client_side_tokenization,
+      #     complete=request.complete,
+      # )
+      # request.complete = complete
+      # # Return some output samples.
+      # request.enqueue_samples(results)
 
-      del prefill_result
-      del request
+      # first_token_return_time = time.perf_counter()
+      # logging.info(
+      #     "TTFT duration: %fms",
+      #     (first_token_return_time - request_start_time) * 1000,
+      # )
+
+      # # Once prefill is complete, place it on the generation queue and block if
+      # # full.
+      # my_transfer_backlog.put(request, block=True)
+      # logging.info(
+      #     "Placed request on transfer queue %d, %d queued requests.",
+      #     idx,
+      #     my_transfer_backlog.qsize(),
+      # )
+
+      # del prefill_result
+      # del request
 
   def _jax_transfer_prefill_result(
       self, new_request: ActiveRequest, target_idx: int
