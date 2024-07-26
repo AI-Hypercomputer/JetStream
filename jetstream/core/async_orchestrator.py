@@ -609,7 +609,7 @@ class Driver:
           jax_padding=self._jax_padding,
       )
 
-  async def _prefill_task(self, idx, prefill_engine, prefill_params, tokenizer):
+  async def _prefill_task(self, idx, prefill_engine, prefill_params, tokenizer, prefill_lock):
     my_transfer_backlog = self._transfer_backlogs[idx]
     # The prefill thread can just sleep until it has work to do.
     request = await self._prefill_backlog.get()
@@ -636,12 +636,18 @@ class Driver:
       prefill_engine.set_padded_token_length(request.padded_token_length)
 
     # Compute new kv cache for the prefill_content.
-    prefill_result, first_token = prefill_engine.prefill(
-        params=prefill_params,
-        padded_tokens=padded_tokens,
-        true_length=true_length,
-    )
-    first_token.copy_to_host_async()
+    await prefill_lock.acquire()
+    try:
+      prefill_result, first_token = prefill_engine.prefill(
+          params=prefill_params,
+          padded_tokens=padded_tokens,
+          true_length=true_length,
+      )
+      first_token.copy_to_host_async()
+    finally:
+      prefill_lock.release()
+    # Await for first_token copy to host to unblock the event loop.
+    first_token = await asyncio.to_thread(jax.block_until_ready, first_token)
     request.prefill_result = prefill_result
 
     # detokenize first token
@@ -690,9 +696,12 @@ class Driver:
     metadata = prefill_engine.get_tokenizer()
     tokenizer = prefill_engine.build_tokenizer(metadata)
     logging.info("---------Prefill params %d loaded.---------", idx)
-
+    # prefill lock ensures the prefill engine api calls execute synchronously (not neccessary sequentailly since prefills don't depend on each other).
+    prefill_lock = asyncio.Lock()
     while self.live:
-      await self._prefill_task(idx, prefill_engine, prefill_params, tokenizer)
+      if not self._prefill_backlog.empty():
+        asyncio.create_task(self._prefill_task(idx, prefill_engine, prefill_params, tokenizer, prefill_lock))
+      await asyncio.sleep(0.001)
 
   def _jax_transfer_prefill_result(
       self, new_request: ActiveRequest, target_idx: int
@@ -919,6 +928,7 @@ class Driver:
       generate_timestep_added, result_tokens = data
       # Disable attribute error because pytype doesn't know this
       # is a result tokens, and we can't annotate the tuple.
+      # Await for result_tokens copy to host to unblock the event loop.
       result_tokens = await asyncio.to_thread(jax.block_until_ready, result_tokens)
       result_tokens = result_tokens.convert_to_numpy()
 
