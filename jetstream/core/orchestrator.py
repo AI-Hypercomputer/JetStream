@@ -122,7 +122,7 @@ def delete_pytree(p):
 class ActiveRequestMetadata:
   """Inference request metadata."""
 
-  start_time: float
+  start_time: Optional[float] = None
 
   prefill_start_time: Optional[float] = None
   prefill_end_time: Optional[float] = None
@@ -156,7 +156,7 @@ class ActiveRequest:
   generate_timestep_added: Optional[int] = None
   is_client_side_tokenization: Optional[bool] = False
   ################## Information relevant for metrics ###################
-  metadata = ActiveRequestMetadata(time.perf_counter())
+  metadata: ActiveRequestMetadata = ActiveRequestMetadata()
 
   def enqueue_samples(self, generated_samples: list[ReturnSample]):
     """Adds the generated sample(s) to return channel for current step.
@@ -708,8 +708,9 @@ class Driver:
                 - new_request.metadata.transfer_end_time
             )
             logging.info(
-                "Total queue time: %f, %f, %f",
-                prefill_queue_time,
+                "Total queue time: %f, %f, %f, %f",
+                new_request.metadata.start_time,
+                new_request.metadata.prefill_start_time,
                 transfer_queue_time,
                 generate_queue_time,
             )
@@ -968,6 +969,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
         prefill_content=prefill_content,
         is_client_side_tokenization=is_client_side_tokenization,
         return_channel=return_channel,
+        metadata=ActiveRequestMetadata(start_time=time.perf_counter()),
     )
     # The first stage is being prefilled, all other stages are handled
     # inside the driver (transfer, generate*N, detokenize).
