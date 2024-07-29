@@ -175,6 +175,18 @@ class JetThread(threading.Thread):
       os.kill(os.getpid(), signal.SIGKILL)
 
 
+async def _abort_or_raise(
+    context: grpc.aio.ServicerContext | None,
+    code: grpc.StatusCode,
+    details: str,
+):
+  """Safely aborts a gRPC context if available, or raises an Exception."""
+  if context is None:
+    raise RuntimeError(details)
+
+  await context.abort(code, details)
+
+
 class Driver:
   """Drives the engines."""
 
@@ -945,9 +957,10 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
       self._driver.place_request_on_prefill_queue(active_request)
     except queue.Full:
       # Safely abort the gRPC server thread with a retriable error.
-      await context.abort(
-          grpc.StatusCode.RESOURCE_EXHAUSTED,
-          (
+      await _abort_or_raise(
+          context=context,
+          code=grpc.StatusCode.RESOURCE_EXHAUSTED,
+          details=(
               "The driver prefill queue is full and more requests cannot be"
               " handled. You may retry this request."
           ),
