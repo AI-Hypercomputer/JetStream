@@ -554,10 +554,6 @@ class Driver:
       )
 
       if self._metrics_collector:
-        self._metrics_collector.get_time_to_first_token().observe(
-            request.metadata.prefill_end_time
-            - request.metadata.prefill_start_time
-        )
         self._metrics_collector.get_time_per_prefill_token().observe(
             (
                 request.metadata.prefill_end_time
@@ -695,20 +691,16 @@ class Driver:
             break
           new_request.metadata.generate_start_time = time.perf_counter()
           if self._metrics_collector:
-            prefill_queue_time = (
+            self._metrics_collector.get_queue_duration().observe(
+                # Time in prefill queue
                 new_request.metadata.prefill_start_time
                 - new_request.metadata.start_time
-            )
-            transfer_queue_time = (
-                new_request.metadata.transfer_start_time
+                # Time in transfer queue
+                + new_request.metadata.transfer_start_time
                 - new_request.metadata.prefill_end_time
-            )
-            generate_queue_time = (
-                new_request.metadata.generate_start_time
+                # Time in generate queue
+                + new_request.metadata.generate_start_time
                 - new_request.metadata.transfer_end_time
-            )
-            self._metrics_collector.get_queue_duration().observe(
-                prefill_queue_time + transfer_queue_time + generate_queue_time
             )
           # Got free slot and new request, use them.
         except queue.Empty:
@@ -808,6 +800,10 @@ class Driver:
         request.enqueue_samples(results)
 
         first_token_return_time = time.perf_counter()
+        if self._metrics_collector:
+          self._metrics_collector.get_time_to_first_token().observe(
+              first_token_return_time - request.metadata.prefill_start_time
+          )
         logging.info(
             "TTFT duration: %fms",
             (first_token_return_time - request.metadata.prefill_start_time)
