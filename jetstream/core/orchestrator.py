@@ -565,8 +565,8 @@ class Driver:
         )
         self._metrics_collector.get_time_per_prefill_token().observe(
             (
-                request.metadata.prefill_start_time
-                - request.metadata.prefill_end_time
+                request.metadata.prefill_end_time
+                - request.metadata.prefill_start_time
             )
             / true_length
         )
@@ -711,16 +711,16 @@ class Driver:
           new_request.metadata.generate_start_time = time.perf_counter()
           if self._metrics_collector:
             prefill_queue_time = (
-                new_request.metadata.start_time
-                - new_request.metadata.prefill_start_time
+                new_request.metadata.prefill_start_time
+                - new_request.metadata.start_time
             )
             transfer_queue_time = (
-                new_request.metadata.prefill_end_time
-                - new_request.metadata.transfer_start_time
+                new_request.metadata.transfer_start_time
+                - new_request.metadata.prefill_end_time
             )
             generate_queue_time = (
-                new_request.metadata.transfer_end_time
-                - new_request.metadata.generate_start_time
+                new_request.metadata.generate_start_time
+                - new_request.metadata.transfer_end_time
             )
             logging.info(
                 "Observation, queue time %f, %f, %f",
@@ -855,14 +855,14 @@ class Driver:
                     "TPOT Observation: %f, %f, %f",
                     request.metadata.generate_end_time,
                     request.metadata.prefill_end_time,
-                    len(results),
+                    request.complete.size,
                 )
                 self._metrics_collector.get_time_per_output_token().observe(
                     (
                         request.metadata.generate_end_time
                         - request.metadata.prefill_end_time
                     )
-                    / len(results)
+                    / request.complete.size
                 )
               request.return_channel.close()
               # Place the slot back on the free queue.
