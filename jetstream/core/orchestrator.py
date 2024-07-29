@@ -823,14 +823,13 @@ class Driver:
             request.enqueue_samples(results)
             if request.complete.all():
               request.metadata.generate_end_time = time.perf_counter()
-              length = result_tokens.get_result_at_slot(slot).lengths
               if self._metrics_collector:
                 self._metrics_collector.get_time_per_output_token().observe(
                     (
                         request.metadata.generate_end_time
                         - request.metadata.prefill_end_time
                     )
-                    / length
+                    / result_tokens.get_result_at_slot(slot).lengths
                 )
               request.return_channel.close()
               # Place the slot back on the free queue.
