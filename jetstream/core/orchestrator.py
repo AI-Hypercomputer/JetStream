@@ -711,12 +711,12 @@ class Driver:
           new_request.metadata.generate_start_time = time.perf_counter()
           if self._metrics_collector:
             prefill_queue_time = (
-                new_request.metadata.prefill_start_time
-                - new_request.metadata.start_time
+                new_request.metadata.start_time
+                - new_request.metadata.prefill_start_time
             )
             transfer_queue_time = (
-                new_request.metadata.transfer_start_time
-                - new_request.metadata.prefill_end_time
+                new_request.metadata.prefill_end_time
+                - new_request.metadata.transfer_start_time
             )
             generate_queue_time = (
                 new_request.metadata.generate_start_time
@@ -855,14 +855,14 @@ class Driver:
                     "TPOT Observation: %f, %f, %f",
                     request.metadata.generate_end_time,
                     request.metadata.prefill_end_time,
-                    request.complete.size,
+                    len(result_tokens.get_result_at_slot(slot).tokens.shape),
                 )
                 self._metrics_collector.get_time_per_output_token().observe(
                     (
                         request.metadata.generate_end_time
                         - request.metadata.prefill_end_time
                     )
-                    / request.complete.size
+                    / len(result_tokens.get_result_at_slot(slot).tokens.shape)
                 )
               request.return_channel.close()
               # Place the slot back on the free queue.
