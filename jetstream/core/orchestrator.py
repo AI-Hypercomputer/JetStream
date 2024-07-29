@@ -502,11 +502,6 @@ class Driver:
       padded_tokens, true_length = self._process_prefill_content(
           request, tokenizer, is_bos, prefill_engine.max_prefill_length
       )
-      if isinstance(prefill_engine, engine_api.JetStreamEngine):
-        request.padded_token_length = token_utils.take_nearest_length(
-            prefill_engine.prefill_buckets, true_length
-        )
-        prefill_engine.set_padded_token_length(request.padded_token_length)
 
       # Compute new kv cache for the prefill_content.
       prefill_result, first_token = prefill_engine.prefill(
@@ -677,11 +672,6 @@ class Driver:
             slot,
             generate_timestep,
         )
-
-        if isinstance(generate_engine, engine_api.JetStreamEngine):
-          generate_engine.set_padded_token_length(
-              new_request.padded_token_length
-          )
 
         decode_state = generate_engine.insert(
             new_request.prefill_result, decode_state, slot=slot
