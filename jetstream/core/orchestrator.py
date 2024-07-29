@@ -544,6 +544,15 @@ class Driver:
           block=True,
       )
 
+      # Once prefill is complete, place it on the generation queue and block if
+      # full.
+      my_transfer_backlog.put(request, block=True)
+      logging.info(
+          "Placed request on transfer queue %d, %d queued requests.",
+          idx,
+          my_transfer_backlog.qsize(),
+      )
+
       if self._metrics_collector:
         self._metrics_collector.get_time_to_first_token().observe(
             request.metadata.prefill_end_time
@@ -556,16 +565,6 @@ class Driver:
             )
             / true_length
         )
-
-      # Once prefill is complete, place it on the generation queue and block if
-      # full.
-
-      my_transfer_backlog.put(request, block=True)
-      logging.info(
-          "Placed request on transfer queue %d, %d queued requests.",
-          idx,
-          my_transfer_backlog.qsize(),
-      )
 
       del prefill_result
       del request
@@ -807,6 +806,13 @@ class Driver:
         request.complete = complete
         # Return some output samples.
         request.enqueue_samples(results)
+
+        first_token_return_time = time.perf_counter()
+        logging.info(
+            "TTFT duration: %fms",
+            (first_token_return_time - request.metadata.prefill_start_time)
+            * 1000,
+        )
       # generate step tokens
       elif isinstance(data[1], engine_api.ResultTokens):
         # We want to detokenize them.
