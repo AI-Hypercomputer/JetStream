@@ -58,7 +58,7 @@ def layout_params_and_compile_executables(
     prefills_compiled.append(prefill_compiled)
 
   for i, ge in enumerate(generate_engines):
-    insert_compiled, generate_compiled = (
+    insert_generate_compiled = (
         initialize_insert_generate_jit_cache(
             prefill_engine=any_prefill_engine,
             generate_engine=ge,
@@ -68,7 +68,7 @@ def layout_params_and_compile_executables(
         )
     )
     inserts_generate_compiled.append(
-        [insert_compiled, generate_compiled]
+        [insert_generate_compiled]
     )
 
   if prefills_compiled and inserts_generate_compiled:
@@ -221,4 +221,4 @@ def initialize_insert_generate_jit_cache(
       generate_idx,
   )
 
-  return insert_executable, generate_executable
+  return generate_engine.warm
