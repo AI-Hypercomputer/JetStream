@@ -538,12 +538,12 @@ class Driver:
       # put first token to detokenize queue
       request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
       my_detokenize_backlog = self._detokenize_backlogs[idx]
+      request.metadata.prefill_end_time = time.perf_counter()
       my_detokenize_backlog.put(
           (first_token, request, request.metadata.prefill_start_time),
           block=True,
       )
 
-      request.metadata.prefill_end_time = time.perf_counter()
       logging.info(
           "TTFT duration: %fms",
           (
@@ -715,12 +715,17 @@ class Driver:
                 - new_request.metadata.prefill_start_time
             )
             transfer_queue_time = (
-                new_request.metadata.prefill_end_time
-                - new_request.metadata.transfer_start_time
+                new_request.metadata.transfer_start_time 
+                - new_request.metadata.prefill_end_time
             )
             generate_queue_time = (
                 new_request.metadata.generate_start_time
                 - new_request.metadata.transfer_end_time
+            )
+            logging.info(
+              "start time %f, prefill start time %s",
+              new_request.metadata.start_time,
+              new_request.metadata.prefill_start_time
             )
             logging.info(
                 "Observation, queue time %f, %f, %f",
@@ -823,6 +828,7 @@ class Driver:
             result_tokens=request_first_token,
             is_client_side_tokenization=request.is_client_side_tokenization,
             complete=request.complete,
+            debug=True,
         )
         request.complete = complete
         # Return some output samples.
@@ -844,25 +850,27 @@ class Driver:
                 result_tokens=result_tokens,
                 is_client_side_tokenization=request.is_client_side_tokenization,
                 complete=request.complete,
+                debug=True
             )
             request.complete = complete
             # Return some output samples.
             request.enqueue_samples(results)
             if request.complete.all():
               request.metadata.generate_end_time = time.perf_counter()
+              samples, _ = result_tokens.get_result_at_slot(slot).tokens.shape
               if self._metrics_collector:
                 logging.info(
                     "TPOT Observation: %f, %f, %f",
                     request.metadata.generate_end_time,
                     request.metadata.prefill_end_time,
-                    len(result_tokens.get_result_at_slot(slot).tokens.shape),
+                    len(samples),
                 )
                 self._metrics_collector.get_time_per_output_token().observe(
                     (
                         request.metadata.generate_end_time
                         - request.metadata.prefill_end_time
                     )
-                    / len(result_tokens.get_result_at_slot(slot).tokens.shape)
+                    / len(samples)
                 )
               request.return_channel.close()
               # Place the slot back on the free queue.
