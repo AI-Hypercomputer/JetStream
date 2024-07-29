@@ -708,17 +708,6 @@ class Driver:
                 new_request.metadata.generate_start_time
                 - new_request.metadata.transfer_end_time
             )
-            logging.info(
-                "prefill end %f, transfer start %f",
-                new_request.metadata.prefill_end_time,
-                new_request.metadata.transfer_start_time,
-            )
-            logging.info(
-                "Observation, queue time %f, %f, %f",
-                prefill_queue_time,
-                transfer_queue_time,
-                generate_queue_time,
-            )
             self._metrics_collector.get_queue_duration().observe(
                 prefill_queue_time + transfer_queue_time + generate_queue_time
             )
@@ -814,7 +803,6 @@ class Driver:
             result_tokens=request_first_token,
             is_client_side_tokenization=request.is_client_side_tokenization,
             complete=request.complete,
-            debug=True,
         )
         request.complete = complete
         # Return some output samples.
@@ -836,7 +824,6 @@ class Driver:
                 result_tokens=result_tokens,
                 is_client_side_tokenization=request.is_client_side_tokenization,
                 complete=request.complete,
-                debug=True,
             )
             request.complete = complete
             # Return some output samples.
