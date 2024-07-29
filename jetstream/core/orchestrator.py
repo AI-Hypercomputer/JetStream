@@ -845,12 +845,6 @@ class Driver:
               request.metadata.generate_end_time = time.perf_counter()
               length = result_tokens.get_result_at_slot(slot).lengths
               if self._metrics_collector:
-                logging.info(
-                    "TPOT Observation: %f, %f, %f",
-                    request.metadata.generate_end_time,
-                    request.metadata.prefill_end_time,
-                    length,
-                )
                 self._metrics_collector.get_time_per_output_token().observe(
                     (
                         request.metadata.generate_end_time
