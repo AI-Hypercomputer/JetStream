@@ -707,6 +707,12 @@ class Driver:
                 new_request.metadata.generate_start_time
                 - new_request.metadata.transfer_end_time
             )
+            logging.info(
+                "Total queue time: %f, %f, %f",
+                prefill_queue_time,
+                transfer_queue_time,
+                generate_queue_time,
+            )
             self._metrics_collector.get_queue_duration().observe(
                 prefill_queue_time + transfer_queue_time + generate_queue_time
             )
