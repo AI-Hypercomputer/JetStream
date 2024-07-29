@@ -544,20 +544,6 @@ class Driver:
           block=True,
       )
 
-      logging.info(
-          "TTFT duration: %fms",
-          (
-              request.metadata.prefill_end_time
-              - request.metadata.prefill_start_time
-          )
-          * 1000,
-      )
-      logging.info(
-          "Time per prefill token Observation: %f, %f, %f",
-          request.metadata.prefill_start_time,
-          request.metadata.prefill_end_time,
-          true_length,
-      )
       if self._metrics_collector:
         self._metrics_collector.get_time_to_first_token().observe(
             request.metadata.prefill_end_time
@@ -711,8 +697,8 @@ class Driver:
           new_request.metadata.generate_start_time = time.perf_counter()
           if self._metrics_collector:
             prefill_queue_time = (
-                new_request.metadata.start_time
-                - new_request.metadata.prefill_start_time
+                new_request.metadata.prefill_start_time
+                - new_request.metadata.start_time
             )
             transfer_queue_time = (
                 new_request.metadata.transfer_start_time
@@ -723,9 +709,9 @@ class Driver:
                 - new_request.metadata.transfer_end_time
             )
             logging.info(
-                "start time %f, prefill start time %s",
-                new_request.metadata.start_time,
-                new_request.metadata.prefill_start_time,
+                "prefill end %f, transfer start %f",
+                new_request.metadata.prefill_end_time,
+                new_request.metadata.transfer_start_time,
             )
             logging.info(
                 "Observation, queue time %f, %f, %f",
