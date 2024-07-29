@@ -44,21 +44,21 @@ def layout_params_and_compile_executables(
   any_prefill_engine = None
   any_prefill_params = None
 
-  prefill_executables = []
-  inserts_generate_executables = []
+  prefills_compiled = []
+  inserts_generate_compiled = []
 
   for i, pe in enumerate(prefill_engines):
     any_prefill_engine = pe
     any_prefill_params = prefill_params[i]
-    prefill_executable = initialize_prefill_jit_cache(
+    prefill_compiled = initialize_prefill_jit_cache(
         prefill_engine=pe,
         prefill_params=prefill_params[i],
         prefill_idx=i,
     )
-    prefill_executables.append(prefill_executable)
+    prefills_compiled.append(prefill_compiled)
 
   for i, ge in enumerate(generate_engines):
-    insert_executable, generate_executable = (
+    insert_compiled, generate_compiled = (
         initialize_insert_generate_jit_cache(
             prefill_engine=any_prefill_engine,
             generate_engine=ge,
@@ -67,11 +67,11 @@ def layout_params_and_compile_executables(
             generate_idx=i,
         )
     )
-    inserts_generate_executables.append(
-        [insert_executable, generate_executable]
+    inserts_generate_compiled.append(
+        [insert_compiled, generate_compiled]
     )
 
-  if prefill_executables and inserts_generate_executables:
+  if prefills_compiled and inserts_generate_compiled:
     return True
   return False
 
@@ -104,47 +104,32 @@ def initialize_prefill_jit_cache(
   def compile_prefill(length):
     padded_tokens, true_length = jnp.ones((length), dtype="int32"), length
 
-    lowered = jax.jit(
-        prefill_engine._downstream_engine.prefill,  # pylint: disable=protected-access
-        out_shardings=prefill_engine.get_prefix_destination_sharding(),
-    ).lower(
+    _, _ = prefill_engine._downstream_engine.prefill(
         params=prefill_params,
         padded_tokens=padded_tokens,
         true_length=true_length,
     )
-    logging.info(
-        "---------Prefill engine %d lowered for prefill length %d.---------",
-        prefill_idx,
-        length,
-    )
-    compiled = lowered.compile()
+
     logging.info(
         "---------Prefill engine %d compiled for prefill length %d.---------",
         prefill_idx,
         length,
     )
-    return compiled
 
   logging.info("---------Prefill compilation %d begun.---------", prefill_idx)
 
   with concurrent.futures.ThreadPoolExecutor(
       max_workers=len(prefill_buckets)
   ) as executor:
-    prefill_executable = list(executor.map(compile_prefill, prefill_buckets))
+    _ = executor.map(compile_prefill, prefill_buckets)
 
-  prefill_executable = {
-      k: cast(jax.stages.Compiled, e)
-      for k, e in zip(prefill_buckets, prefill_executable)
-  }
-
-  prefill_engine.prefill_executable = prefill_executable
   prefill_engine.warm = True
 
   logging.info(
       "---------Prefill compilation %d complete.---------", prefill_idx
   )
 
-  return prefill_executable
+  return prefill_engine.warm
 
 
 def initialize_insert_generate_jit_cache(
@@ -184,22 +169,13 @@ def initialize_insert_generate_jit_cache(
         true_length=true_length,
     )
 
-    lowered = jax.jit(generate_engine._downstream_engine.insert).lower(  # pylint: disable=protected-access
-        prefix=prefill, decode_state=decode_state, slot=1
-    )
-    logging.info(
-        "---------Generate engine %d lowered for insert length %d.---------",
-        generate_idx,
-        length,
-    )
-    compiled = lowered.compile()
+    generate_engine.insert(prefix=prefill, decode_state=decode_state, slot=0)
 
     logging.info(
         "---------Generate engine %d compiled for insert length %d.---------",
         generate_idx,
         length,
     )
-    return compiled
 
   def compile_generate():
 
@@ -207,16 +183,11 @@ def initialize_insert_generate_jit_cache(
         "---------Generate compilation %d begun.---------", generate_idx
     )
 
-    lowered = jax.jit(generate_engine._downstream_engine.generate).lower(  # pylint: disable=protected-access
+    generate_engine._downstream_engine.generate(
         params=generate_params,
         decode_state=decode_state,
     )
-    logging.info(
-        "---------Generate engine %d lowered.---------",
-        generate_idx,
-    )
 
-    compiled = lowered.compile()
     logging.info(
         "---------Generate engine %d compiled.---------",
         generate_idx,
@@ -226,30 +197,23 @@ def initialize_insert_generate_jit_cache(
         "---------Generate compilation %d complete.---------", generate_idx
     )
 
-    return compiled
-
   logging.info(
       "---------Insertion generation compilation %d begun.---------",
       generate_idx,
   )
 
-  generate_executable = compile_generate()
+  compile_generate()
+
   logging.info(
       "---------Generate engine %d compiled generation step.---------",
       generate_idx,
   )
-  generate_engine.generate_executable = generate_executable
 
   with concurrent.futures.ThreadPoolExecutor(
       max_workers=len(prefill_buckets)
   ) as executor:
-    insert_executable = list(executor.map(compile_insert, prefill_buckets))
+    _ = executor.map(compile_insert, prefill_buckets)
 
-  insert_executable = {
-      k: cast(jax.stages.Compiled, e)
-      for k, e in zip(prefill_buckets, insert_executable)
-  }
-  generate_engine.insert_executable = insert_executable
   generate_engine.warm = True
 
   logging.info(
