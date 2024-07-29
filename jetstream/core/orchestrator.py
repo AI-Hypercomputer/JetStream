@@ -113,7 +113,7 @@ root.addHandler(handler)
 class ActiveRequestMetadata:
   """Inference request metadata."""
 
-  start_time: float
+  start_time: Optional[float] = None
 
   prefill_start_time: Optional[float] = None
   prefill_end_time: Optional[float] = None
