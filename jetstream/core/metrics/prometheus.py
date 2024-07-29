@@ -145,7 +145,7 @@ class JetstreamMetricsCollector:
           0.02500,
           0.05000,
           0.07500,
-          0.01000,
+          0.10000,
       ],
   )
 
