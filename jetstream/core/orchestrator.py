@@ -108,16 +108,6 @@ formatter = logging.Formatter(
 handler.setFormatter(formatter)
 root.addHandler(handler)
 
-
-def delete_pytree(p):
-  def delete_leaf(leaf):
-    if isinstance(leaf, jax.Array):
-      leaf.delete()
-    del leaf
-
-  jax.tree_map(delete_leaf, p)
-
-
 @dataclasses.dataclass
 class ActiveRequest:
   """Current state of the driver."""
