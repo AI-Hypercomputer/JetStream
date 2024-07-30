@@ -108,6 +108,7 @@ formatter = logging.Formatter(
 handler.setFormatter(formatter)
 root.addHandler(handler)
 
+
 @dataclasses.dataclass
 class ActiveRequest:
   """Current state of the driver."""
