@@ -16,7 +16,7 @@
 
 import os
 import shortuuid
-from prometheus_client import Count, Gauge
+from prometheus_client import Counter, Gauge
 
 
 class JetstreamMetricsCollector:
@@ -55,7 +55,7 @@ class JetstreamMetricsCollector:
       documentation="Total time taken to start the Jetstream server",
       labelnames=["id"],
   )
-  _request_success_count = Count(
+  _request_success_count = Counter(
       name="jetstream_request_success_count",
       documentation="Number of requests successfully completed",
       labelnames=["id"],
