@@ -77,4 +77,4 @@ class JetstreamMetricsCollector:
     return self._server_startup_latency.labels(id=self._id)
 
   def get_request_success_count_metric(self):
-    return self._request_success_counter.labels(id=self._id)
+    return self._request_success_count.labels(id=self._id)
