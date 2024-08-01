@@ -50,7 +50,7 @@ class JetstreamMetricsCollector:
 
   _queue_duration = Histogram(
       name="jetstream_queue_duration",
-      documentation="The total time each request spends enqueued",
+      documentation="The total time each request spends enqueued in seconds",
       labelnames=["id"],
       buckets=[
           0.01,
@@ -83,7 +83,7 @@ class JetstreamMetricsCollector:
 
   _time_to_first_token = Histogram(
       name="jetstream_time_to_first_token",
-      documentation="Time to first token per request",
+      documentation="Time to first token per request in seconds",
       labelnames=["id"],
       buckets=[
           0.001,
@@ -107,7 +107,7 @@ class JetstreamMetricsCollector:
 
   _time_per_output_token = Histogram(
       name="jetstream_time_per_output_token",
-      documentation="Average time per output token per request",
+      documentation="Average time per output token per request in seconds",
       labelnames=["id"],
       buckets=[
           0.01,
@@ -128,7 +128,7 @@ class JetstreamMetricsCollector:
 
   _time_per_prefill_token = Histogram(
       name="jetstream_time_per_prefill_token",
-      documentation="Prefill time per token per request",
+      documentation="Prefill time per token per request in seconds",
       labelnames=["id"],
       buckets=[
           0.00001,
@@ -145,6 +145,13 @@ class JetstreamMetricsCollector:
           0.05,
           0.1,
       ],
+  )
+
+  _time_per_request = Histogram(
+      name="jetstream_time_per_request",
+      documentation="End to end request latency in seconds",
+      labelnames=["id"],
+      buckets=[1.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0],
   )
 
   def get_prefill_backlog_metric(self):
@@ -173,3 +180,6 @@ class JetstreamMetricsCollector:
 
   def get_time_per_prefill_token(self):
     return self._time_per_prefill_token.labels(id=self._id)
+
+  def get_time_per_request(self):
+    return self._time_per_request(id=self._id)
