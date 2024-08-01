@@ -182,4 +182,4 @@ class JetstreamMetricsCollector:
     return self._time_per_prefill_token.labels(id=self._id)
 
   def get_time_per_request(self):
-    return self._time_per_request(id=self._id)
+    return self._time_per_request.labels(id=self._id)
