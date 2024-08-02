@@ -953,8 +953,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
   async def Decode(  # pylint: disable=invalid-overridden-method
       self,
       request: jetstream_pb2.DecodeRequest,
-      context: Optional[grpc.aio.ServicerContext] = None,
-      start_time: Optional[float] = None,
+      context: Optional[grpc.aio.ServicerContext] = None
   ) -> AsyncIterator[jetstream_pb2.DecodeResponse]:
     """Decode."""
     if context is None:
@@ -976,7 +975,8 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
         is_client_side_tokenization=is_client_side_tokenization,
         return_channel=return_channel,
         metadata=ActiveRequestMetadata(
-            start_time=start_time, prefill_enqueue_time=time.perf_counter()
+            start_time=request.metadata.start_time, 
+            prefill_enqueue_time=time.perf_counter()
         ),
     )
     # The first stage is being prefilled, all other stages are handled

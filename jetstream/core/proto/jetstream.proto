@@ -48,8 +48,17 @@ message DecodeRequest {
     TextContent text_content = 5;
     TokenContent token_content = 6;
   }
+
+  message Metadata [
+    float start_time = 1;
+  ]
+
+  oneof metadata {
+    Metadata metadata = 7;
+  }
+
   reserved 1, 2, 3;
-  // Next ID: 7
+  // Next ID: 8
 }
 
 message DecodeResponse {
