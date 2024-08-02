@@ -953,8 +953,8 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
   async def Decode(  # pylint: disable=invalid-overridden-method
       self,
       request: jetstream_pb2.DecodeRequest,
-      start_time: Optional[float] = None,
       context: Optional[grpc.aio.ServicerContext] = None,
+      start_time: Optional[float] = None,
   ) -> AsyncIterator[jetstream_pb2.DecodeResponse]:
     """Decode."""
     if context is None:
