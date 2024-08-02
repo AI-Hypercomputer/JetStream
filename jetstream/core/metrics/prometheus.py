@@ -154,7 +154,7 @@ class JetstreamMetricsCollector:
       buckets=[1.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0],
   )
 
-  _queue_duration = Histogram(
+  _wait_time_per_request = Histogram(
       name="jetstream_wait_time_per_request",
       documentation="The total time each request is not actively being prefilled or decoded",
       labelnames=["id"],
