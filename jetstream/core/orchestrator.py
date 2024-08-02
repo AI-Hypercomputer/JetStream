@@ -683,7 +683,7 @@ class Driver:
           if new_request is None:
             break
           new_request.metadata.generate_dequeue_time = time.perf_counter()
-          if self._metrics_collector and new_request.start_time is not None:
+          if self._metrics_collector and new_request.metadata.start_time is not None:
             self._metrics_collector.get_queue_duration().observe(
                 # Time in prefill queue
                 new_request.metadata.prefill_dequeue_time
