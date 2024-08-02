@@ -156,7 +156,7 @@ class JetstreamMetricsCollector:
 
   _wait_time_per_request = Histogram(
       name="jetstream_wait_time_per_request",
-      documentation="The total time each request is not actively being prefilled or decoded",
+      documentation="Time each request is not being prefilled or decoded",
       labelnames=["id"],
       buckets=[
           0.01,
