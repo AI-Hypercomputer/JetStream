@@ -154,6 +154,27 @@ class JetstreamMetricsCollector:
       buckets=[1.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0],
   )
 
+  _queue_duration = Histogram(
+      name="jetstream_wait_time_per_request",
+      documentation="The total time each request is not actively being prefilled or decoded",
+      labelnames=["id"],
+      buckets=[
+          0.01,
+          0.02,
+          0.05,
+          0.1,
+          0.2,
+          0.5,
+          1.0,
+          2.0,
+          5.0,
+          10.0,
+          20.0,
+          50.0,
+          100.0,
+      ],
+  )
+
   def get_prefill_backlog_metric(self):
     return self._prefill_backlog.labels(id=self._id)
 
@@ -183,3 +204,6 @@ class JetstreamMetricsCollector:
 
   def get_time_per_request(self):
     return self._time_per_request.labels(id=self._id)
+
+  def get_wait_time_per_request(self):
+    return self._wait_time_per_request.labels(id=self._id)

@@ -16,6 +16,7 @@
 
 import json
 import logging
+import time
 from typing import Sequence
 from absl import app as abslapp
 from absl import flags
@@ -63,8 +64,9 @@ def root():
 
 @router.post("/v1/generate")
 async def generate(request: DecodeRequest):
+  start_time = time.perf_counter()
   proto_request = Parse(request.json(), jetstream_pb2.DecodeRequest())
-  generator = llm_orchestrator.Decode(proto_request)
+  generator = llm_orchestrator.Decode(proto_request, start_time=start_time)
   return StreamingResponse(
       content=proto_to_json_generator(generator), media_type="text/event-stream"
   )

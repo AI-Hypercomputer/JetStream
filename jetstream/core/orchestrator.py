@@ -115,14 +115,16 @@ class ActiveRequestMetadata:
 
   start_time: Optional[float] = None
 
-  prefill_start_time: Optional[float] = None
-  prefill_end_time: Optional[float] = None
+  prefill_enqueue_time: Optional[float] = None
+  prefill_dequeue_time: Optional[float] = None
 
-  transfer_start_time: Optional[float] = None
-  transfer_end_time: Optional[float] = None
+  transfer_enqueue_time: Optional[float] = None
+  transfer_dequeue_time: Optional[float] = None
 
-  generate_start_time: Optional[float] = None
-  generate_end_time: Optional[float] = None
+  generate_enqueue_time: Optional[float] = None
+  generate_dequeue_time: Optional[float] = None
+
+  complete_time: Optional[float] = None
 
 
 @dataclasses.dataclass
@@ -498,7 +500,7 @@ class Driver:
 
       if request is None:
         break
-      request.metadata.prefill_start_time = time.perf_counter()
+      request.metadata.prefill_dequeue_time = time.perf_counter()
       is_bos = True
       logging.info(
           "Prefilling on prefill engine %d : prefill queue size, %d,"
@@ -529,9 +531,9 @@ class Driver:
       # put first token to detokenize queue
       request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
       my_detokenize_backlog = self._detokenize_backlogs[idx]
-      request.metadata.prefill_end_time = time.perf_counter()
+      request.metadata.transfer_enqueue_time = time.perf_counter()
       my_detokenize_backlog.put(
-          (first_token, request, request.metadata.prefill_start_time),
+          (first_token, request, request.metadata.prefill_dequeue_time),
           block=True,
       )
 
@@ -547,8 +549,8 @@ class Driver:
       if self._metrics_collector:
         self._metrics_collector.get_time_per_prefill_token().observe(
             (
-                request.metadata.prefill_end_time
-                - request.metadata.prefill_start_time
+                request.metadata.transfer_enqueue_time
+                - request.metadata.prefill_dequeue_time
             )
             / true_length
         )
@@ -589,7 +591,7 @@ class Driver:
       new_request = transfer_backlog.get(block=True)
       if new_request is None:
         break
-      new_request.metadata.transfer_start_time = time.perf_counter()
+      new_request.metadata.transfer_dequeue_time = time.perf_counter()
       target_idx = min(
           self._generate_backlogs.items(), key=lambda q: q[1].qsize()
       )[0]
@@ -605,7 +607,7 @@ class Driver:
         # Transfer the info to the relevant generate slice.
         self._transfer_prefill_result(new_request, target_idx)
       # Place the request on the correct generate backlog and block if full.
-      new_request.metadata.transfer_end_time = time.perf_counter()
+      new_request.metadata.generate_enqueue_time = time.perf_counter()
       self._generate_backlogs[target_idx].put(new_request, block=True)
       logging.info(
           "Successfully transferred prefill "
@@ -680,18 +682,18 @@ class Driver:
           new_request = my_generate_backlog.get(block=block, timeout=1.0)
           if new_request is None:
             break
-          new_request.metadata.generate_start_time = time.perf_counter()
-          if self._metrics_collector:
+          new_request.metadata.generate_dequeue_time = time.perf_counter()
+          if self._metrics_collector and new_request.start_time is not None:
             self._metrics_collector.get_queue_duration().observe(
                 # Time in prefill queue
-                new_request.metadata.prefill_start_time
+                new_request.metadata.prefill_dequeue_time
                 - new_request.metadata.start_time
                 # Time in transfer queue
-                + new_request.metadata.transfer_start_time
-                - new_request.metadata.prefill_end_time
+                + new_request.metadata.transfer_dequeue_time
+                - new_request.metadata.transfer_enqueue_time
                 # Time in generate queue
-                + new_request.metadata.generate_start_time
-                - new_request.metadata.transfer_end_time
+                + new_request.metadata.generate_dequeue_time
+                - new_request.metadata.generate_enqueue_time
             )
           # Got free slot and new request, use them.
         except queue.Empty:
@@ -793,11 +795,11 @@ class Driver:
         first_token_return_time = time.perf_counter()
         if self._metrics_collector:
           self._metrics_collector.get_time_to_first_token().observe(
-              first_token_return_time - request.metadata.prefill_start_time
+              first_token_return_time - request.metadata.prefill_dequeue_time
           )
         logging.info(
             "TTFT duration: %fms",
-            (first_token_return_time - request.metadata.prefill_start_time)
+            (first_token_return_time - request.metadata.prefill_dequeue_time)
             * 1000,
         )
       # generate step tokens
@@ -822,20 +824,37 @@ class Driver:
             # Return some output samples.
             request.enqueue_samples(results)
             if request.complete.all():
-              request.metadata.generate_end_time = time.perf_counter()
+              request.metadata.complete_time = time.perf_counter()
+              request.return_channel.close()
               if self._metrics_collector:
                 self._metrics_collector.get_time_per_output_token().observe(
                     (
-                        request.metadata.generate_end_time
-                        - request.metadata.prefill_end_time
+                        request.metadata.complete_time
+                        - request.metadata.transfer_enqueue_time
                     )
                     / result_tokens.get_result_at_slot(slot).lengths
                 )
                 self._metrics_collector.get_time_per_request().observe(
-                    request.metadata.generate_end_time
-                    - request.metadata.prefill_end_time
+                    request.metadata.complete_time
+                    - request.metadata.transfer_enqueue_time
                 )
-              request.return_channel.close()
+
+                if request.metadata.start_time:
+                  total_time = (
+                      request.metadata.complete_time
+                      - request.metadata.start_time
+                  )
+                  prefill_time = (
+                      request.metadata.complete_time
+                      - request.metadata.start_time
+                  )
+                  generate_time = (
+                      request.metadata.complete_time
+                      - request.metadata.generate_dequeue_time
+                  )
+                  self._metrics_collector.get_wait_time_per_request().observe(
+                      total_time - prefill_time - generate_time
+                  )
               # Place the slot back on the free queue.
               my_live_requests[slot] = None
               my_slots.put(slot, block=False)  # This should always have space.
@@ -931,6 +950,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
   async def Decode(  # pylint: disable=invalid-overridden-method
       self,
       request: jetstream_pb2.DecodeRequest,
+      start_time: Optional[float] = None,
       context: Optional[grpc.aio.ServicerContext] = None,
   ) -> AsyncIterator[jetstream_pb2.DecodeResponse]:
     """Decode."""
@@ -952,7 +972,9 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
         prefill_content=prefill_content,
         is_client_side_tokenization=is_client_side_tokenization,
         return_channel=return_channel,
-        metadata=ActiveRequestMetadata(start_time=time.perf_counter()),
+        metadata=ActiveRequestMetadata(
+            start_time=start_time, prefill_enqueue_time=time.perf_counter()
+        ),
     )
     # The first stage is being prefilled, all other stages are handled
     # inside the driver (transfer, generate*N, detokenize).
