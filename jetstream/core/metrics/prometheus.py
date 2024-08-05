@@ -215,4 +215,3 @@ class JetstreamMetricsCollector:
 
   def get_request_success_count_metric(self):
     return self._request_success_count.labels(id=self._id)
-
