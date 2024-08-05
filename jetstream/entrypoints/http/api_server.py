@@ -65,7 +65,7 @@ def root():
 @router.post("/v1/generate")
 async def generate(request: DecodeRequest):
   request.metadata = jetstream_pb2.DecodeRequest.Metadata(
-    start_time = time.perf_counter()
+      start_time=time.perf_counter()
   )
   proto_request = Parse(request.json(), jetstream_pb2.DecodeRequest())
   generator = llm_orchestrator.Decode(proto_request)

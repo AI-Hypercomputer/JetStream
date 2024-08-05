@@ -49,11 +49,11 @@ message DecodeRequest {
     TokenContent token_content = 6;
   }
 
-  message Metadata [
+  message Metadata {
     float start_time = 1;
-  ]
+  }
 
-  oneof metadata {
+  oneof metadata_optional {
     Metadata metadata = 7;
   }
 
