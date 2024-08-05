@@ -780,6 +780,8 @@ class Driver:
             # Return some output samples.
             request.enqueue_samples(results)
             if request.complete.all():
+              if self._metrics_collector:
+                self._metrics_collector.get_request_success_count_metric().inc()
               request.return_channel.close()
               # Place the slot back on the free queue.
               my_live_requests[slot] = None
