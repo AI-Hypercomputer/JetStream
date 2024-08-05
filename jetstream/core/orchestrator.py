@@ -848,8 +848,8 @@ class Driver:
                       - request.metadata.start_time
                   )
                   prefill_time = (
-                      request.metadata.complete_time
-                      - request.metadata.start_time
+                      request.metadata.transfer_enqueue_time
+                      - request.metadata.prefill_dequeue_time
                   )
                   generate_time = (
                       request.metadata.complete_time
