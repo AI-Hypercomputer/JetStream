@@ -89,6 +89,7 @@ class JetstreamMetricsCollector:
           1000000,
           2000000,
       ],
+  )
   _request_success_count = Counter(
       name="jetstream_request_success_count",
       documentation="Number of requests successfully completed",
