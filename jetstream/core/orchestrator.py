@@ -690,7 +690,7 @@ class Driver:
             self._metrics_collector.get_queue_duration().observe(
                 # Time in prefill queue
                 new_request.metadata.prefill_dequeue_time
-                - new_request.metadata.start_time
+                - new_request.metadata.prefill_enqueue_time
                 # Time in transfer queue
                 + new_request.metadata.transfer_dequeue_time
                 - new_request.metadata.transfer_enqueue_time
