@@ -63,6 +63,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
     """Sets up a server and requests token responses."""
     ######################### Server side ######################################
     port = portpicker.pick_unused_port()
+    metrics_port = portpicker.pick_unused_port()
 
     print("port: " + str(port))
     credentials = grpc.local_server_credentials()
@@ -72,6 +73,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         config=config,
         devices=devices,
         credentials=credentials,
+        metrics_server_config=config_lib.MetricsServerConfig(port=metrics_port),
     )
     ###################### Requester side ######################################
 
@@ -106,30 +108,15 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         assert output_text == expected_text[counter]
         assert output_token_id == expected_token_ids[counter]
         counter += 1
+      # assert prometheus server is running and responding
+      assert server._driver._metrics_collector is not None  # pylint: disable=protected-access
+      assert (
+          requests.get(
+              f"http://localhost:{metrics_port}", timeout=5
+          ).status_code
+          == requests.status_codes.codes["ok"]
+      )
       server.stop()
-
-  def test_prometheus_server(self):
-    port = portpicker.pick_unused_port()
-    metrics_port = portpicker.pick_unused_port()
-
-    print("port: " + str(port))
-    print("metrics port: " + str(metrics_port))
-    credentials = grpc.local_server_credentials()
-    # Now test server with prometheus config
-    server = server_lib.run(
-        port=port,
-        config=config_lib.InterleavedCPUTestServer,
-        devices=[None],
-        credentials=credentials,
-        metrics_server_config=config_lib.MetricsServerConfig(port=metrics_port),
-    )
-    # assert prometheus server is running and responding
-    assert server._driver._metrics_collector is not None  # pylint: disable=protected-access
-    assert (
-        requests.get(f"http://localhost:{metrics_port}", timeout=5).status_code
-        == requests.status_codes.codes["ok"]
-    )
-    server.stop()
 
   def test_jax_profiler_server(self):
     port = portpicker.pick_unused_port()
