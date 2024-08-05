@@ -109,15 +109,6 @@ handler.setFormatter(formatter)
 root.addHandler(handler)
 
 
-def delete_pytree(p):
-  def delete_leaf(leaf):
-    if isinstance(leaf, jax.Array):
-      leaf.delete()
-    del leaf
-
-  jax.tree_map(delete_leaf, p)
-
-
 @dataclasses.dataclass
 class ActiveRequest:
   """Current state of the driver."""
@@ -532,6 +523,8 @@ class Driver:
           idx,
           my_transfer_backlog.qsize(),
       )
+      if self._metrics_collector:
+        self._metrics_collector.get_request_input_length().observe(true_length)
 
       del prefill_result
       del request
@@ -781,6 +774,9 @@ class Driver:
             request.enqueue_samples(results)
             if request.complete.all():
               if self._metrics_collector:
+                self._metrics_collector.get_request_output_length().observe(
+                    result_tokens.get_result_at_slot(slot).lengths
+                )
                 self._metrics_collector.get_request_success_count_metric().inc()
               request.return_channel.close()
               # Place the slot back on the free queue.
