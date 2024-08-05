@@ -18,6 +18,8 @@ import os
 import shortuuid
 from prometheus_client import Gauge, Histogram
 
+from jetstream.engine.token_utils import DEFAULT_PREFILL_BUCKETS
+
 
 class JetstreamMetricsCollector:
   """Wrapper class should be used to assure all metrics have proper tags"""
@@ -59,28 +61,7 @@ class JetstreamMetricsCollector:
       name="jetstream_request_input_length",
       documentation="Number of input tokens per request",
       labelnames=["id"],
-      buckets=[
-          1,
-          2,
-          5,
-          10,
-          20,
-          50,
-          100,
-          200,
-          500,
-          1000,
-          2000,
-          5000,
-          10000,
-          20000,
-          50000,
-          100000,
-          200000,
-          500000,
-          1000000,
-          2000000,
-      ],
+      buckets=DEFAULT_PREFILL_BUCKETS,
   )
   _request_output_length = Histogram(
       name="jetstream_request_output_length",
