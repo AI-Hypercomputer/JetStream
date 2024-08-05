@@ -40,6 +40,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
           # Uses weight 2 for prefill, 4 for decode.
           (
               config_lib.CPUTestServer,
+              True,
               ["Ċ", "Ō", "Ɵ", ""],
               [266, 332, 415, None],
               [None, None],
@@ -47,6 +48,15 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
           # Uses the same prefill / generate weights (2).
           (
               config_lib.InterleavedCPUTestServer,
+              True,
+              ["Ċ", "Ə", "ɖ", ""],
+              [266, 399, 598, None],
+              [None],
+          ),
+          # Disable the metrics server.
+          (
+              config_lib.InterleavedCPUTestServer,
+              False,
               ["Ċ", "Ə", "ɖ", ""],
               [266, 399, 598, None],
               [None],
@@ -56,6 +66,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
   async def test_server(
       self,
       config: Type[config_lib.ServerConfig],
+      metrics_enabled: bool,
       expected_text: list[str],
       expected_token_ids: list[int | None],
       devices: list[Any],
@@ -73,12 +84,13 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         config=config,
         devices=devices,
         credentials=credentials,
-        metrics_server_config=config_lib.MetricsServerConfig(port=metrics_port),
+        metrics_server_config=config_lib.MetricsServerConfig(port=metrics_port) if metrics_enabled is True else None,
     )
     ###################### Requester side ######################################
 
-    # prometheus not configured, assert no metrics collector on Driver
-    assert server._driver._metrics_collector is None  # pylint: disable=protected-access
+    # if prometheus not configured, assert no metrics collector on Driver
+    if metrics_enabled is not True:
+      assert server._driver._metrics_collector is None  # pylint: disable=protected-access
 
     async with grpc.aio.secure_channel(
         f"localhost:{port}", grpc.local_channel_credentials()
@@ -109,13 +121,14 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         assert output_token_id == expected_token_ids[counter]
         counter += 1
       # assert prometheus server is running and responding
-      assert server._driver._metrics_collector is not None  # pylint: disable=protected-access
-      assert (
-          requests.get(
-              f"http://localhost:{metrics_port}", timeout=5
-          ).status_code
-          == requests.status_codes.codes["ok"]
-      )
+      if metrics_enabled is True:
+        assert server._driver._metrics_collector is not None  # pylint: disable=protected-access
+        assert (
+            requests.get(
+                f"http://localhost:{metrics_port}", timeout=5
+            ).status_code
+            == requests.status_codes.codes["ok"]
+        )
       server.stop()
 
   def test_jax_profiler_server(self):
