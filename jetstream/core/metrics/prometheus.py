@@ -16,7 +16,7 @@
 
 import os
 import shortuuid
-from prometheus_client import Gauge, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 
 class JetstreamMetricsCollector:
@@ -78,6 +78,11 @@ class JetstreamMetricsCollector:
   _server_startup_latency = Gauge(
       name="jetstream_server_startup_latency",
       documentation="Total time taken to start the Jetstream server",
+      labelnames=["id"],
+  )
+  _request_success_count = Counter(
+      name="jetstream_request_success_count",
+      documentation="Number of requests successfully completed",
       labelnames=["id"],
   )
 
@@ -207,3 +212,7 @@ class JetstreamMetricsCollector:
 
   def get_wait_time_per_request(self):
     return self._wait_time_per_request.labels(id=self._id)
+
+  def get_request_success_count_metric(self):
+    return self._request_success_count.labels(id=self._id)
+

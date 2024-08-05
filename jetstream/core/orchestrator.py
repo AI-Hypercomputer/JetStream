@@ -830,6 +830,7 @@ class Driver:
               request.metadata.complete_time = time.perf_counter()
               request.return_channel.close()
               if self._metrics_collector:
+                self._metrics_collector.get_request_success_count_metric().inc()
                 self._metrics_collector.get_time_per_output_token().observe(
                     (
                         request.metadata.complete_time
