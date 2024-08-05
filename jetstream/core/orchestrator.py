@@ -777,6 +777,7 @@ class Driver:
                 self._metrics_collector.get_request_output_length().observe(
                     result_tokens.get_result_at_slot(slot).lengths
                 )
+                self._metrics_collector.get_request_success_count_metric().inc()
               request.return_channel.close()
               # Place the slot back on the free queue.
               my_live_requests[slot] = None

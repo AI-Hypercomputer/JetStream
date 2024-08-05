@@ -16,7 +16,7 @@
 
 import os
 import shortuuid
-from prometheus_client import Gauge, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 from jetstream.engine.token_utils import DEFAULT_PREFILL_BUCKETS
 
@@ -89,6 +89,10 @@ class JetstreamMetricsCollector:
           1000000,
           2000000,
       ],
+  _request_success_count = Counter(
+      name="jetstream_request_success_count",
+      documentation="Number of requests successfully completed",
+      labelnames=["id"],
   )
 
   def get_prefill_backlog_metric(self):
@@ -111,3 +115,6 @@ class JetstreamMetricsCollector:
 
   def get_request_output_length(self):
     return self._request_output_length.labels(id=self._id)
+
+  def get_request_success_count_metric(self):
+    return self._request_success_count.labels(id=self._id)
