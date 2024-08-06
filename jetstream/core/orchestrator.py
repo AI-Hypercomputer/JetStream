@@ -108,7 +108,6 @@ formatter = logging.Formatter(
 handler.setFormatter(formatter)
 root.addHandler(handler)
 
-
 @dataclasses.dataclass
 class ActiveRequestMetadata:
   """Inference request metadata."""
@@ -125,7 +124,6 @@ class ActiveRequestMetadata:
   generate_dequeue_time: Optional[float] = None
 
   complete_time: Optional[float] = None
-
 
 @dataclasses.dataclass
 class ActiveRequest:
@@ -545,6 +543,8 @@ class Driver:
           idx,
           my_transfer_backlog.qsize(),
       )
+      if self._metrics_collector:
+        self._metrics_collector.get_request_input_length().observe(true_length)
 
       if self._metrics_collector:
         self._metrics_collector.get_time_per_prefill_token().observe(
@@ -830,6 +830,9 @@ class Driver:
               request.metadata.complete_time = time.perf_counter()
               request.return_channel.close()
               if self._metrics_collector:
+                self._metrics_collector.get_request_output_length().observe(
+                    result_tokens.get_result_at_slot(slot).lengths
+                )
                 self._metrics_collector.get_request_success_count_metric().inc()
                 self._metrics_collector.get_time_per_output_token().observe(
                     (

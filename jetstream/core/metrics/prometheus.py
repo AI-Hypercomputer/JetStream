@@ -17,6 +17,8 @@
 import os
 import shortuuid
 from prometheus_client import Counter, Gauge, Histogram
+from jetstream.engine.token_utils import DEFAULT_PREFILL_BUCKETS
+
 
 
 class JetstreamMetricsCollector:
@@ -79,6 +81,39 @@ class JetstreamMetricsCollector:
       name="jetstream_server_startup_latency",
       documentation="Total time taken to start the Jetstream server",
       labelnames=["id"],
+  )
+  _request_input_length = Histogram(
+      name="jetstream_request_input_length",
+      documentation="Number of input tokens per request",
+      labelnames=["id"],
+      buckets=DEFAULT_PREFILL_BUCKETS,
+  )
+  _request_output_length = Histogram(
+      name="jetstream_request_output_length",
+      documentation="Number of output tokens per request",
+      labelnames=["id"],
+      buckets=[
+          1,
+          2,
+          5,
+          10,
+          20,
+          50,
+          100,
+          200,
+          500,
+          1000,
+          2000,
+          5000,
+          10000,
+          20000,
+          50000,
+          100000,
+          200000,
+          500000,
+          1000000,
+          2000000,
+      ],
   )
   _request_success_count = Counter(
       name="jetstream_request_success_count",
@@ -212,6 +247,12 @@ class JetstreamMetricsCollector:
 
   def get_wait_time_per_request(self):
     return self._wait_time_per_request.labels(id=self._id)
+
+  def get_request_input_length(self):
+    return self._request_input_length.labels(id=self._id)
+
+  def get_request_output_length(self):
+    return self._request_output_length.labels(id=self._id)
 
   def get_request_success_count_metric(self):
     return self._request_success_count.labels(id=self._id)
