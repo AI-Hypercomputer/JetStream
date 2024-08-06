@@ -10,17 +10,7 @@ update-deps:
 	$(PIP) install pip-tools
 	$(PYTHON) -m piptools compile requirements.in
 
-generate-protos: generate format
-
-generate:
-	$(PIP) install grpcio-tools==$(GRPC_TOOLS_VERSION)
-	$(PYTHON) -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. jetstream/core/proto/jetstream.proto
-
-	cat license_preamble.txt jetstream/core/proto/jetstream_pb2_grpc.py >> jetstream/core/proto/jetstream_pb2_grpc.py_temp && \
-	mv jetstream/core/proto/jetstream_pb2_grpc.py_temp jetstream/core/proto/jetstream_pb2_grpc.py
-
-	cat license_preamble.txt jetstream/core/proto/jetstream_pb2.py >> jetstream/core/proto/jetstream_pb2.py_temp && \
-	mv jetstream/core/proto/jetstream_pb2.py_temp jetstream/core/proto/jetstream_pb2.py
+generate-protos: generate-and-append-preambles format
 
 format:
 	$(PIP) install pyink
@@ -28,4 +18,17 @@ format:
 
 check:
 	pylint --ignore-patterns=".*_pb2.py,.*_pb2_grpc.py" jetstream/ benchmarks/
+
+generate-and-append-preambles:
+	$(PIP) install grpcio-tools==$(GRPC_TOOLS_VERSION)
+	for id in $$(find . -name "*.proto"); do \
+		$(PYTHON) -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. $$id && \
+		PROTO_FILE=$$(echo $$id | awk '{print substr($$0, 1, length($$0)-6)}') && \
+		PB_GRPC_PY=$(addsuffix "_pb2_grpc.py",$$PROTO_FILE) && \
+		PB_PY=$(addsuffix "_pb2.py",$$PROTO_FILE) && \
+		cat license_preamble.txt $$PB_GRPC_PY >> $(addsuffix "_temp",$$PB_GRPC_PY) && \
+		mv $(addsuffix "_temp",$$PB_GRPC_PY) $$PB_GRPC_PY; \
+		cat license_preamble.txt $$PB_PY >> $(addsuffix "_temp",$$PB_PY) && \
+		mv $(addsuffix "_temp",$$PB_PY) $$PB_PY; \
+	done
 
