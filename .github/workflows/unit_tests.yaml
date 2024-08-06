@@ -53,7 +53,7 @@ jobs:
         pytype --jobs auto --disable=import-error,module-attr jetstream/ benchmarks/
     - name: Analysing the code with pylint
       run: |
-        pylint jetstream/ benchmarks/
+        make check
     - name: Format check with pyink
       run: |
         pyink --pyink-indentation 2 --line-length 80 --check --verbose .
