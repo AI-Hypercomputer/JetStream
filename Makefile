@@ -10,7 +10,7 @@ update-deps:
 	$(PIP) install pip-tools
 	$(PYTHON) -m piptools compile requirements.in
 
-generate-protos: generate-and-append-preambles format
+generate-protos: generate-and-prepend-preambles format
 
 format:
 	$(PIP) install pyink
@@ -19,7 +19,7 @@ format:
 check:
 	pylint --ignore-patterns=".*_pb2.py,.*_pb2_grpc.py" jetstream/ benchmarks/
 
-generate-and-append-preambles:
+generate-and-prepend-preambles:
 	$(PIP) install grpcio-tools==$(GRPC_TOOLS_VERSION)
 	for id in $$(find . -name "*.proto"); do \
 		$(PYTHON) -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. $$id && \
