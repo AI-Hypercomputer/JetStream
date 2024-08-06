@@ -108,6 +108,7 @@ formatter = logging.Formatter(
 handler.setFormatter(formatter)
 root.addHandler(handler)
 
+
 @dataclasses.dataclass
 class ActiveRequestMetadata:
   """Inference request metadata."""
@@ -124,6 +125,7 @@ class ActiveRequestMetadata:
   generate_dequeue_time: Optional[float] = None
 
   complete_time: Optional[float] = None
+
 
 @dataclasses.dataclass
 class ActiveRequest:

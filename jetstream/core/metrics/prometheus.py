@@ -20,7 +20,6 @@ from prometheus_client import Counter, Gauge, Histogram
 from jetstream.engine.token_utils import DEFAULT_PREFILL_BUCKETS
 
 
-
 class JetstreamMetricsCollector:
   """Wrapper class should be used to assure all metrics have proper tags"""
 
