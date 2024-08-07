@@ -25,10 +25,15 @@ class TokenContent(BaseModel):
   token_ids: list[int]
 
 
+class Metadata(BaseModel):
+  start_time: float
+
+
 class DecodeRequest(BaseModel):
   max_tokens: int
   text_content: TextContent | None = None
   token_content: TokenContent | None = None
+  metadata: Metadata | None = None
 
   # Config to enforce the oneof behavior at runtime.
   class Config:

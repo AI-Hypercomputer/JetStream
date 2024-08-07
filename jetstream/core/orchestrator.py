@@ -110,6 +110,24 @@ root.addHandler(handler)
 
 
 @dataclasses.dataclass
+class ActiveRequestMetadata:
+  """Inference request metadata."""
+
+  start_time: Optional[float] = None
+
+  prefill_enqueue_time: Optional[float] = None
+  prefill_dequeue_time: Optional[float] = None
+
+  transfer_enqueue_time: Optional[float] = None
+  transfer_dequeue_time: Optional[float] = None
+
+  generate_enqueue_time: Optional[float] = None
+  generate_dequeue_time: Optional[float] = None
+
+  complete_time: Optional[float] = None
+
+
+@dataclasses.dataclass
 class ActiveRequest:
   """Current state of the driver."""
 
@@ -130,6 +148,8 @@ class ActiveRequest:
   # Which generate step this was added at.
   generate_timestep_added: Optional[int] = None
   is_client_side_tokenization: Optional[bool] = False
+  ################## Information relevant for metrics ###################
+  metadata: ActiveRequestMetadata = ActiveRequestMetadata()
 
   def enqueue_samples(self, generated_samples: list[ReturnSample]):
     """Adds the generated sample(s) to return channel for current step.
@@ -477,10 +497,10 @@ class Driver:
       my_transfer_backlog = self._transfer_backlogs[idx]
       # The prefill thread can just sleep until it has work to do.
       request = self._prefill_backlog.get(block=True)
-      request_start_time = time.perf_counter()
 
       if request is None:
         break
+      request.metadata.prefill_dequeue_time = time.perf_counter()
       is_bos = True
       logging.info(
           "Prefilling on prefill engine %d : prefill queue size, %d,"
@@ -511,8 +531,10 @@ class Driver:
       # put first token to detokenize queue
       request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
       my_detokenize_backlog = self._detokenize_backlogs[idx]
+      request.metadata.transfer_enqueue_time = time.perf_counter()
       my_detokenize_backlog.put(
-          (first_token, request, request_start_time), block=True
+          (first_token, request, request.metadata.prefill_dequeue_time),
+          block=True,
       )
 
       # Once prefill is complete, place it on the generation queue and block if
@@ -525,6 +547,15 @@ class Driver:
       )
       if self._metrics_collector:
         self._metrics_collector.get_request_input_length().observe(true_length)
+
+      if self._metrics_collector:
+        self._metrics_collector.get_time_per_prefill_token().observe(
+            (
+                request.metadata.transfer_enqueue_time
+                - request.metadata.prefill_dequeue_time
+            )
+            / true_length
+        )
 
       del prefill_result
       del request
@@ -562,6 +593,7 @@ class Driver:
       new_request = transfer_backlog.get(block=True)
       if new_request is None:
         break
+      new_request.metadata.transfer_dequeue_time = time.perf_counter()
       target_idx = min(
           self._generate_backlogs.items(), key=lambda q: q[1].qsize()
       )[0]
@@ -577,6 +609,7 @@ class Driver:
         # Transfer the info to the relevant generate slice.
         self._transfer_prefill_result(new_request, target_idx)
       # Place the request on the correct generate backlog and block if full.
+      new_request.metadata.generate_enqueue_time = time.perf_counter()
       self._generate_backlogs[target_idx].put(new_request, block=True)
       logging.info(
           "Successfully transferred prefill "
@@ -649,6 +682,24 @@ class Driver:
           block |= not self._transfer_backlogs[idx].empty()
         try:
           new_request = my_generate_backlog.get(block=block, timeout=1.0)
+          if new_request is None:
+            break
+          new_request.metadata.generate_dequeue_time = time.perf_counter()
+          if (
+              self._metrics_collector
+              and new_request.metadata.start_time is not None
+          ):
+            self._metrics_collector.get_queue_duration().observe(
+                # Time in prefill queue
+                new_request.metadata.prefill_dequeue_time
+                - new_request.metadata.prefill_enqueue_time
+                # Time in transfer queue
+                + new_request.metadata.transfer_dequeue_time
+                - new_request.metadata.transfer_enqueue_time
+                # Time in generate queue
+                + new_request.metadata.generate_dequeue_time
+                - new_request.metadata.generate_enqueue_time
+            )
           # Got free slot and new request, use them.
         except queue.Empty:
           # No new requests, we can't insert, so put back slot.
@@ -731,7 +782,7 @@ class Driver:
       start_detokenize_time = time.time()
       # prefill first token
       if isinstance(data[0], engine_api.ResultTokens):
-        request_first_token, request, request_start_time = data
+        request_first_token, request, _ = data
         request_first_token = request_first_token.convert_to_numpy()
 
         results, complete = token_utils.process_result_tokens(
@@ -747,9 +798,14 @@ class Driver:
         request.enqueue_samples(results)
 
         first_token_return_time = time.perf_counter()
+        if self._metrics_collector:
+          self._metrics_collector.get_time_to_first_token().observe(
+              first_token_return_time - request.metadata.prefill_dequeue_time
+          )
         logging.info(
             "TTFT duration: %fms",
-            (first_token_return_time - request_start_time) * 1000,
+            (first_token_return_time - request.metadata.prefill_dequeue_time)
+            * 1000,
         )
       # generate step tokens
       elif isinstance(data[1], engine_api.ResultTokens):
@@ -773,12 +829,41 @@ class Driver:
             # Return some output samples.
             request.enqueue_samples(results)
             if request.complete.all():
+              request.metadata.complete_time = time.perf_counter()
+              request.return_channel.close()
               if self._metrics_collector:
                 self._metrics_collector.get_request_output_length().observe(
                     result_tokens.get_result_at_slot(slot).lengths
                 )
                 self._metrics_collector.get_request_success_count_metric().inc()
-              request.return_channel.close()
+                self._metrics_collector.get_time_per_output_token().observe(
+                    (
+                        request.metadata.complete_time
+                        - request.metadata.transfer_enqueue_time
+                    )
+                    / result_tokens.get_result_at_slot(slot).lengths
+                )
+                self._metrics_collector.get_time_per_request().observe(
+                    request.metadata.complete_time
+                    - request.metadata.transfer_enqueue_time
+                )
+
+                if request.metadata.start_time:
+                  total_time = (
+                      request.metadata.complete_time
+                      - request.metadata.start_time
+                  )
+                  prefill_time = (
+                      request.metadata.transfer_enqueue_time
+                      - request.metadata.prefill_dequeue_time
+                  )
+                  generate_time = (
+                      request.metadata.complete_time
+                      - request.metadata.generate_dequeue_time
+                  )
+                  self._metrics_collector.get_wait_time_per_request().observe(
+                      total_time - prefill_time - generate_time
+                  )
               # Place the slot back on the free queue.
               my_live_requests[slot] = None
               my_slots.put(slot, block=False)  # This should always have space.
@@ -895,6 +980,10 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
         prefill_content=prefill_content,
         is_client_side_tokenization=is_client_side_tokenization,
         return_channel=return_channel,
+        metadata=ActiveRequestMetadata(
+            start_time=request.metadata.start_time,
+            prefill_enqueue_time=time.perf_counter(),
+        ),
     )
     # The first stage is being prefilled, all other stages are handled
     # inside the driver (transfer, generate*N, detokenize).
