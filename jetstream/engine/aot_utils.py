@@ -14,10 +14,9 @@
 
 """AOT compilation utils."""
 
-import jax
 import jax.numpy as jnp
 import concurrent.futures
-from typing import Any, Optional, cast
+from typing import Any, Optional
 import logging
 from jetstream.engine import engine_api, token_utils
 
@@ -58,18 +57,14 @@ def layout_params_and_compile_executables(
     prefills_compiled.append(prefill_compiled)
 
   for i, ge in enumerate(generate_engines):
-    insert_generate_compiled = (
-        initialize_insert_generate_jit_cache(
-            prefill_engine=any_prefill_engine,
-            generate_engine=ge,
-            prefill_params=any_prefill_params,
-            generate_params=generate_params[i],
-            generate_idx=i,
-        )
+    insert_generate_compiled = initialize_insert_generate_jit_cache(
+        prefill_engine=any_prefill_engine,
+        generate_engine=ge,
+        prefill_params=any_prefill_params,
+        generate_params=generate_params[i],
+        generate_idx=i,
     )
-    inserts_generate_compiled.append(
-        [insert_generate_compiled]
-    )
+    inserts_generate_compiled.append([insert_generate_compiled])
 
   if prefills_compiled and inserts_generate_compiled:
     return True
@@ -104,7 +99,7 @@ def initialize_prefill_jit_cache(
   def compile_prefill(length):
     padded_tokens, true_length = jnp.ones((length), dtype="int32"), length
 
-    _, _ = prefill_engine._downstream_engine.prefill(
+    _, _ = prefill_engine._downstream_engine.prefill(  # pylint: disable=protected-access
         params=prefill_params,
         padded_tokens=padded_tokens,
         true_length=true_length,
@@ -183,7 +178,7 @@ def initialize_insert_generate_jit_cache(
         "---------Generate compilation %d begun.---------", generate_idx
     )
 
-    generate_engine._downstream_engine.generate(
+    generate_engine._downstream_engine.generate(  # pylint: disable=protected-access
         params=generate_params,
         decode_state=decode_state,
     )

@@ -276,9 +276,9 @@ class JetStreamEngine(Engine):
   ) -> Tuple[Prefix, ResultTokens]:
 
     prefill_result, first_token = self._downstream_engine.prefill(
-      params=params,
-      padded_tokens=padded_tokens,
-      true_length=true_length,
+        params=params,
+        padded_tokens=padded_tokens,
+        true_length=true_length,
     )
     return prefill_result, first_token
 
@@ -290,9 +290,9 @@ class JetStreamEngine(Engine):
   ) -> DecodeState:
 
     decode_state = self._downstream_engine.insert(
-      prefix=prefix,
-      decode_state=decode_state,
-      slot=slot,
+        prefix=prefix,
+        decode_state=decode_state,
+        slot=slot,
     )
     return decode_state
 
@@ -300,7 +300,7 @@ class JetStreamEngine(Engine):
       self, params: Params, decode_state: DecodeState
   ) -> Tuple[DecodeState, ResultTokens]:
     decode_state, sampled_tokens = self._downstream_engine.generate(
-      params=params, decode_state=decode_state
+        params=params, decode_state=decode_state
     )
     return decode_state, sampled_tokens
 
@@ -344,4 +344,3 @@ class JetStreamEngine(Engine):
   @property
   def colocated_cpus(self) -> Union[list[CpuDevices], None]:
     return self._downstream_engine.colocated_cpus
-
