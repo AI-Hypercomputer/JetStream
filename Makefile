@@ -2,22 +2,20 @@ PYTHON := python
 PIP := $(PYTHON) -m pip
 GRPC_TOOLS_VERSION := 1.62.1
 
-.PHONY: all update-deps generate-protos check
+all: update-and-install-deps generate-protos format check
 
-all: update-deps generate-protos format
+# Dependency management targets
+update-and-install-deps: update-deps install-deps
 
 update-deps:
 	$(PIP) install pip-tools
 	$(PYTHON) -m piptools compile requirements.in
 
+install-deps:
+	$(PIP) install pytype pylint pyink -r requirements.txt -r benchmarks/requirements.in
+
+# Code generation/formatting targets
 generate-protos: generate-and-prepend-preambles format
-
-format:
-	$(PIP) install pyink
-	pyink --pyink-indentation 2 --line-length 80 --verbose .
-
-check:
-	pylint --ignore-patterns=".*_pb2.py,.*_pb2_grpc.py" jetstream/ benchmarks/
 
 generate-and-prepend-preambles:
 	$(PIP) install grpcio-tools==$(GRPC_TOOLS_VERSION)
@@ -32,3 +30,31 @@ generate-and-prepend-preambles:
 		mv $(addsuffix "_temp",$$PB_PY) $$PB_PY; \
 	done
 
+format:
+	$(PIP) install pyink
+	pyink --pyink-indentation 2 --line-length 80 --verbose .
+
+# Code checking related targets
+check: type-check format-check linter-check
+
+type-check:
+	$(PIP) install pytype
+	pytype --jobs auto --disable=import-error,module-attr jetstream/ benchmarks/
+
+format-check:
+	$(PIP) install pyink
+	pyink --pyink-indentation 2 --line-length 80 --check --verbose .
+
+linter-check:
+	$(PIP) install pylint
+	pylint --ignore-patterns=".*_pb2.py,.*_pb2_grpc.py" jetstream/ benchmarks/
+
+
+# Testing related targets
+tests: unit-tests check-test-coverage
+
+unit-tests:
+	coverage run -m unittest -v
+
+check-test-coverage:
+	coverage report -m --omit="jetstream/core/proto/*,jetstream/engine/tokenizer_pb2.py,jetstream/third_party/*" --fail-under=96

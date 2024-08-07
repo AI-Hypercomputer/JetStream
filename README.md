@@ -39,8 +39,7 @@ Currently, there are two reference engine implementations available -- one for J
 
 ### Setup
 ```
-make update-deps
-pip install -r requirements.txt
+make update-and-install-deps
 ```
 
 ### Run local server & Testing
