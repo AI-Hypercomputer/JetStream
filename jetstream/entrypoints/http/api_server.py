@@ -23,7 +23,6 @@ from absl import flags
 from fastapi import APIRouter, Response
 import fastapi
 from fastapi.responses import StreamingResponse
-from prometheus_client import start_http_server
 import uvicorn
 from google.protobuf.json_format import Parse
 
@@ -100,18 +99,12 @@ def server(argv: Sequence[str]):
   print(f"server_config: {server_config}")
   del argv
 
-  metrics_server_config: config_lib.MetricsServerConfig | None = None
   # Setup Prometheus server
-  metrics_collector: JetstreamMetricsCollector = None
+  metrics_collector: JetstreamMetricsCollector = JetstreamMetricsCollector()
   if flags.FLAGS.prometheus_port != 0:
-    metrics_server_config = config_lib.MetricsServerConfig(
-        port=flags.FLAGS.prometheus_port
+    metrics_collector.start_http_server(
+        config_lib.MetricsServerConfig(port=flags.FLAGS.prometheus_port)
     )
-    logging.info(
-        "Starting Prometheus server on port %d", metrics_server_config.port
-    )
-    start_http_server(metrics_server_config.port)
-    metrics_collector = JetstreamMetricsCollector()
   else:
     logging.info(
         "Not starting Prometheus server: --prometheus_port flag not set"

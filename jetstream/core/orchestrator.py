@@ -223,7 +223,7 @@ class Driver:
   _jax_padding = True
 
   # All metrics we want to monitor should be collected with this
-  _metrics_collector: JetstreamMetricsCollector | None = None
+  _metrics_collector: JetstreamMetricsCollector = JetstreamMetricsCollector()
 
   def __init__(
       self,
@@ -255,16 +255,16 @@ class Driver:
     self._prefill_params = prefill_params
     self._generate_params = generate_params
     self._interleaved_mode = interleaved_mode
-    self._metrics_collector = metrics_collector
+    if metrics_collector is not None:
+      self._metrics_collector = metrics_collector
 
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
-    if self._metrics_collector:
-      self._metrics_collector.get_prefill_backlog_metric().set_function(
-          lambda: float(self._prefill_backlog.qsize())
-      )
+    self._metrics_collector.get_prefill_backlog_metric().set_function(
+        lambda: float(self._prefill_backlog.qsize())
+    )
 
     # Stage 2
     # After prefilling, it is placed here in order to get transferred to
@@ -278,11 +278,10 @@ class Driver:
         queue.Queue(1 if self._interleaved_mode else 4)
         for i in range(len(self._prefill_engines))
     ]
-    if self._metrics_collector:
-      for idx, backlog in enumerate(self._transfer_backlogs):
-        self._metrics_collector.get_transfer_backlog_metric(idx).set_function(
-            functools.partial(float, backlog.qsize())
-        )
+    for idx, backlog in enumerate(self._transfer_backlogs):
+      self._metrics_collector.get_transfer_backlog_metric(idx).set_function(
+          functools.partial(float, backlog.qsize())
+      )
     # Stage 3
     # Each generate engine accesses its own generate backlog.
     # Interleaved Mode: Max size is 1 to increase the HBM utilization
@@ -297,11 +296,10 @@ class Driver:
         )
         for idx, engine in enumerate(self._generate_engines)
     }
-    if self._metrics_collector:
-      for idx, backlog in self._generate_backlogs.items():
-        self._metrics_collector.get_generate_backlog_metric(idx).set_function(
-            functools.partial(float, backlog.qsize())
-        )
+    for idx, backlog in self._generate_backlogs.items():
+      self._metrics_collector.get_generate_backlog_metric(idx).set_function(
+          functools.partial(float, backlog.qsize())
+      )
     # Stage 4
     # After generation, ActiveRequests are placed on the detokenization backlog
     # for tokens to be sent into each ActiveRequest's return channel.
@@ -545,17 +543,14 @@ class Driver:
           idx,
           my_transfer_backlog.qsize(),
       )
-      if self._metrics_collector:
-        self._metrics_collector.get_request_input_length().observe(true_length)
-
-      if self._metrics_collector:
-        self._metrics_collector.get_time_per_prefill_token().observe(
-            (
-                request.metadata.transfer_enqueue_time
-                - request.metadata.prefill_dequeue_time
-            )
-            / true_length
-        )
+      self._metrics_collector.get_request_input_length().observe(true_length)
+      self._metrics_collector.get_time_per_prefill_token().observe(
+          (
+              request.metadata.transfer_enqueue_time
+              - request.metadata.prefill_dequeue_time
+          )
+          / true_length
+      )
 
       del prefill_result
       del request
@@ -650,12 +645,11 @@ class Driver:
 
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
 
-      if self._metrics_collector:
-        self._metrics_collector.get_slots_used_percentage_metric(
-            idx
-        ).set_function(
-            lambda: float(1 - (my_slots.qsize() / max_concurrent_decodes))
-        )
+      self._metrics_collector.get_slots_used_percentage_metric(
+          idx
+      ).set_function(
+          lambda: float(1 - (my_slots.qsize() / max_concurrent_decodes))
+      )
 
       # Check if there are any free my_slots. We don't want to block here since
       # we can still generate if we can't insert. We do this in a while loop to
@@ -798,10 +792,9 @@ class Driver:
         request.enqueue_samples(results)
 
         first_token_return_time = time.perf_counter()
-        if self._metrics_collector:
-          self._metrics_collector.get_time_to_first_token().observe(
-              first_token_return_time - request.metadata.prefill_dequeue_time
-          )
+        self._metrics_collector.get_time_to_first_token().observe(
+            first_token_return_time - request.metadata.prefill_dequeue_time
+        )
         logging.info(
             "TTFT duration: %fms",
             (first_token_return_time - request.metadata.prefill_dequeue_time)
@@ -831,39 +824,37 @@ class Driver:
             if request.complete.all():
               request.metadata.complete_time = time.perf_counter()
               request.return_channel.close()
-              if self._metrics_collector:
-                self._metrics_collector.get_request_output_length().observe(
-                    result_tokens.get_result_at_slot(slot).lengths
-                )
-                self._metrics_collector.get_request_success_count_metric().inc()
-                self._metrics_collector.get_time_per_output_token().observe(
-                    (
-                        request.metadata.complete_time
-                        - request.metadata.transfer_enqueue_time
-                    )
-                    / result_tokens.get_result_at_slot(slot).lengths
-                )
-                self._metrics_collector.get_time_per_request().observe(
-                    request.metadata.complete_time
-                    - request.metadata.transfer_enqueue_time
-                )
+              self._metrics_collector.get_request_output_length().observe(
+                  result_tokens.get_result_at_slot(slot).lengths
+              )
+              self._metrics_collector.get_request_success_count_metric().inc()
+              self._metrics_collector.get_time_per_output_token().observe(
+                  (
+                      request.metadata.complete_time
+                      - request.metadata.transfer_enqueue_time
+                  )
+                  / result_tokens.get_result_at_slot(slot).lengths
+              )
+              self._metrics_collector.get_time_per_request().observe(
+                  request.metadata.complete_time
+                  - request.metadata.transfer_enqueue_time
+              )
 
-                if request.metadata.start_time:
-                  total_time = (
-                      request.metadata.complete_time
-                      - request.metadata.start_time
-                  )
-                  prefill_time = (
-                      request.metadata.transfer_enqueue_time
-                      - request.metadata.prefill_dequeue_time
-                  )
-                  generate_time = (
-                      request.metadata.complete_time
-                      - request.metadata.generate_dequeue_time
-                  )
-                  self._metrics_collector.get_wait_time_per_request().observe(
-                      total_time - prefill_time - generate_time
-                  )
+              if request.metadata.start_time:
+                total_time = (
+                    request.metadata.complete_time - request.metadata.start_time
+                )
+                prefill_time = (
+                    request.metadata.transfer_enqueue_time
+                    - request.metadata.prefill_dequeue_time
+                )
+                generate_time = (
+                    request.metadata.complete_time
+                    - request.metadata.generate_dequeue_time
+                )
+                self._metrics_collector.get_wait_time_per_request().observe(
+                    total_time - prefill_time - generate_time
+                )
               # Place the slot back on the free queue.
               my_live_requests[slot] = None
               my_slots.put(slot, block=False)  # This should always have space.
