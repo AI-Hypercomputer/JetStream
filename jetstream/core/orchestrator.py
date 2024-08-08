@@ -256,7 +256,7 @@ class Driver:
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
-    get_metric("jetstream_prefill_backlog").set_function(
+    get_metric("jetstream_prefill_backlog_size").set_function(
         lambda: float(self._prefill_backlog.qsize())
     )
 
@@ -273,7 +273,7 @@ class Driver:
         for i in range(len(self._prefill_engines))
     ]
     for idx, backlog in enumerate(self._transfer_backlogs):
-      get_metric("jetstream_transfer_backlog", idx=idx).set_function(
+      get_metric("jetstream_transfer_backlog_size", idx=idx).set_function(
           functools.partial(float, backlog.qsize())
       )
     # Stage 3
@@ -291,7 +291,7 @@ class Driver:
         for idx, engine in enumerate(self._generate_engines)
     }
     for idx, backlog in self._generate_backlogs.items():
-      get_metric("jetstream_generate_backlog", idx=idx).set_function(
+      get_metric("jetstream_generate_backlog_size", idx=idx).set_function(
           functools.partial(float, backlog.qsize())
       )
     # Stage 4
