@@ -119,14 +119,16 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         assert output_token_id == expected_token_ids[counter]
         counter += 1
       # assert appropriate responsiveness of the prometheus server
-      assert (
-          requests.get(
-              f"http://localhost:{metrics_port}", timeout=5
-          ).status_code
-          == requests.status_codes.codes[
-              "ok" if metrics_enabled else "not_found"
-          ]
-      )
+      try:
+        response = requests.get(
+            f"http://localhost:{metrics_port}", timeout=5
+        ).response
+        assert (
+            response.status_code == requests.status_codes.codes["ok"]
+            and metrics_enabled
+        )
+      except requests.exceptions.MaxRetryError:
+        assert not metrics_enabled
       server.stop()
 
   def test_jax_profiler_server(self):
