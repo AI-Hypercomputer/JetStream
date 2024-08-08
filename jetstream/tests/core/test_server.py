@@ -127,7 +127,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
             response.status_code == requests.status_codes.codes["ok"]
             and metrics_enabled
         )
-      except requests.exceptions.MaxRetryError:
+      except requests.exceptions.ConnectionError:
         assert not metrics_enabled
       server.stop()
 
