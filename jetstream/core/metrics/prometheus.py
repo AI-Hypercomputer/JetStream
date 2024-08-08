@@ -45,7 +45,6 @@ class JetstreamMetricsCollector:
         self._metrics_server_config.port,
     )
     start_http_server(self._metrics_server_config.port)
-    self._serving_metrics = True
 
   # Metric definitions
   _prefill_backlog = Gauge(
