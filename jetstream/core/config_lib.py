@@ -17,7 +17,6 @@
 import dataclasses
 import functools
 from typing import Any, Callable, List, Tuple, Type
-
 from numpy import uint16
 
 from jetstream.engine import engine_api
@@ -49,6 +48,11 @@ class InstantiatedEngines:
   interleaved_engines: List[engine_api.Engine]
 
 
+@dataclasses.dataclass
+class MetricsServerConfig:
+  port: uint16
+
+
 # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼#
 
 
@@ -75,11 +79,6 @@ class InterleavedCPUTestServer(ServerConfig):
   interleaved_engine_create_fns = (
       functools.partial(get_test_engine, weight=2),
   )
-
-
-@dataclasses.dataclass
-class MetricsServerConfig:
-  port: uint16
 
 
 # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼#
