@@ -90,10 +90,6 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
     )
     ###################### Requester side ######################################
 
-    # if prometheus not configured, assert no metrics collector on Driver
-    if metrics_enabled is not True:
-      assert server._driver._metrics_collector._metrics_server_config is None  # pylint: disable=protected-access
-
     async with grpc.aio.secure_channel(
         f"localhost:{port}", grpc.local_channel_credentials()
     ) as channel:
@@ -125,13 +121,17 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       # assert prometheus server is running and responding
       if metrics_enabled is True:
         assert (
-            server._driver._metrics_collector._metrics_server_config is not None  # pylint: disable=protected-access
-        )
-        assert (
             requests.get(
                 f"http://localhost:{metrics_port}", timeout=5
             ).status_code
             == requests.status_codes.codes["ok"]
+        )
+      else:
+        assert (
+            requests.get(
+                f"http://localhost:{metrics_port}", timeout=5
+            ).status_code
+            == requests.status_codes.codes["not_found"]
         )
       server.stop()
 

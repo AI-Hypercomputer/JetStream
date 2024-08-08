@@ -201,9 +201,6 @@ def run(
   # Setup Prometheus server
   metrics_collector: JetstreamMetricsCollector = None
   if metrics_server_config is not None:
-    logging.info(
-        "Starting Prometheus server on port %d", metrics_server_config.port
-    )
     start_http_server(metrics_server_config.port)
     metrics_collector = JetstreamMetricsCollector()
   else:
