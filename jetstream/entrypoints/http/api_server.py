@@ -20,6 +20,7 @@ import time
 from typing import Sequence
 from absl import app as abslapp
 from absl import flags
+from prometheus_client import start_http_server
 from fastapi import APIRouter, Response
 import fastapi
 from fastapi.responses import StreamingResponse
@@ -100,11 +101,11 @@ def server(argv: Sequence[str]):
   del argv
 
   # Setup Prometheus server
-  metrics_collector: JetstreamMetricsCollector = JetstreamMetricsCollector()
   if flags.FLAGS.prometheus_port != 0:
-    metrics_collector.start_http_server(
-        config_lib.MetricsServerConfig(port=flags.FLAGS.prometheus_port)
+    logging.info(
+        "Starting Prometheus server on port %d", metrics_server_config.port
     )
+    start_http_server(port=flags.FLAGS.prometheus_port)
   else:
     logging.info(
         "Not starting Prometheus server: --prometheus_port flag not set"
@@ -115,7 +116,6 @@ def server(argv: Sequence[str]):
       driver=server_lib.create_driver(
           config=server_config,
           devices=devices,
-          metrics_collector=metrics_collector,
       )
   )
 

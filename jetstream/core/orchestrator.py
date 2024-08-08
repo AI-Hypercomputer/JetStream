@@ -94,7 +94,7 @@ from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.core.utils.return_sample import ReturnSample
 from jetstream.engine import engine_api, tokenizer_api, token_utils
-from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
+from jetstream.core.metrics.prometheus import JetstreamMetricsCollector, get_metric
 import numpy as np
 
 root = logging.getLogger()
@@ -222,9 +222,6 @@ class Driver:
   # todo: remove jax_padding after all then engine migrate to np padding
   _jax_padding = True
 
-  # All metrics we want to monitor should be collected with this
-  _metrics_collector: JetstreamMetricsCollector = JetstreamMetricsCollector()
-
   def __init__(
       self,
       prefill_engines: Optional[list[engine_api.Engine]] = None,
@@ -233,7 +230,6 @@ class Driver:
       generate_params: Optional[list[Any]] = None,
       interleaved_mode: bool = False,
       jax_padding: bool = True,
-      metrics_collector: Optional[JetstreamMetricsCollector] = None,
       is_ray_backend: bool = False,
   ):
     if prefill_engines is None:
@@ -255,14 +251,12 @@ class Driver:
     self._prefill_params = prefill_params
     self._generate_params = generate_params
     self._interleaved_mode = interleaved_mode
-    if metrics_collector is not None:
-      self._metrics_collector = metrics_collector
 
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
-    self._metrics_collector.get_prefill_backlog_metric().set_function(
+    get_metric("jetstream_prefill_backlog").set_function(
         lambda: float(self._prefill_backlog.qsize())
     )
 
@@ -279,7 +273,7 @@ class Driver:
         for i in range(len(self._prefill_engines))
     ]
     for idx, backlog in enumerate(self._transfer_backlogs):
-      self._metrics_collector.get_transfer_backlog_metric(idx).set_function(
+      get_metric("jetstream_transfer_backlog", idx=idx).set_function(
           functools.partial(float, backlog.qsize())
       )
     # Stage 3
@@ -297,7 +291,7 @@ class Driver:
         for idx, engine in enumerate(self._generate_engines)
     }
     for idx, backlog in self._generate_backlogs.items():
-      self._metrics_collector.get_generate_backlog_metric(idx).set_function(
+      get_metric("jetstream_generate_backlog", idx=idx).set_function(
           functools.partial(float, backlog.qsize())
       )
     # Stage 4
@@ -543,8 +537,8 @@ class Driver:
           idx,
           my_transfer_backlog.qsize(),
       )
-      self._metrics_collector.get_request_input_length().observe(true_length)
-      self._metrics_collector.get_time_per_prefill_token().observe(
+      get_metric("jetstream_request_input_length").observe(true_length)
+      get_metric("jetstream_time_per_prefill_token").observe(
           (
               request.metadata.transfer_enqueue_time
               - request.metadata.prefill_dequeue_time
@@ -645,9 +639,7 @@ class Driver:
 
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
 
-      self._metrics_collector.get_slots_used_percentage_metric(
-          idx
-      ).set_function(
+      get_metric("jetstream_slots_used_percentage", idx=idx).set_function(
           lambda: float(1 - (my_slots.qsize() / max_concurrent_decodes))
       )
 
@@ -679,11 +671,8 @@ class Driver:
           if new_request is None:
             break
           new_request.metadata.generate_dequeue_time = time.perf_counter()
-          if (
-              self._metrics_collector
-              and new_request.metadata.start_time is not None
-          ):
-            self._metrics_collector.get_queue_duration().observe(
+          if new_request.metadata.start_time is not None:
+            get_metric("jetstream_queue_duration").observe(
                 # Time in prefill queue
                 new_request.metadata.prefill_dequeue_time
                 - new_request.metadata.prefill_enqueue_time
@@ -792,7 +781,7 @@ class Driver:
         request.enqueue_samples(results)
 
         first_token_return_time = time.perf_counter()
-        self._metrics_collector.get_time_to_first_token().observe(
+        get_metric("jetstream_time_to_first_token").observe(
             first_token_return_time - request.metadata.prefill_dequeue_time
         )
         logging.info(
@@ -824,18 +813,18 @@ class Driver:
             if request.complete.all():
               request.metadata.complete_time = time.perf_counter()
               request.return_channel.close()
-              self._metrics_collector.get_request_output_length().observe(
+              get_metric("jetstream_request_output_length").observe(
                   result_tokens.get_result_at_slot(slot).lengths
               )
-              self._metrics_collector.get_request_success_count_metric().inc()
-              self._metrics_collector.get_time_per_output_token().observe(
+              get_metric("jetstream_request_success_count").inc()
+              get_metric("jetstream_time_per_output_token").observe(
                   (
                       request.metadata.complete_time
                       - request.metadata.transfer_enqueue_time
                   )
                   / result_tokens.get_result_at_slot(slot).lengths
               )
-              self._metrics_collector.get_time_per_request().observe(
+              get_metric("jetstream_time_per_request").observe(
                   request.metadata.complete_time
                   - request.metadata.transfer_enqueue_time
               )
@@ -852,7 +841,7 @@ class Driver:
                     request.metadata.complete_time
                     - request.metadata.generate_dequeue_time
                 )
-                self._metrics_collector.get_wait_time_per_request().observe(
+                get_metric("jetstream_wait_time_per_request").observe(
                     total_time - prefill_time - generate_time
                 )
               # Place the slot back on the free queue.

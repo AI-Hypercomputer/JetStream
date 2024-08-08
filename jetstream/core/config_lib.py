@@ -48,11 +48,6 @@ class InstantiatedEngines:
   interleaved_engines: List[engine_api.Engine]
 
 
-@dataclasses.dataclass
-class MetricsServerConfig:
-  port: uint16
-
-
 # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼#
 
 
