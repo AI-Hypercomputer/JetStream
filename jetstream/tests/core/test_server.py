@@ -122,7 +122,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       try:
         response = requests.get(
             f"http://localhost:{metrics_port}", timeout=5
-        ).response
+        )
         assert (
             response.status_code == requests.status_codes.codes["ok"]
             and metrics_enabled
