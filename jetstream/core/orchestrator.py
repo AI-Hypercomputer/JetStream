@@ -877,9 +877,10 @@ class Driver:
             generate_timestep_added,
             (time.time() - start_detokenize_time) * 10**3,
         )
-        self._metrics_collector.get_total_tokens_in_current_batch_metric(idx=idx).set(
-            total_tokens_in_batch
-        )
+        if self._metrics_collector:
+          self._metrics_collector.get_total_tokens_in_current_batch_metric(idx=idx).set(
+             total_tokens_in_batch
+         )
       else:
         # We want to update a slot with the new channel.
         slot, active_request = data
