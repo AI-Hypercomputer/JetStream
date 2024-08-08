@@ -815,6 +815,7 @@ class Driver:
         # is a result tokens, and we can't annotate the tuple.
         result_tokens = result_tokens.convert_to_numpy()
 
+        total_tokens_in_batch = 0
         for slot, request in my_live_requests.items():
           if request is not None:
             results, complete = token_utils.process_result_tokens(
@@ -826,6 +827,9 @@ class Driver:
                 complete=request.complete,
             )
             request.complete = complete
+            total_tokens_in_batch += result_tokens.get_result_at_slot(
+                slot
+            ).lengths
             # Return some output samples.
             request.enqueue_samples(results)
             if request.complete.all():
@@ -872,6 +876,9 @@ class Driver:
             "Detokenizing generate step %d took %.2fms",
             generate_timestep_added,
             (time.time() - start_detokenize_time) * 10**3,
+        )
+        self._metrics_collector.get_total_tokens_in_current_batch_metric().set(
+            total_tokens_in_batch
         )
       else:
         # We want to update a slot with the new channel.
