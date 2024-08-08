@@ -877,7 +877,7 @@ class Driver:
             generate_timestep_added,
             (time.time() - start_detokenize_time) * 10**3,
         )
-        self._metrics_collector.get_total_tokens_in_current_batch_metric().set(
+        self._metrics_collector.get_total_tokens_in_current_batch_metric(idx=idx).set(
             total_tokens_in_batch
         )
       else:
