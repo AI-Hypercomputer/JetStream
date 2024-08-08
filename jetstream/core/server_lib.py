@@ -215,7 +215,9 @@ def run(
 
   jetstream_server.start()
 
-  get_metric("jetstream_server_startup_latency").set(time.time() - server_start_time)
+  get_metric("jetstream_server_startup_latency").set(
+      time.time() - server_start_time
+  )
 
   # Setup Jax Profiler
   if enable_jax_profiler:
