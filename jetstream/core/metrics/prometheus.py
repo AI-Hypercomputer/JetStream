@@ -17,7 +17,6 @@
 import os
 import shortuuid
 from prometheus_client import Counter, Gauge, Histogram
-
 from jetstream.engine.token_utils import DEFAULT_PREFILL_BUCKETS
 
 # Initialize the unique ID for labeling metrics
