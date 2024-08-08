@@ -27,8 +27,7 @@ from fastapi.responses import StreamingResponse
 import uvicorn
 from google.protobuf.json_format import Parse
 
-from jetstream.core import config_lib, orchestrator, server_lib
-from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
+from jetstream.core import orchestrator, server_lib
 from jetstream.core.proto import jetstream_pb2
 from jetstream.entrypoints.config import get_server_config
 from jetstream.entrypoints.http.protocol import DecodeRequest
@@ -103,7 +102,7 @@ def server(argv: Sequence[str]):
   # Setup Prometheus server
   if flags.FLAGS.prometheus_port != 0:
     logging.info(
-        "Starting Prometheus server on port %d", metrics_server_config.port
+        "Starting Prometheus server on port %d", flags.FLAGS.prometheus_port
     )
     start_http_server(port=flags.FLAGS.prometheus_port)
   else:

@@ -32,7 +32,7 @@ import grpc
 import jax
 from jetstream.core import config_lib
 from jetstream.core import orchestrator
-from jetstream.core.metrics.prometheus import JetstreamMetricsCollector, get_metric
+from jetstream.core.metrics.prometheus import get_metric
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine import aot_utils, engine_api
 
@@ -197,6 +197,9 @@ def run(
   logging.info("Kicking off gRPC server.")
   # Setup Prometheus server
   if metrics_server_config is not None:
+    logging.info(
+        "Starting Prometheus server on port %d", metrics_server_config.port
+    )
     start_http_server(metrics_server_config.port)
   else:
     logging.info(

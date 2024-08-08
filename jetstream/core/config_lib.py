@@ -17,7 +17,6 @@
 import dataclasses
 import functools
 from typing import Any, Callable, List, Tuple, Type
-from numpy import uint16
 
 from jetstream.engine import engine_api
 from jetstream.engine import mock_engine

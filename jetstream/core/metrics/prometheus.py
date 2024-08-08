@@ -18,8 +18,6 @@ import os
 import shortuuid
 from prometheus_client import Counter, Gauge, Histogram
 
-from jetstream.core import config_lib
-
 from jetstream.engine.token_utils import DEFAULT_PREFILL_BUCKETS
 
 # Initialize the unique ID for labeling metrics
@@ -215,11 +213,11 @@ def get_metric(metric_name, **labels):
   metric = _metrics_registry[metric_name]
 
   # Automatically add the 'id' label if it's required by the metric
-  if "id" in metric._labelnames:
+  if "id" in metric._labelnames:  # pylint: disable=protected-access
     labels["id"] = _id
 
   # Check for any missing labels
-  missing_labels = set(metric._labelnames) - labels.keys()
+  missing_labels = set(metric._labelnames) - labels.keys()  # pylint: disable=protected-access
   if missing_labels:
     raise ValueError(
         f"Missing labels for metric {metric_name}: {', '.join(missing_labels)}"

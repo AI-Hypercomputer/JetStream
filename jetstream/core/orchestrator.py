@@ -94,7 +94,7 @@ from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.core.utils.return_sample import ReturnSample
 from jetstream.engine import engine_api, tokenizer_api, token_utils
-from jetstream.core.metrics.prometheus import JetstreamMetricsCollector, get_metric
+from jetstream.core.metrics.prometheus import get_metric
 import numpy as np
 
 root = logging.getLogger()
