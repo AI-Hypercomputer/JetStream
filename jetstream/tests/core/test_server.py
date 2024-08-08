@@ -120,9 +120,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         counter += 1
       # assert appropriate responsiveness of the prometheus server
       try:
-        response = requests.get(
-            f"http://localhost:{metrics_port}", timeout=5
-        )
+        response = requests.get(f"http://localhost:{metrics_port}", timeout=5)
         assert (
             response.status_code == requests.status_codes.codes["ok"]
             and metrics_enabled
