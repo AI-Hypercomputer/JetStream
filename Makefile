@@ -5,7 +5,7 @@ GRPC_TOOLS_VERSION := 1.62.1
 all: update-and-install-deps generate-protos format check
 
 # Dependency management targets
-update-and-install-deps: update-deps install-deps
+update-and-install-deps: update-deps install-deps install-submodules
 
 update-deps:
 	$(PIP) install pip-tools
@@ -13,6 +13,9 @@ update-deps:
 
 install-deps:
 	$(PIP) install pytype pylint pyink -r requirements.txt -r benchmarks/requirements.in
+
+install-submodules:
+	git submodule update --init --recursive
 
 # Code generation/formatting targets
 generate-protos: generate-and-prepend-preambles format
