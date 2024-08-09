@@ -807,7 +807,7 @@ class Driver:
               )
               get_metric("jetstream_request_success_count").inc()
               get_metric("jetstream_time_per_output_token").observe(
-                  get_tpot(request, result_tokens)
+                  get_tpot(request, result_tokens, slot)
               )
               get_metric("jetstream_time_per_request").observe(
                   request.metadata.complete_time
