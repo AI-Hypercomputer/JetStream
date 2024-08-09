@@ -89,6 +89,7 @@ from typing import Any, AsyncIterator, Optional, Tuple, cast
 
 import grpc
 import jax
+from jetstream.core.metrics.utils import get_queue_duration, get_time_per_prefill_token, get_tpot, get_wait_time
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
@@ -539,11 +540,7 @@ class Driver:
       )
       get_metric("jetstream_request_input_length").observe(true_length)
       get_metric("jetstream_time_per_prefill_token").observe(
-          (
-              request.metadata.transfer_enqueue_time
-              - request.metadata.prefill_dequeue_time
-          )
-          / true_length
+          get_time_per_prefill_token(request, true_length)
       )
 
       del prefill_result
@@ -673,15 +670,7 @@ class Driver:
           new_request.metadata.generate_dequeue_time = time.perf_counter()
           if new_request.metadata.start_time is not None:
             get_metric("jetstream_queue_duration").observe(
-                # Time in prefill queue
-                new_request.metadata.prefill_dequeue_time
-                - new_request.metadata.prefill_enqueue_time
-                # Time in transfer queue
-                + new_request.metadata.transfer_dequeue_time
-                - new_request.metadata.transfer_enqueue_time
-                # Time in generate queue
-                + new_request.metadata.generate_dequeue_time
-                - new_request.metadata.generate_enqueue_time
+                get_queue_duration(new_request)
             )
           # Got free slot and new request, use them.
         except queue.Empty:
@@ -818,11 +807,7 @@ class Driver:
               )
               get_metric("jetstream_request_success_count").inc()
               get_metric("jetstream_time_per_output_token").observe(
-                  (
-                      request.metadata.complete_time
-                      - request.metadata.transfer_enqueue_time
-                  )
-                  / result_tokens.get_result_at_slot(slot).lengths
+                  get_tpot(request, result_tokens)
               )
               get_metric("jetstream_time_per_request").observe(
                   request.metadata.complete_time
@@ -830,19 +815,8 @@ class Driver:
               )
 
               if request.metadata.start_time:
-                total_time = (
-                    request.metadata.complete_time - request.metadata.start_time
-                )
-                prefill_time = (
-                    request.metadata.transfer_enqueue_time
-                    - request.metadata.prefill_dequeue_time
-                )
-                generate_time = (
-                    request.metadata.complete_time
-                    - request.metadata.generate_dequeue_time
-                )
                 get_metric("jetstream_wait_time_per_request").observe(
-                    total_time - prefill_time - generate_time
+                    get_wait_time(request)
                 )
               # Place the slot back on the free queue.
               my_live_requests[slot] = None

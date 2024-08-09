@@ -31,7 +31,7 @@ generate-and-prepend-preambles:
 	done
 
 format:
-	$(PIP) install pyink
+
 	pyink --pyink-indentation 2 --line-length 80 --verbose .
 
 # Code checking related targets
