@@ -20,7 +20,7 @@ from typing import Sequence, Type
 
 import jax
 from jetstream.core import config_lib
-from jetstream.engine.implementations.maxtext.MaxText import maxengine_config, pyconfig
+from jetstream.engine.implementations.maxtext.MaxText import maxengine, pyconfig
 from jetstream_pt import config
 
 
@@ -40,7 +40,7 @@ def get_server_config(
           generate_engine_create_fns=(),
           interleaved_engine_create_fns=(
               functools.partial(
-                  maxengine_config.create_maxengine, config=pyconfig.config
+                  maxengine.MaxEngine(config), config=pyconfig.config
               ),
           ),
       )
