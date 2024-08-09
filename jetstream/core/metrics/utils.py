@@ -14,6 +14,7 @@
 
 """Contains helper functions for configuring Jetstream server metrics"""
 
+
 def get_time_per_prefill_token(request, true_length: int):
   return (
       request.metadata.transfer_enqueue_time
