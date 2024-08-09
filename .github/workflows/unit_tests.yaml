@@ -42,21 +42,13 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install Dependencies
-      run: |
-        pip install pytype
-        pip install pylint
-        pip install pyink
-        pip install -r requirements.txt
-        pip install -r benchmarks/requirements.in
+      run: make install-deps
     - name: Typecheck the code with pytype
-      run: |
-        pytype --jobs auto --exclude "jetstream/engine/implementations/*" --disable=import-error,module-attr jetstream/ benchmarks/
+      run: make type-check
     - name: Analysing the code with pylint
-      run: |
-        pylint jetstream/ benchmarks/
+      run: make linter-check
     - name: Format check with pyink
-      run: |
-        pyink --pyink-indentation 2 --line-length 80 --check --verbose .
+      run: make format-check
 
   cpu:
     name: "JetStream unit tests"
@@ -73,11 +65,8 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install Dependencies
-      run: |
-        pip install -r requirements.txt
+      run: make install-deps
     - name: Run all unit tests in JetStream (jetstream/tests)
-      run: |
-        coverage run -m unittest -v
+      run: make unit-tests
     - name: Create test coverage report
-      run: |
-        coverage report -m --omit="jetstream/core/proto/*,jetstream/engine/tokenizer_pb2.py,jetstream/third_party/*" --fail-under=96
+      run: make check-test-coverage

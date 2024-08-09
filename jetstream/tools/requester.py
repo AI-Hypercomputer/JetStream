@@ -26,11 +26,7 @@ from jetstream.engine.token_utils import load_vocab
 
 _SERVER = flags.DEFINE_string("server", "0.0.0.0", "server address")
 _PORT = flags.DEFINE_string("port", "9000", "port to ping")
-_SESSION_CACHE = flags.DEFINE_string(
-    "session_cache", "", "Location of any pre-cached results"
-)
 _TEXT = flags.DEFINE_string("text", "Today is a good day", "The message")
-_PRIORITY = flags.DEFINE_integer("priority", 0, "Message priority")
 _MAX_TOKENS = flags.DEFINE_integer(
     "max_tokens", 3, "Maximum number of output/decode tokens of a sequence"
 )
@@ -82,20 +78,16 @@ def main(argv: Sequence[str]) -> None:
       vocab = load_vocab(_TOKENIZER.value)
       token_ids = vocab.tokenizer.encode(_TEXT.value)
       request = jetstream_pb2.DecodeRequest(
-          session_cache=_SESSION_CACHE.value,
           token_content=jetstream_pb2.DecodeRequest.TokenContent(
               token_ids=token_ids
           ),
-          priority=_PRIORITY.value,
           max_tokens=_MAX_TOKENS.value,
       )
     else:
       request = jetstream_pb2.DecodeRequest(
-          session_cache=_SESSION_CACHE.value,
           text_content=jetstream_pb2.DecodeRequest.TextContent(
               text=_TEXT.value
           ),
-          priority=_PRIORITY.value,
           max_tokens=_MAX_TOKENS.value,
       )
     return _GetResponseAsync(stub, request)

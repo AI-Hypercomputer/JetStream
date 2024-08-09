@@ -50,14 +50,11 @@ def api_call(
     stub: jetstream_pb2_grpc.OrchestratorStub,
     text: str,
     max_tokens: int,
-    session_cache: str = "",
     print_interim: bool = True,
 ) -> str:
   """Sends a request to server and returns text."""
   request = jetstream_pb2.DecodeRequest(
-      session_cache=session_cache,
       text_content=jetstream_pb2.DecodeRequest.TextContent(text=text),
-      priority=1,
       max_tokens=max_tokens,
   )
   response = stub.Decode(request)

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// NOTICE: run `make generate-protos` if making changes to this file
+
 syntax = "proto3";
 
 package jetstream_proto;
@@ -26,9 +28,6 @@ service Orchestrator {
 }
 
 message DecodeRequest {
-  // Where to load any pre-existing kv cache from.
-  string session_cache = 1;
-  int32 priority = 3;
   // The maximum output length of a sequence. It's used in JetStream to control
   // the output/decode length of a sequence. It would not be used in the engine.
   // We should always set max_tokens <= (max_target_length -
@@ -51,8 +50,17 @@ message DecodeRequest {
     TextContent text_content = 5;
     TokenContent token_content = 6;
   }
-  reserved 2;
-  // Next ID: 7
+
+  message Metadata {
+    float start_time = 1;
+  }
+
+  oneof metadata_optional {
+    Metadata metadata = 7;
+  }
+
+  reserved 1, 2, 3;
+  // Next ID: 8
 }
 
 message DecodeResponse {

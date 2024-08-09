@@ -24,7 +24,7 @@ def parse_requirements(filename):
 
 setup(
     name="google-jetstream",
-    version="0.2.1",
+    version="0.2.2",
     description=(
         "JetStream is a throughput and memory optimized engine for LLM inference on XLA devices, starting with TPUs (and GPUs in future -- PRs welcome)."
     ),

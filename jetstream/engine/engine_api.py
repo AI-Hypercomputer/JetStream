@@ -142,7 +142,7 @@ class Engine(abc.ABC):
       existing_prefix: Optional[Prefix] = None,
       padded_tokens: jax.Array,
       true_length: int,
-  ) -> Prefix:
+  ) -> Tuple[Prefix, ResultTokens]:
     """Computes a kv-cache for a set of tokens conditional on existing cache.
 
     existing_prefix (if provided) represents a prefix that has already been
@@ -186,6 +186,18 @@ class Engine(abc.ABC):
     and batch), but at the engine interface level all of these are exposed as
     a [0, n) range of slots and converted internally.
     """
+
+  def free_resource(
+      self,
+      slot: int,  # pylint: disable=unused-argument
+  ) -> Any:
+    """Free cache and other decode resource for the slot.
+
+    This function is needed for advanced attetnion kenel like PageAttetion.
+    After finishing one request, the engine need to free all used page block
+    resource and reuse for coming requests.
+    """
+    return None
 
   @abc.abstractmethod
   def load_params(self, *args, **kwargs) -> Params:
@@ -240,3 +252,109 @@ class Engine(abc.ABC):
   @abc.abstractmethod
   def colocated_cpus(self) -> Union[list[CpuDevices], None]:
     """CPU devices colocated with the engine's accelerators."""
+
+
+class JetStreamEngine(Engine):
+  """A wrapper engine of the Engine class.
+
+  JetStreamEngine defines the AOT warmed up model server engine.
+  """
+
+  def __init__(self, downstream_engine: Engine):
+    self._downstream_engine = downstream_engine
+
+    # Executables
+    self.prefill_executable = None
+    self.insert_executable = None
+    self.generate_executable = None
+
+    self.prefill_buckets = None
+
+    # Nearest right token length
+    self._padded_token_length = None
+
+    self.warm = False
+
+  def prefill(
+      self,
+      *,
+      params: Params,
+      existing_prefix: Optional[Prefix] = None,
+      padded_tokens: jax.Array,
+      true_length: int,
+  ) -> Tuple[Prefix, ResultTokens]:
+
+    prefill_result, first_token = self.prefill_executable[
+        self.padded_token_length
+    ](
+        params=params,
+        padded_tokens=padded_tokens,
+        true_length=true_length,
+    )
+    return prefill_result, first_token
+
+  def insert(
+      self,
+      prefix: Prefix,
+      decode_state: DecodeState,
+      slot: int,
+  ) -> DecodeState:
+
+    decode_state = self.insert_executable[self.padded_token_length](
+        prefix=prefix,
+        decode_state=decode_state,
+        slot=slot,
+    )
+    return decode_state
+
+  def generate(
+      self, params: Params, decode_state: DecodeState
+  ) -> Tuple[DecodeState, ResultTokens]:
+    decode_state, sampled_tokens = self.generate_executable(  # pylint: disable=not-callable
+        params=params, decode_state=decode_state
+    )
+    return decode_state, sampled_tokens
+
+  def load_params(self, *args, **kwargs) -> Params:
+    return self._downstream_engine.load_params(*args, **kwargs)
+
+  def get_prefix_destination_sharding(self) -> Any:
+    return self._downstream_engine.get_prefix_destination_sharding()
+
+  def get_tokenizer(
+      self,
+  ) -> tokenizer_pb2.TokenizerParameters:
+    return self._downstream_engine.get_tokenizer()
+
+  def build_tokenizer(
+      self,
+      metadata: tokenizer_pb2.TokenizerParameters,
+  ) -> Tokenizer:
+    """Builds a new tokenizer object and returns it."""
+    return self._downstream_engine.build_tokenizer(metadata)
+
+  def init_decode_state(self, *args, **kwargs) -> DecodeState:
+    return self._downstream_engine.init_decode_state(*args, **kwargs)
+
+  @property
+  def max_concurrent_decodes(self) -> int:
+    return self._downstream_engine.max_concurrent_decodes
+
+  @property
+  def samples_per_slot(self) -> int:
+    return self._downstream_engine.samples_per_slot
+
+  @property
+  def max_prefill_length(self) -> int:
+    return self._downstream_engine.max_prefill_length
+
+  @property
+  def mesh(self) -> jax.sharding.Mesh:
+    return self._downstream_engine.mesh
+
+  @property
+  def colocated_cpus(self) -> Union[list[CpuDevices], None]:
+    return self._downstream_engine.colocated_cpus
+
+  def set_padded_token_length(self, padded_token_length: int):
+    self.padded_token_length = padded_token_length

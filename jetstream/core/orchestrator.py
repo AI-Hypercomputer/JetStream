@@ -109,13 +109,22 @@ handler.setFormatter(formatter)
 root.addHandler(handler)
 
 
-def delete_pytree(p):
-  def delete_leaf(leaf):
-    if isinstance(leaf, jax.Array):
-      leaf.delete()
-    del leaf
+@dataclasses.dataclass
+class ActiveRequestMetadata:
+  """Inference request metadata."""
 
-  jax.tree_map(delete_leaf, p)
+  start_time: Optional[float] = None
+
+  prefill_enqueue_time: Optional[float] = None
+  prefill_dequeue_time: Optional[float] = None
+
+  transfer_enqueue_time: Optional[float] = None
+  transfer_dequeue_time: Optional[float] = None
+
+  generate_enqueue_time: Optional[float] = None
+  generate_dequeue_time: Optional[float] = None
+
+  complete_time: Optional[float] = None
 
 
 @dataclasses.dataclass
@@ -133,12 +142,14 @@ class ActiveRequest:
   complete: Optional[np.ndarray] = None
   prefill_result: Any = None
   #################### Information relevant for prefill ########################
-  history_path: Optional[str] = None
   prefill_content: Optional[str | list[int]] = None
+  padded_token_length: Optional[int] = None
   ################## Information relevant for detokenization ###################
   # Which generate step this was added at.
   generate_timestep_added: Optional[int] = None
   is_client_side_tokenization: Optional[bool] = False
+  ################## Information relevant for metrics ###################
+  metadata: ActiveRequestMetadata = ActiveRequestMetadata()
 
   def enqueue_samples(self, generated_samples: list[ReturnSample]):
     """Adds the generated sample(s) to return channel for current step.
@@ -267,6 +278,11 @@ class Driver:
         queue.Queue(1 if self._interleaved_mode else 4)
         for i in range(len(self._prefill_engines))
     ]
+    if self._metrics_collector:
+      for idx, backlog in enumerate(self._transfer_backlogs):
+        self._metrics_collector.get_transfer_backlog_metric(idx).set_function(
+            functools.partial(float, backlog.qsize())
+        )
     # Stage 3
     # Each generate engine accesses its own generate backlog.
     # Interleaved Mode: Max size is 1 to increase the HBM utilization
@@ -281,6 +297,11 @@ class Driver:
         )
         for idx, engine in enumerate(self._generate_engines)
     }
+    if self._metrics_collector:
+      for idx, backlog in self._generate_backlogs.items():
+        self._metrics_collector.get_generate_backlog_metric(idx).set_function(
+            functools.partial(float, backlog.qsize())
+        )
     # Stage 4
     # After generation, ActiveRequests are placed on the detokenization backlog
     # for tokens to be sent into each ActiveRequest's return channel.
@@ -479,26 +500,43 @@ class Driver:
 
       if request is None:
         break
-      is_bos = not bool(request.history_path)
+      request.metadata.prefill_dequeue_time = time.perf_counter()
+      is_bos = True
       logging.info(
           "Prefilling on prefill engine %d : prefill queue size, %d,"
-          " is_bos: %s, history: %s",
+          " is_bos: %s",
           idx,
           self._prefill_backlog.qsize(),
           is_bos,
-          request.history_path,
       )
       # Tokenize and padding the text or token input.
       padded_tokens, true_length = self._process_prefill_content(
           request, tokenizer, is_bos, prefill_engine.max_prefill_length
       )
+      if isinstance(prefill_engine, engine_api.JetStreamEngine):
+        request.padded_token_length = token_utils.take_nearest_length(
+            prefill_engine.prefill_buckets, true_length
+        )
+        prefill_engine.set_padded_token_length(request.padded_token_length)
+
       # Compute new kv cache for the prefill_content.
-      prefill_result = prefill_engine.prefill(
+      prefill_result, first_token = prefill_engine.prefill(
           params=prefill_params,
           padded_tokens=padded_tokens,
           true_length=true_length,
       )
+
       request.prefill_result = prefill_result
+
+      # put first token to detokenize queue
+      request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
+      my_detokenize_backlog = self._detokenize_backlogs[idx]
+      request.metadata.transfer_enqueue_time = time.perf_counter()
+      my_detokenize_backlog.put(
+          (first_token, request, request.metadata.prefill_dequeue_time),
+          block=True,
+      )
+
       # Once prefill is complete, place it on the generation queue and block if
       # full.
       my_transfer_backlog.put(request, block=True)
@@ -507,6 +545,18 @@ class Driver:
           idx,
           my_transfer_backlog.qsize(),
       )
+      if self._metrics_collector:
+        self._metrics_collector.get_request_input_length().observe(true_length)
+
+      if self._metrics_collector:
+        self._metrics_collector.get_time_per_prefill_token().observe(
+            (
+                request.metadata.transfer_enqueue_time
+                - request.metadata.prefill_dequeue_time
+            )
+            / true_length
+        )
+
       del prefill_result
       del request
 
@@ -543,6 +593,7 @@ class Driver:
       new_request = transfer_backlog.get(block=True)
       if new_request is None:
         break
+      new_request.metadata.transfer_dequeue_time = time.perf_counter()
       target_idx = min(
           self._generate_backlogs.items(), key=lambda q: q[1].qsize()
       )[0]
@@ -558,12 +609,15 @@ class Driver:
         # Transfer the info to the relevant generate slice.
         self._transfer_prefill_result(new_request, target_idx)
       # Place the request on the correct generate backlog and block if full.
+      new_request.metadata.generate_enqueue_time = time.perf_counter()
       self._generate_backlogs[target_idx].put(new_request, block=True)
       logging.info(
           "Successfully transferred prefill "
-          "from prefill engine %d to generate engine %d.",
+          "from prefill engine %d to generate engine %d "
+          "(%d requests now in backlog).",
           idx,
           target_idx,
+          self._generate_backlogs[target_idx].qsize(),
       )
 
   def _generate_thread(self, idx: int):
@@ -597,9 +651,11 @@ class Driver:
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
 
       if self._metrics_collector:
-        self._metrics_collector.get_slots_available_percentage_metric(
+        self._metrics_collector.get_slots_used_percentage_metric(
             idx
-        ).set_function(lambda: float(my_slots.qsize() / max_concurrent_decodes))
+        ).set_function(
+            lambda: float(1 - (my_slots.qsize() / max_concurrent_decodes))
+        )
 
       # Check if there are any free my_slots. We don't want to block here since
       # we can still generate if we can't insert. We do this in a while loop to
@@ -626,6 +682,24 @@ class Driver:
           block |= not self._transfer_backlogs[idx].empty()
         try:
           new_request = my_generate_backlog.get(block=block, timeout=1.0)
+          if new_request is None:
+            break
+          new_request.metadata.generate_dequeue_time = time.perf_counter()
+          if (
+              self._metrics_collector
+              and new_request.metadata.start_time is not None
+          ):
+            self._metrics_collector.get_queue_duration().observe(
+                # Time in prefill queue
+                new_request.metadata.prefill_dequeue_time
+                - new_request.metadata.prefill_enqueue_time
+                # Time in transfer queue
+                + new_request.metadata.transfer_dequeue_time
+                - new_request.metadata.transfer_enqueue_time
+                # Time in generate queue
+                + new_request.metadata.generate_dequeue_time
+                - new_request.metadata.generate_enqueue_time
+            )
           # Got free slot and new request, use them.
         except queue.Empty:
           # No new requests, we can't insert, so put back slot.
@@ -647,10 +721,16 @@ class Driver:
             slot,
             generate_timestep,
         )
+
+        if isinstance(generate_engine, engine_api.JetStreamEngine):
+          generate_engine.set_padded_token_length(
+              new_request.padded_token_length
+          )
+
         decode_state = generate_engine.insert(
             new_request.prefill_result, decode_state, slot=slot
         )
-        delete_pytree(new_request.prefill_result)
+        del new_request.prefill_result
         new_request.generate_timestep_added = generate_timestep
         new_request.complete = np.zeros(
             (generate_engine.samples_per_slot,), dtype=np.bool_
@@ -700,7 +780,35 @@ class Driver:
       if data is None:
         break
       start_detokenize_time = time.time()
-      if isinstance(data[1], engine_api.ResultTokens):
+      # prefill first token
+      if isinstance(data[0], engine_api.ResultTokens):
+        request_first_token, request, _ = data
+        request_first_token = request_first_token.convert_to_numpy()
+
+        results, complete = token_utils.process_result_tokens(
+            tokenizer=tokenizer,
+            slot=0,  # always 0 as prefill only run 1 sample
+            slot_max_length=request.max_tokens,
+            result_tokens=request_first_token,
+            is_client_side_tokenization=request.is_client_side_tokenization,
+            complete=request.complete,
+        )
+        request.complete = complete
+        # Return some output samples.
+        request.enqueue_samples(results)
+
+        first_token_return_time = time.perf_counter()
+        if self._metrics_collector:
+          self._metrics_collector.get_time_to_first_token().observe(
+              first_token_return_time - request.metadata.prefill_dequeue_time
+          )
+        logging.info(
+            "TTFT duration: %fms",
+            (first_token_return_time - request.metadata.prefill_dequeue_time)
+            * 1000,
+        )
+      # generate step tokens
+      elif isinstance(data[1], engine_api.ResultTokens):
         # We want to detokenize them.
         generate_timestep_added, result_tokens = data
         # Disable attribute error because pytype doesn't know this
@@ -721,10 +829,45 @@ class Driver:
             # Return some output samples.
             request.enqueue_samples(results)
             if request.complete.all():
+              request.metadata.complete_time = time.perf_counter()
               request.return_channel.close()
+              if self._metrics_collector:
+                self._metrics_collector.get_request_output_length().observe(
+                    result_tokens.get_result_at_slot(slot).lengths
+                )
+                self._metrics_collector.get_request_success_count_metric().inc()
+                self._metrics_collector.get_time_per_output_token().observe(
+                    (
+                        request.metadata.complete_time
+                        - request.metadata.transfer_enqueue_time
+                    )
+                    / result_tokens.get_result_at_slot(slot).lengths
+                )
+                self._metrics_collector.get_time_per_request().observe(
+                    request.metadata.complete_time
+                    - request.metadata.transfer_enqueue_time
+                )
+
+                if request.metadata.start_time:
+                  total_time = (
+                      request.metadata.complete_time
+                      - request.metadata.start_time
+                  )
+                  prefill_time = (
+                      request.metadata.transfer_enqueue_time
+                      - request.metadata.prefill_dequeue_time
+                  )
+                  generate_time = (
+                      request.metadata.complete_time
+                      - request.metadata.generate_dequeue_time
+                  )
+                  self._metrics_collector.get_wait_time_per_request().observe(
+                      total_time - prefill_time - generate_time
+                  )
               # Place the slot back on the free queue.
               my_live_requests[slot] = None
               my_slots.put(slot, block=False)  # This should always have space.
+              my_generate_engine.free_resource(slot)
         logging.info(
             "Detokenizing generate step %d took %.2fms",
             generate_timestep_added,
@@ -834,10 +977,13 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     # Wrap request as an ActiveRequest.
     active_request = ActiveRequest(
         max_tokens=request.max_tokens,
-        history_path=request.session_cache,
         prefill_content=prefill_content,
         is_client_side_tokenization=is_client_side_tokenization,
         return_channel=return_channel,
+        metadata=ActiveRequestMetadata(
+            start_time=request.metadata.start_time,
+            prefill_enqueue_time=time.perf_counter(),
+        ),
     )
     # The first stage is being prefilled, all other stages are handled
     # inside the driver (transfer, generate*N, detokenize).

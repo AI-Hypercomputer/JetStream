@@ -21,8 +21,8 @@ Follow the steps in [Manage TPU resources | Google Cloud](https://cloud.google.c
 ## Step 1: Download JetStream and the MaxText github repository
 
 ```bash
-git clone -b jetstream-v0.2.1 https://github.com/google/maxtext.git
-git clone -b v0.2.1 https://github.com/google/JetStream.git
+git clone -b jetstream-v0.2.2 https://github.com/google/maxtext.git
+git clone -b v0.2.2 https://github.com/google/JetStream.git
 ```
 
 ## Step 2: Setup MaxText
@@ -259,7 +259,7 @@ python JetStream/benchmarks/benchmark_serving.py \
 --dataset-path ~/ShareGPT_V3_unfiltered_cleaned_split.json \
 --max-output-length 1024 \
 --request-rate 5 \
---warmup-first true
+--warmup-mode sampled
 ```
 
 ### Benchmarking Llama2-\*b
@@ -274,7 +274,7 @@ python JetStream/benchmarks/benchmark_serving.py \
 --dataset-path ~/ShareGPT_V3_unfiltered_cleaned_split.json \
 --max-output-length 1024 \
 --request-rate 5 \
---warmup-first true
+--warmup-mode sampled
 ```
 
 ## Clean Up
