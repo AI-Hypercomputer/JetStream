@@ -17,7 +17,7 @@ install-deps:
 install-submodules:
 	git submodule update --init --recursive
 	- cd ./jetstream/engine/implementations/maxtext && chmod +x ./setup.sh && ./setup.sh
-	$(PIP) install jetstream_pt @ git+https://github.com/google/jetstream-pytorch.git@jetstream-v0.2.2#egg=jetstream_pt
+	- $(PIP) install jetstream_pt@git+https://github.com/google/jetstream-pytorch.git@jetstream-v0.2.2#egg=jetstream_pt
 
 # Code generation/formatting targets
 generate-protos: generate-and-prepend-preambles format
