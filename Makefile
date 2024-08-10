@@ -16,8 +16,9 @@ install-deps:
 
 install-submodules:
 	git submodule update --init --recursive
-	chmod +x ./jetstream/engine/implementations/maxtext/setup.sh
-	./jetstream/engine/implementations/maxtext/setup.sh
+	cd jetstream/engine/implementations/maxtext
+	chmod +x ./setup.sh
+	./setup.sh
 
 # Code generation/formatting targets
 generate-protos: generate-and-prepend-preambles format
