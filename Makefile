@@ -2,15 +2,9 @@ PYTHON := python
 PIP := $(PYTHON) -m pip
 GRPC_TOOLS_VERSION := 1.62.1
 
-all: update-and-install-deps generate-protos format check
+all: install-deps generate-protos format check
 
 # Dependency management targets
-update-and-install-deps: update-deps install-deps
-
-update-deps:
-	$(PIP) install pip-tools
-	$(PYTHON) -m piptools compile requirements.in
-
 install-deps:
 	$(PIP) install pytype pylint pyink -r requirements.txt -r benchmarks/requirements.in
 

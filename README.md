@@ -39,7 +39,7 @@ Currently, there are two reference engine implementations available -- one for J
 
 ### Setup
 ```
-make update-and-install-deps
+make install-deps
 ```
 
 ### Run local server & Testing
