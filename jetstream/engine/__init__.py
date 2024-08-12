@@ -25,5 +25,7 @@ except ImportError as e:
 import os
 import sys
 
-submodule_path = os.path.join(os.path.dirname(__file__), 'implementations/maxtext/MaxText')
+submodule_path = os.path.join(
+    os.path.dirname(__file__), "implementations/maxtext/MaxText"
+)
 sys.path.append(submodule_path)

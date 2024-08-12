@@ -129,7 +129,7 @@ class TestEngine(engine_api.Engine):
         samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
     )
 
-    return (prefill_cache, first_step), first_token
+    return (prefill_cache.astype(jnp.float32), first_step), first_token
 
   @functools.partial(jax.jit, static_argnums=(0,))
   def generate(
@@ -152,7 +152,7 @@ class TestEngine(engine_api.Engine):
 
     # Update generate cache
     generate_cache = jax.lax.dynamic_update_slice_in_dim(
-        generate_cache,
+        generate_cache.astype(jnp.float32),
         previous_timestep,
         start_index=generate_cache_index,
         axis=1,
@@ -198,7 +198,7 @@ class TestEngine(engine_api.Engine):
     )
     return DecodeState(
         prefill_cache=prefill_cache,
-        generate_cache=generate_cache,
+        generate_cache=generate_cache.astype(jnp.float32),
         generate_cache_index=generate_cache_index,
         generate_lengths=new_lengths,
         generate_tokens=new_timestep,
@@ -225,12 +225,18 @@ class TestEngine(engine_api.Engine):
     """Adds `prefix` into `decode_state` at `slot`."""
     # [B, T], [T,] -> [B, T]
     prefill_cache, previous_timestep = prefix
+    print(
+        f"{decode_state.prefill_cache.dtype=} {prefill_cache.dtype=} {slot.dtype=}"
+    )
     prefill_cache = jax.lax.dynamic_update_slice_in_dim(
         decode_state.prefill_cache, prefill_cache, slot, axis=0
     )
+    print(
+        f"{decode_state.generate_cache.dtype=} {jnp.zeros((1, self.cache_length)).dtype=} {slot.dtype=}"
+    )
     generate_cache = jax.lax.dynamic_update_slice_in_dim(
         decode_state.generate_cache,
-        jnp.zeros((1, self.cache_length)),
+        jnp.zeros((1, self.cache_length), dtype=jnp.float32),
         slot,
         axis=0,
     )
@@ -243,7 +249,7 @@ class TestEngine(engine_api.Engine):
     )
     generate_tokens = jax.lax.dynamic_update_slice_in_dim(
         decode_state.generate_tokens,
-        previous_timestep,
+        previous_timestep.astype(jnp.float32),
         slot * samples_per_slot,
         axis=0,
     )
