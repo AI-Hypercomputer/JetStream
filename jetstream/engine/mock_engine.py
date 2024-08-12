@@ -225,14 +225,8 @@ class TestEngine(engine_api.Engine):
     """Adds `prefix` into `decode_state` at `slot`."""
     # [B, T], [T,] -> [B, T]
     prefill_cache, previous_timestep = prefix
-    print(
-        f"{decode_state.prefill_cache.dtype=} {prefill_cache.dtype=} {slot.dtype=}"
-    )
     prefill_cache = jax.lax.dynamic_update_slice_in_dim(
         decode_state.prefill_cache, prefill_cache, slot, axis=0
-    )
-    print(
-        f"{decode_state.generate_cache.dtype=} {jnp.zeros((1, self.cache_length)).dtype=} {slot.dtype=}"
     )
     generate_cache = jax.lax.dynamic_update_slice_in_dim(
         decode_state.generate_cache,
