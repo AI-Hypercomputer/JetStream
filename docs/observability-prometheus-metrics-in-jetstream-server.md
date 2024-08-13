@@ -50,6 +50,22 @@ jetstream_prefill_backlog_size{id="SOME-HOSTNAME-HERE>"} 0.0
 jetstream_slots_used_percentage{id="<SOME-HOSTNAME-HERE>",idx="0"} 0.04166666666666663
 ```
 
+Currently the following metrics are supported:
+ - `jetstream_prefill_backlog_size`: Size of prefill queue
+ - `jetstream_transfer_backlog_size`: Size of transfer queue
+ - `jetstream_generate_backlog_size`: Size of generate queue
+ - `jetstream_queue_duration`: The total time each request spends enqueued in seconds
+ - `jetstream_slots_used_percentage`: The percentage of decode slots currently being used
+ - `jetstream_server_startup_latency`: Total time taken to start the Jetstream server
+ - `jetstream_request_input_length`: Number of input tokens per request
+ - `jetstream_request_output_length`: Number of output tokens per request
+ - `jetstream_request_success_count`: Number of requests successfully completed
+ - `jetstream_time_to_first_token`: Time to first token per request in seconds
+ - `jetstream_time_per_output_token`: Average time per output token per request in seconds
+ - `jetstream_time_per_prefill_token`: Prefill time per token per request in seconds
+ - `jetstream_time_per_request`: End to end request latency in seconds
+ - `jetstream_wait_time_per_request`: Time each request is not being prefilled or decoded
+
 ## Observe metrics on GKE clusters
 
 The following applies only for Jetstream deployed on a GKE cluster. Currently [Google Cloud Managed Service for Prometheus](https://cloud.google.com/stackdriver/docs/managed-prometheus) is enabled by default on all GKE clusters, it determines scrape targets via the [PodMonitoring](https://github.com/GoogleCloudPlatform/prometheus-engine/blob/v0.10.0/doc/api.md#podmonitoring) custom resource. After you deployed the JetStream GKE workload, you need to apply the PodMonitoring resource to your cluster as follows:

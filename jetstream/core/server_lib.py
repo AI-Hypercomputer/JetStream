@@ -32,7 +32,7 @@ import grpc
 import jax
 from jetstream.core import config_lib
 from jetstream.core import orchestrator
-from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
+from jetstream.core.metrics.prometheus import get_metric
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine import aot_utils, engine_api
 
@@ -97,7 +97,6 @@ def create_driver(
     config: Type[config_lib.ServerConfig],
     devices: Any,
     jax_padding: bool = True,
-    metrics_collector: JetstreamMetricsCollector | None = None,
     enable_model_warmup: bool = False,
 ):
   """Creates a driver with a specified config.
@@ -106,7 +105,6 @@ def create_driver(
     config: A ServerConfig to config engine, model, device slices, etc.
     devices: Device objects, will be used to get engine with proper slicing.
     jax_padding: The flag to enable JAX padding during tokenization.
-    metrics_collector: The JetStream Promethus metric collector.
     enable_model_warmup: The flag to enable model server warmup with AOT.
 
   Returns:
@@ -161,7 +159,6 @@ def create_driver(
       generate_params=generate_params,
       interleaved_mode=interleaved_mode,
       jax_padding=jax_padding,
-      metrics_collector=metrics_collector,
       is_ray_backend=config.is_ray_backend,
   )
 
@@ -199,21 +196,17 @@ def run(
   server_start_time = time.time()
   logging.info("Kicking off gRPC server.")
   # Setup Prometheus server
-  metrics_collector: JetstreamMetricsCollector = None
-  if metrics_server_config and metrics_server_config.port:
+  if metrics_server_config is not None:
     logging.info(
         "Starting Prometheus server on port %d", metrics_server_config.port
     )
     start_http_server(metrics_server_config.port)
-    metrics_collector = JetstreamMetricsCollector()
   else:
     logging.info(
         "Not starting Prometheus server: --prometheus_port flag not set"
     )
 
-  driver = create_driver(
-      config, devices, jax_padding, metrics_collector, enable_model_warmup
-  )
+  driver = create_driver(config, devices, jax_padding, enable_model_warmup)
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.
   threads = threads or max(driver.get_total_concurrent_requests(), 64)
@@ -222,10 +215,9 @@ def run(
 
   jetstream_server.start()
 
-  if metrics_collector:
-    metrics_collector.get_server_startup_latency_metric().set(
-        time.time() - server_start_time
-    )
+  get_metric("jetstream_server_startup_latency").set(
+      time.time() - server_start_time
+  )
 
   # Setup Jax Profiler
   if enable_jax_profiler:
