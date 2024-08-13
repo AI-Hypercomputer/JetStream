@@ -257,7 +257,7 @@ class Engine(abc.ABC):
 class JetStreamEngine(Engine):
   """A wrapper engine of the Engine class.
 
-  JetStreamEngine defines the AOT warmed up model server engine.
+  JetStreamEngine defines the warmed up model server engine.
   """
 
   def __init__(self, downstream_engine: Engine):

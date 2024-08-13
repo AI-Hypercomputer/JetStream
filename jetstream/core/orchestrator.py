@@ -134,7 +134,6 @@ class ActiveRequest:
   prefill_result: Any = None
   #################### Information relevant for prefill ########################
   prefill_content: Optional[str | list[int]] = None
-  padded_token_length: Optional[int] = None
   ################## Information relevant for detokenization ###################
   # Which generate step this was added at.
   generate_timestep_added: Optional[int] = None
@@ -509,7 +508,6 @@ class Driver:
           padded_tokens=padded_tokens,
           true_length=true_length,
       )
-
       request.prefill_result = prefill_result
 
       # put first token to detokenize queue

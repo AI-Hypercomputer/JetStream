@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""AOT compilation utils."""
+"""Model server warmup utils."""
 
 import jax.numpy as jnp
 import concurrent.futures

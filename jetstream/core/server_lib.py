@@ -34,7 +34,7 @@ from jetstream.core import config_lib
 from jetstream.core import orchestrator
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 from jetstream.core.proto import jetstream_pb2_grpc
-from jetstream.engine import aot_utils, engine_api
+from jetstream.engine import warmup_utils, engine_api
 
 from prometheus_client import start_http_server
 
@@ -107,7 +107,7 @@ def create_driver(
     devices: Device objects, will be used to get engine with proper slicing.
     jax_padding: The flag to enable JAX padding during tokenization.
     metrics_collector: The JetStream Promethus metric collector.
-    enable_model_warmup: The flag to enable model server warmup with AOT.
+    enable_model_warmup: The flag to enable model server warmup.
 
   Returns:
     An orchestrator driver.
@@ -142,7 +142,7 @@ def create_driver(
     ]
 
     try:
-      _ = aot_utils.layout_params_and_compile_executables(
+      _ = warmup_utils.layout_params_and_compile_executables(
           prefill_engines,  # pylint: disable=protected-access
           generate_engines,  # pylint: disable=protected-access
           prefill_params,  # pylint: disable=protected-access
@@ -191,7 +191,7 @@ def run(
     metrics_server_config: The config to enable Promethus metric server.
     enable_jax_profiler: The flag to enable JAX profiler server.
     jax_profiler_port: The port JAX profiler server (default to 9999).
-    enable_model_warmup: The flag to enable model server warmup with AOT.
+    enable_model_warmup: The flag to enable model server warmup.
 
   Returns:
     JetStreamServer that wraps the grpc server and orchestrator driver.
