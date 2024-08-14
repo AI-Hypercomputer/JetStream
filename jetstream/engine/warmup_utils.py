@@ -66,7 +66,7 @@ def layout_params_and_compile_executables(
     )
     inserts_generate_compiled.append([insert_generate_compiled])
 
-  if any(prefills_compiled) and any(inserts_generate_compiled):
+  if all(prefills_compiled) and all(inserts_generate_compiled):
     return True
   return False
 
