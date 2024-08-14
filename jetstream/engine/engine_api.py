@@ -257,22 +257,13 @@ class Engine(abc.ABC):
 class JetStreamEngine(Engine):
   """A wrapper engine of the Engine class.
 
-  JetStreamEngine defines the AOT warmed up model server engine.
+  JetStreamEngine defines the warmed up model server engine.
   """
 
   def __init__(self, downstream_engine: Engine):
     self._downstream_engine = downstream_engine
 
-    # Executables
-    self.prefill_executable = None
-    self.insert_executable = None
-    self.generate_executable = None
-
     self.prefill_buckets = None
-
-    # Nearest right token length
-    self._padded_token_length = None
-
     self.warm = False
 
   def prefill(
@@ -284,9 +275,7 @@ class JetStreamEngine(Engine):
       true_length: int,
   ) -> Tuple[Prefix, ResultTokens]:
 
-    prefill_result, first_token = self.prefill_executable[
-        self.padded_token_length
-    ](
+    prefill_result, first_token = self._downstream_engine.prefill(
         params=params,
         padded_tokens=padded_tokens,
         true_length=true_length,
@@ -300,7 +289,7 @@ class JetStreamEngine(Engine):
       slot: int,
   ) -> DecodeState:
 
-    decode_state = self.insert_executable[self.padded_token_length](
+    decode_state = self._downstream_engine.insert(
         prefix=prefix,
         decode_state=decode_state,
         slot=slot,
@@ -310,7 +299,7 @@ class JetStreamEngine(Engine):
   def generate(
       self, params: Params, decode_state: DecodeState
   ) -> Tuple[DecodeState, ResultTokens]:
-    decode_state, sampled_tokens = self.generate_executable(  # pylint: disable=not-callable
+    decode_state, sampled_tokens = self._downstream_engine.generate(
         params=params, decode_state=decode_state
     )
     return decode_state, sampled_tokens
@@ -355,6 +344,3 @@ class JetStreamEngine(Engine):
   @property
   def colocated_cpus(self) -> Union[list[CpuDevices], None]:
     return self._downstream_engine.colocated_cpus
-
-  def set_padded_token_length(self, padded_token_length: int):
-    self.padded_token_length = padded_token_length
