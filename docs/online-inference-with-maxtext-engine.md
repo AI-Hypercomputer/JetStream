@@ -21,8 +21,8 @@ Follow the steps in [Manage TPU resources | Google Cloud](https://cloud.google.c
 ## Step 1: Download JetStream and the MaxText github repository
 
 ```bash
-git clone -b jetstream-v0.2.2 https://github.com/google/maxtext.git
-git clone -b v0.2.2 https://github.com/google/JetStream.git
+git clone https://github.com/google/maxtext.git
+git clone https://github.com/google/JetStream.git
 ```
 
 ## Step 2: Setup MaxText
@@ -210,6 +210,11 @@ Note: The JetStream MaxText Server commands from Step 4 are not running with any
 
 ### Generating a quantized checkpoint
 
+First, define the path to which the quantized checkpoint
+```bash
+export SAVE_QUANT_PARAMS_PATH=gs://${USER}-bkt/quantized/llama2-7b-chat
+```
+
 There are several different quantization configurations to choose from:
 
 #### int8 DRQ quantized checkpoint
@@ -323,6 +328,7 @@ python JetStream/benchmarks/benchmark_serving.py \
 --request-rate 5 \
 --warmup-mode sampled
 ```
+For details, please see https://github.com/google/JetStream/blob/main/benchmarks/README.md
 
 ### Benchmarking Llama2
 
@@ -338,6 +344,7 @@ python JetStream/benchmarks/benchmark_serving.py \
 --request-rate 5 \
 --warmup-mode sampled
 ```
+For details, please see https://github.com/google/JetStream/blob/main/benchmarks/README.md
 
 ## Clean Up
 
