@@ -25,7 +25,7 @@ git clone https://github.com/google/maxtext.git
 git clone https://github.com/google/JetStream.git
 ```
 
-## Step 2: Setup MaxText
+## Step 2: Setup MaxText and JetStream
 
 ```bash
 # Create a python virtual environment for the demo.
@@ -36,6 +36,12 @@ source .env/bin/activate
 # Setup MaxText.
 cd maxtext/
 bash setup.sh
+
+# Setup JetStream
+cd JetStream
+pip install -e .
+cd benchmarks
+pip install -r requirements.in
 ```
 
 ## Step 3: Convert Model Checkpoints 
@@ -299,8 +305,31 @@ python MaxText/maxengine_server.py \
   weight_dtype=${WEIGHT_DTYPE} \
   per_device_batch_size=${PER_DEVICE_BATCH_SIZE} \
   quantization=${QUANTIZATION} \
-  quantize_kvcache=${QUANTIZE_KVCACHE}
+  quantize_kvcache=${QUANTIZE_KVCACHE} \
+  checkpoint_is_quantized=${CHECKPOINT_IS_QUANTIZED}
 ```
+
+For the mixed precision quantized model
+```bash
+python MaxText/maxengine_server.py \
+  MaxText/configs/base.yml \
+  tokenizer_path=${TOKENIZER_PATH} \
+  load_parameters_path=${LOAD_PARAMETERS_PATH} \
+  max_prefill_predict_length=${MAX_PREFILL_PREDICT_LENGTH} \
+  max_target_length=${MAX_TARGET_LENGTH} \
+  model_name=${MODEL_NAME} \
+  ici_fsdp_parallelism=${ICI_FSDP_PARALLELISM} \
+  ici_autoregressive_parallelism=${ICI_AUTOREGRESSIVE_PARALLELISM} \
+  ici_tensor_parallelism=${ICI_TENSOR_PARALLELISM} \
+  scan_layers=${SCAN_LAYERS} \
+  weight_dtype=${WEIGHT_DTYPE} \
+  per_device_batch_size=${PER_DEVICE_BATCH_SIZE} \
+  quantization=${QUANTIZATION} \
+  quantize_kvcache=${QUANTIZE_KVCACHE} \
+  checkpoint_is_quantized=${CHECKPOINT_IS_QUANTIZED} \
+  quant_cfg_path=${QUANT_CFG_PATH}
+```
+
 
 ### Benchmarking Gemma-7b
 
