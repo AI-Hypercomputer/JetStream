@@ -19,7 +19,7 @@ could want to call, enabling interleaved (continuous batching) inference.
 """
 
 import abc
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Optional, Tuple, Union, Callable
 
 from flax import struct
 import jax
@@ -142,6 +142,7 @@ class Engine(abc.ABC):
       existing_prefix: Optional[Prefix] = None,
       padded_tokens: jax.Array,
       true_length: int,
+      sampler: Optional[Callable[[Any], Any]] = None,
   ) -> Tuple[Prefix, ResultTokens]:
     """Computes a kv-cache for a set of tokens conditional on existing cache.
 
@@ -149,11 +150,16 @@ class Engine(abc.ABC):
     processed by the underlying model. tokens is logically appended
     to the text represented by `existing_prefix`. This method returns a new
     kv_cache (typically) for the resulting text.
+
+    If sampler is passed, then the engine should use it do sample next token.
     """
 
   @abc.abstractmethod
   def generate(
-      self, params: Params, decode_state: DecodeState
+      self,
+      params: Params,
+      decode_state: DecodeState,
+      sampler: Optional[Callable[[Any], Any]] = None,
   ) -> Tuple[DecodeState, ResultTokens]:
     """Generates tokens for each sequence being decoded in parallel.
 
@@ -165,6 +171,8 @@ class Engine(abc.ABC):
     consists of each microbatch progressing through every stage), in
     non-pipelined code this is a full forward pass. In both cases, this accounts
     for a full embed-layerstack-unembed-sample operation.
+
+    If sampler is passed, then the engine should use it do sample next token.
     """
 
   @abc.abstractmethod
