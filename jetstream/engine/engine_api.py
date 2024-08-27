@@ -156,8 +156,8 @@ class Engine(abc.ABC):
 
   @abc.abstractmethod
   def generate(
-      self, 
-      params: Params, 
+      self,
+      params: Params,
       decode_state: DecodeState,
       sampler: Optional[Callable[[Any], Any]] = None,
   ) -> Tuple[DecodeState, ResultTokens]:
