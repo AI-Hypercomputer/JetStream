@@ -22,9 +22,7 @@ RUN pip install setuptools==58 fastapi==0.103.2 uvicorn
 
 RUN pip install ./JetStream
 
-COPY inference_mlperf4.1 ./inference_mlperf4.1
 RUN apt -y update && apt-get -y install python3-dev && apt-get -y install build-essential
-RUN pip install ./inference_mlperf4.1/loadgen
 RUN pip install \
     transformers==4.31.0 \
     nltk==3.8.1 \
