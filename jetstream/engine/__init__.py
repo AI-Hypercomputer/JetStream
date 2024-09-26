@@ -17,7 +17,7 @@
 import jax
 
 try:
-  import previewutilities
+  import pathwaysutils
 except ImportError as e:
   print("Proxy backend support is not added")
   pass
