@@ -210,12 +210,12 @@ def load_sharegpt_dataset(
   return dataset
 
 
-def load_openorca_dataset_pkl():
+def load_openorca_dataset_pkl(name):
   # read pickle file
   samples = pandas.read_pickle(
       os.path.join(
           os.path.dirname(os.path.relpath(__file__)),
-          "open_orca_gpt4_tokenized_llama.calibration_1000.pkl",
+          name,
       )
   )
 
@@ -589,7 +589,7 @@ def main(args: argparse.Namespace):
   else:
     dataset = []
     if args.dataset == "openorca":
-      dataset = load_openorca_dataset_pkl()
+      dataset = load_openorca_dataset_pkl(args.pkl_file)
     elif args.dataset == "sharegpt":
       dataset = load_sharegpt_dataset(
           args.dataset_path,
@@ -833,6 +833,11 @@ if __name__ == "__main__":
       default="human",
       choices=["human", "gpt", "both"],
       help="What entity should be the one starting the conversations.",
+  )
+  parser.add_argument(
+      "--pkl-file",
+      type=str,
+      default="open_orca_gpt4_tokenized_llama.calibration_1000.pkl",
   )
 
   parsed_args = parser.parse_args()
