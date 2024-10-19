@@ -14,6 +14,7 @@
 
 """Tests http server end-to-end."""
 
+import os
 import subprocess
 import sys
 import time
@@ -29,6 +30,9 @@ class HTTPServerTest(unittest.IsolatedAsyncioTestCase):
   def setUpClass(cls):
     """Sets up a JetStream http server for unit tests."""
     cls.base_url = "http://localhost:8080"
+    my_env = os.environ.copy()  # Create a copy of the current environment
+    my_env["JAX_PLATFORMS"] = "cpu"
+    my_env["JAX_TRACEBACK_FILTERING"] = "off"
     cls.server = subprocess.Popen(
         [
             "python",
@@ -36,6 +40,7 @@ class HTTPServerTest(unittest.IsolatedAsyncioTestCase):
             "jetstream.entrypoints.http.api_server",
             "--config=InterleavedCPUTestServer",
         ],
+        env=my_env,
         stdout=sys.stdout,
         stderr=sys.stderr,
     )

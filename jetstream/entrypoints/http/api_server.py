@@ -94,11 +94,11 @@ def server(argv: Sequence[str]):
   app.include_router(router)
 
   # Init LLMOrchestrator which would be the main handler in the api endpoints.
-  devices = server_lib.get_devices()
-  print(f"devices: {devices}")
-  server_config = get_server_config(flags.FLAGS.config)
+  server_config = get_server_config(flags.FLAGS.config, argv)
   print(f"server_config: {server_config}")
   del argv
+  devices = server_lib.get_devices()
+  print(f"devices: {devices}")
 
   metrics_server_config: config_lib.MetricsServerConfig | None = None
   # Setup Prometheus server
