@@ -444,6 +444,8 @@ async def send_request(
   """Send the request to JetStream server."""
   # Tokenization on client side following MLPerf standard.
   token_ids = tokenizer.encode(input_request.prompt)
+  print(f"input_request.prompt: {input_request.prompt}")
+  print(f"token_ids: {token_ids}")
   request = jetstream_pb2.DecodeRequest(
       token_content=jetstream_pb2.DecodeRequest.TokenContent(
           token_ids=token_ids
@@ -461,6 +463,8 @@ async def send_request(
   output.generated_token_list = generated_token_list
   # generated_token_list is a list of token ids, decode it to generated_text.
   output.generated_text = tokenizer.decode(generated_token_list)
+  print(f"generated_token_list: {generated_token_list}")
+  print(f"output.generated_text: {output.generated_text}")
   output.success = True
   if pbar:
     pbar.update(1)

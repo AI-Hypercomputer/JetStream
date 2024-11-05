@@ -283,6 +283,7 @@ class SentencePieceTokenizer(tokenizer_api.Tokenizer):
   """Tokenizer to convert strings to token ids and vice-versa."""
 
   def __init__(self, metadata: tokenizer_pb2.TokenizerParameters):
+    print("this is being used......")
     self.vocab = load_vocab(metadata.path, metadata.extra_ids)
 
   def encode(
