@@ -55,7 +55,7 @@ class JetStreamTokenizer:
 class TokenUtilsTest(unittest.TestCase):
 
   def setup_sentencepiece(self):
-    self.tokenizer_path = "external_tokenizers/llama3/tokenizer.model"
+    self.tokenizer_path = "external_tokenizers/llama2/tokenizer.model"
     current_dir = os.path.dirname(__file__)
     self.tokenizer_path = os.path.join(current_dir, self.tokenizer_path)
     print(f"model_path: {self.tokenizer_path}")
