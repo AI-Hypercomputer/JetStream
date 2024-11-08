@@ -28,7 +28,7 @@ from jetstream.core.utils.return_sample import ReturnSample
 from jetstream.engine import mock_utils
 from jetstream.engine import tokenizer_api
 from jetstream.engine import tokenizer_pb2
-from jetstream.third_party.llama3 import llama3_tokenizer
+from jetstream.external_tokenizers.llama3 import llama3_tokenizer
 
 # ResultToken class to store tokens ids.
 ResultTokens = Any

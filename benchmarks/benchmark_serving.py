@@ -73,7 +73,7 @@ import grpc
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine.token_utils import load_vocab
-from jetstream.third_party.llama3 import llama3_tokenizer
+from jetstream.external_tokenizers.llama3 import llama3_tokenizer
 import numpy as np
 from tqdm.asyncio import tqdm  # pytype: disable=pyi-error
 import pandas
