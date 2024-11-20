@@ -65,7 +65,9 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install Dependencies
-      run: make install-deps
+      run: |
+        make install-deps 
+        make install-submodules
     - name: Run all unit tests in JetStream (jetstream/tests)
       run: make unit-tests
     - name: Create test coverage report
