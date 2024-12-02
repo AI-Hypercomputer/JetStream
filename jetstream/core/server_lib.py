@@ -120,7 +120,7 @@ def create_driver(
   logging.info("Loaded all weights.")
   if metrics_collector:
     metrics_collector.get_model_load_time_metric().set(
-      time.time() - model_load_start_time
+        time.time() - model_load_start_time
     )
   interleaved_mode = (
       len(config.prefill_slices) + len(config.generate_slices) == 0
