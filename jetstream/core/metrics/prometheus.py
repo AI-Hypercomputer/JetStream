@@ -237,7 +237,7 @@ class JetstreamMetricsCollector:
     return self._server_startup_latency.labels(id=self._id)
 
   def get_model_load_time_metric(self):
-    return self._model_load_time.labels(id=self.id)
+    return self._model_load_time.labels(id=self._id)
 
   def get_time_to_first_token(self):
     return self._time_to_first_token.labels(id=self._id)
