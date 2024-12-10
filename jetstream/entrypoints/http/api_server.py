@@ -17,7 +17,7 @@
 import json
 import logging
 import time
-from typing import Sequence
+from typing import Optional, Sequence
 from absl import app as abslapp
 from absl import flags
 from fastapi import APIRouter, Response
@@ -100,6 +100,7 @@ def server(argv: Sequence[str]):
   print(f"server_config: {server_config}")
   del argv
 
+  metrics_collector: Optional[JetstreamMetricsCollector] = None
   if flags.FLAGS.prometheus_port != 0:
     logging.info(
         "Starting Prometheus server on port %d", flags.FLAGS.prometheus_port
