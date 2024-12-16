@@ -64,7 +64,6 @@ def main(args):
 
   eval_accuracy(request_outputs_dict)
 
-
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument(
