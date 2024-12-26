@@ -19,6 +19,7 @@ See implementations/*/sever.py for examples.
 
 import asyncio
 from concurrent import futures
+import gc
 import logging
 import os
 import signal
@@ -218,8 +219,20 @@ def run(
   # to make sure we can fully saturate the model. Set default minimum to 64.
   threads = threads or max(driver.get_total_concurrent_requests(), 64)
   jetstream_server = JetStreamServer(driver, threads, port, credentials)
-  logging.info("Starting server on port %d with %d threads", port, threads)
 
+  # Tweak gc config.
+  # Force a gen 2 collection here.
+  gc.collect(generation=2)
+  # Freeze objects currently tracked and ignore them in future gc runs.
+  gc.freeze()
+  allocs, gen1, gen2 = gc.get_threshold()
+  allocs = config.gc_gen0_allocs
+  gen1 = gen1 * config.gc_gen1_multipler
+  gen2 = gen2 * config.gc_gen2_multipler
+  gc.set_threshold(allocs, gen1, gen2)
+  print("GC tweaked (allocs, gen1, gen2): ", allocs, gen1, gen2)
+
+  logging.info("Starting server on port %d with %d threads", port, threads)
   jetstream_server.start()
 
   if metrics_collector:

@@ -39,6 +39,11 @@ class ServerConfig:
   generate_engine_create_fns: Tuple[CreateEngineFn, ...] = ()
   interleaved_engine_create_fns: Tuple[CreateEngineFn, ...] = ()
   is_ray_backend: bool = False
+  # Parameters for customized gc config, increase the numbers here will
+  # potentially increase memory usage.
+  gc_gen0_allocs: int = 60000  # default is 700, too frequent sometimes.
+  gc_gen1_multipler: int = 2  # Make gen1 gc runs less frequent
+  gc_gen2_multipler: int = 3  # Make gen2 gc runs less frequent
 
 
 @dataclasses.dataclass
