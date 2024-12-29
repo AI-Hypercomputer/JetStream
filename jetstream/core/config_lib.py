@@ -97,7 +97,7 @@ def _split_devices_by_slices(
     devices: list[Devices], slices: list[int]
 ) -> List[List[Devices]]:
   """Converts an ordered list of devices into slices."""
-  assert sum(slices) == len(devices), f"{sum(slices)} != {len(devices)}"
+  assert sum(slices) <= len(devices), f"{sum(slices)} != {len(devices)}"
   cumsum = 0
   slice_split_devices = []
   for sl in slices:
@@ -127,7 +127,7 @@ def get_engines(
       + list(server_config.generate_slices)
       + list(server_config.interleaved_slices)
   ]
-  if sum(slices) != len(devices):
+  if sum(slices) > len(devices):
     raise ValueError(
         f"The number of available devices ({len(devices)}) do not match the "
         f"expected number of devices on all the slices ({sum(slices)}) "

@@ -139,6 +139,9 @@ class ActiveRequest:
   return_channel: async_multifuture.AsyncMultifuture[list[ReturnSample]]
   # [num_samples,] which corresponds to whether each sample is complete for the
   # requests.
+  #
+  # What's num_samples here? It seems we have more samples in a slot.
+  #
   complete: Optional[np.ndarray] = None
   prefill_result: Any = None
   #################### Information relevant for prefill ########################
@@ -256,6 +259,7 @@ class Driver:
     self._generate_params = generate_params
     self._interleaved_mode = interleaved_mode
     self._metrics_collector = metrics_collector
+    print(f"Started {len(prefill_engines)} prefill_engines and {len(generate_engines)} generate_engines")
 
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
@@ -346,6 +350,7 @@ class Driver:
         queue.Queue(engine.max_concurrent_decodes)
         for engine in self._generate_engines
     ]
+    print(f"generate_slots set to {self._generate_engines[0].max_concurrent_decodes}")
     _ = [
         [
             self._generate_slots[idx].put(i)
@@ -396,7 +401,7 @@ class Driver:
             ),
             name=f"prefill_detokenize-{idx}",
         )
-        for idx in range(len(self._generate_engines))
+        for idx in range(len(self._prefill_engines))
     ]
     self.generate_detokenize_threads = [
         JetThread(
@@ -558,6 +563,12 @@ class Driver:
       # Once prefill is complete, place it on the generation queue and block if
       # full.
       my_transfer_backlog.put(request, block=True)
+      print(
+        f"Prefill delay: {request.metadata.transfer_enqueue_time- request.metadata.prefill_dequeue_time:.3f}s, "
+        f"{time.perf_counter() - request.metadata.transfer_enqueue_time:.3f}s, "
+        f"backlog={self._prefill_backlog.qsize()}, transfer={my_transfer_backlog.qsize()}, "
+        f"detokenizer={my_detokenize_backlog.qsize()}"
+      )
       logging.info(
           "Placed request on transfer queue %d, %d queued requests.",
           idx,
@@ -637,6 +648,9 @@ class Driver:
           target_idx,
           self._generate_backlogs[target_idx].qsize(),
       )
+      print(f"{idx}: transfer latency is {new_request.metadata.generate_enqueue_time - new_request.metadata.transfer_dequeue_time:.3f};"
+            f"{time.perf_counter() - new_request.metadata.generate_enqueue_time:.3f};"
+            f"backlogsize={self._generate_backlogs[target_idx].qsize()}")
 
   def _generate_thread(self, idx: int):
     """Step token generation and insert prefills from backlog."""
@@ -740,6 +754,7 @@ class Driver:
             generate_timestep,
         )
 
+        insert_time = time.perf_counter()
         decode_state = generate_engine.insert(
             new_request.prefill_result, decode_state, slot=slot
         )
@@ -748,8 +763,21 @@ class Driver:
         new_request.complete = np.zeros(
             (generate_engine.samples_per_slot,), dtype=np.bool_
         )
+        token_insert_time = time.perf_counter()
         # Respond to detokenization backpressure.
         my_detokenize_backlog.put((slot, new_request), block=True)
+        print(idx, "Time to second token:",
+              f"{new_request.metadata.prefill_enqueue_time - new_request.metadata.start_time:.3f}: "
+              f"{new_request.metadata.prefill_dequeue_time - new_request.metadata.prefill_enqueue_time:.3f}: " # Slow - prefill queuing
+              f"{new_request.metadata.transfer_enqueue_time - new_request.metadata.prefill_dequeue_time:.3f}: "
+              f"{new_request.metadata.transfer_dequeue_time - new_request.metadata.transfer_enqueue_time:.3f}: " # Slow - transfer queuing
+              f"{new_request.metadata.generate_enqueue_time - new_request.metadata.transfer_dequeue_time:.3f}: "
+              f"{new_request.metadata.generate_dequeue_time - new_request.metadata.generate_enqueue_time:.3f}: " # Slow - generate queuing, due to lack of slots.
+              f"{insert_time - new_request.metadata.generate_dequeue_time:.3f}:"
+              f"{token_insert_time - insert_time:.3f}:"  # Generate insert takes about 60ms
+              f"{time.perf_counter() - token_insert_time:.3f}; Queue sizes="
+              f"generate={my_generate_backlog.qsize()}: detokenize={my_detokenize_backlog.qsize()}"
+        )
 
       # At this point, we know that we have at least some slots filled.
       assert (
@@ -764,6 +792,17 @@ class Driver:
       # Respond to detokenization backpressure.
       my_detokenize_backlog.put((generate_timestep, sampled_tokens), block=True)
       generate_timestep += 1
+
+      if time.time() - time_of_last_generate > 0.1 or generate_timestep % 1000 == 0:
+        print(
+            "Generate engine %d step %d - slots free : %d / %d, took %.2fms" % (
+              idx,
+              generate_timestep,
+              my_slots_size,
+              max_concurrent_decodes,
+              (time.time() - time_of_last_generate) * 10**3,
+            )
+        )  # typical 30ms ~ 60ms
       logging.info(
           "Generate engine %d step %d - slots free : %d / %d, took %.2fms",
           idx,
@@ -771,7 +810,7 @@ class Driver:
           my_slots_size,
           max_concurrent_decodes,
           (time.time() - time_of_last_generate) * 10**3,
-      )
+      )  # typical 30ms ~ 60ms
       time_of_last_generate = time.time()
 
   def _detokenize_thread(self, is_prefill: bool, idx: int):
@@ -794,10 +833,11 @@ class Driver:
         i: None for i in range(my_generate_engine.max_concurrent_decodes)
     }
     while self.live:
+      start_detokenize_time = time.perf_counter()
       data = my_detokenize_backlog.get(block=True)
       if data is None:
         break
-      start_detokenize_time = time.time()
+      
       # prefill first token
       if isinstance(data[0], engine_api.ResultTokens):
         request_first_token, request, _ = data
@@ -829,12 +869,21 @@ class Driver:
       elif isinstance(data[1], engine_api.ResultTokens):
         # We want to detokenize them.
         generate_timestep_added, result_tokens = data
+        dequeue_time = time.perf_counter()
         # Disable attribute error because pytype doesn't know this
         # is a result tokens, and we can't annotate the tuple.
-        result_tokens = result_tokens.convert_to_numpy()
+        result_tokens = result_tokens.convert_to_numpy()  # this is taking ~50ms (moving data from tpu to cpu), we need to batch it!
 
+        convert_time = time.perf_counter()
+        cnt = 0
+        complete_cnt = 0
+        process_time = 0.0
+        enqueue_time = 0.0
+        complete_time = 0.0
         for slot, request in my_live_requests.items():
           if request is not None:
+            start  = time.perf_counter()
+            cnt += 1
             results, complete = token_utils.process_result_tokens(
                 tokenizer=tokenizer,
                 slot=slot,
@@ -843,10 +892,13 @@ class Driver:
                 is_client_side_tokenization=request.is_client_side_tokenization,
                 complete=request.complete,
             )
+            enqueue_start = time.perf_counter()
             request.complete = complete
             # Return some output samples.
             request.enqueue_samples(results)
+            complete_start = time.perf_counter()
             if request.complete.all():
+              complete_cnt += 1
               request.metadata.complete_time = time.perf_counter()
               request.return_channel.close()
               if self._metrics_collector:
@@ -886,11 +938,26 @@ class Driver:
               my_live_requests[slot] = None
               my_slots.put(slot, block=False)  # This should always have space.
               my_generate_engine.free_resource(slot)
-        logging.info(
-            "Detokenizing generate step %d took %.2fms",
-            generate_timestep_added,
-            (time.time() - start_detokenize_time) * 10**3,
-        )
+
+            process_time += (enqueue_start - start)
+            enqueue_time += (complete_start - enqueue_start)
+            complete_time += (time.perf_counter() - complete_start)
+
+        if generate_timestep_added % 1000 == 0:
+          print(
+              "Detokenizing generate step %d took %.3f, %.3f, %.3fs, queue_size=%d, #req=%d, #complete=%d, process=%.3f, enqueue=%.3f, complete=%.3f" % (
+                generate_timestep_added,
+                dequeue_time - start_detokenize_time,
+                convert_time - dequeue_time,
+                time.perf_counter() - convert_time,
+                my_detokenize_backlog.qsize(),
+                cnt,
+                complete_cnt,
+                process_time,
+                enqueue_time,
+                complete_time,
+              )
+          )
       else:
         # We want to update a slot with the new channel.
         slot, active_request = data
