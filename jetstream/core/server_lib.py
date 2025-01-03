@@ -114,10 +114,15 @@ def create_driver(
     An orchestrator driver.
   """
   engines = config_lib.get_engines(config, devices=devices)
+  model_load_start_time = time.time()
   prefill_params = [pe.load_params() for pe in engines.prefill_engines]
   generate_params = [ge.load_params() for ge in engines.generate_engines]
   shared_params = [ie.load_params() for ie in engines.interleaved_engines]
   logging.info("Loaded all weights.")
+  if metrics_collector:
+    metrics_collector.get_model_load_time_metric().set(
+        time.time() - model_load_start_time
+    )
   interleaved_mode = (
       len(config.prefill_slices) + len(config.generate_slices) == 0
   )
