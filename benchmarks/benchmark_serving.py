@@ -62,6 +62,7 @@ import argparse
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
+import gc
 import json
 import random
 import time
@@ -105,6 +106,40 @@ def str2bool(v: str) -> bool:
     return False
   else:
     raise ValueError(f"Invalid value '{v}'!")
+
+
+class AsyncCounter:
+  """An counter class for counting and quota management with asycio,
+  not thread safe. It's safe with asyncio as value changes are done
+  outside of await statements.
+  """
+
+  def __init__(self, init_value: int, block_on_zero_seconds=0.002):
+    """
+    Args:
+      init_value: Initial value for the counter.
+      block_on_zero_seconds: if greater than 0, the counter will spin when
+        value hits 0, hence can be used for quota management.
+    """
+    self._init_value = init_value
+    self._value = init_value
+    self._block_on_zero_seconds = block_on_zero_seconds
+
+  async def inc(self):
+    self._value += 1
+
+  async def dec(self):
+    while True:
+      if self._value > 0 or self._block_on_zero_seconds <= 0.0:
+        self._value -= 1
+        return
+      await asyncio.sleep(self._block_on_zero_seconds)
+
+  def value(self):
+    return self._value
+
+  def delta(self):
+    return self._init_value - self._value
 
 
 @dataclass
@@ -378,6 +413,7 @@ def calculate_metrics(
   completed = 0
   per_token_latencies = []
   ttfts = []
+  output_sizes = []
   for i in range(len(outputs)):
     if outputs[i].success:
       output_len = len(
@@ -385,6 +421,7 @@ def calculate_metrics(
           if tokenizer != "test"
           else ["Ċ", "Ō", "Ɵ"]
       )
+      output_sizes.append(output_len)
       total_output += output_len
       total_input += input_requests[i].prompt_len
       if output_len == 0:
@@ -396,6 +433,10 @@ def calculate_metrics(
       per_token_latencies.append(outputs[i].latency / output_len)
       ttfts.append(outputs[i].ttft)
       completed += 1
+
+  print("Mean output size:", float(np.mean(output_sizes)))
+  print("Median output size:", float(np.median(output_sizes)))
+  print("P99 output size:", float(np.percentile(output_sizes, 99)))
 
   metrics = BenchmarkMetrics(
       completed=completed,
@@ -416,21 +457,32 @@ def calculate_metrics(
 
 
 async def grpc_async_request(
-    api_url: str, request: Any
+    api_url: str,
+    request: Any,
+    prefill_quota: AsyncCounter,
+    active_req_quota: AsyncCounter,
 ) -> tuple[list[str], float, float]:
   """Send grpc synchronous request since the current grpc server is sync."""
   options = [("grpc.keepalive_timeout_ms", 10000)]
   async with grpc.aio.insecure_channel(api_url, options=options) as channel:
     stub = jetstream_pb2_grpc.OrchestratorStub(channel)
-    print("Making request")
     ttft = 0
     token_list = []
     request_start_time = time.perf_counter()
     response = stub.Decode(request)
     async for resp in response:
       if ttft == 0:
+        await prefill_quota.inc()
+
         ttft = time.perf_counter() - request_start_time
+        if ttft > 2.0:
+          print(
+              datetime.now(),
+              f"slow TTFT {ttft:.2f}",
+              prefill_quota.value(),
+          )
       token_list.extend(resp.stream_content.samples[0].token_ids)
+    await active_req_quota.inc()
     latency = time.perf_counter() - request_start_time
     return token_list, ttft, latency
 
@@ -439,9 +491,12 @@ async def send_request(
     api_url: str,
     tokenizer: Any,
     input_request: InputRequest,
+    prefill_quota: AsyncCounter,
+    active_req_quota: AsyncCounter,
     pbar: tqdm,
 ) -> RequestFuncOutput:
   """Send the request to JetStream server."""
+
   # Tokenization on client side following MLPerf standard.
   token_ids = tokenizer.encode(input_request.prompt)
   request = jetstream_pb2.DecodeRequest(
@@ -449,12 +504,15 @@ async def send_request(
           token_ids=token_ids
       ),
       max_tokens=input_request.output_len,
+      metadata=jetstream_pb2.DecodeRequest.Metadata(
+          start_time=time.perf_counter()
+      ),
   )
   output = RequestFuncOutput()
   output.input_request = input_request
   output.prompt_len = input_request.prompt_len
   generated_token_list, ttft, latency = await grpc_async_request(
-      api_url, request
+      api_url, request, prefill_quota, active_req_quota
   )
   output.ttft = ttft
   output.latency = latency
@@ -463,6 +521,12 @@ async def send_request(
   output.generated_text = tokenizer.decode(generated_token_list)
   output.success = True
   if pbar:
+    pbar.postfix = (
+        f"#reqs: {active_req_quota.delta()}/"
+        f"{active_req_quota.value()}; "
+        f"#prefill: {prefill_quota.delta()}/"
+        f"{prefill_quota.value()}"
+    )
     pbar.update(1)
   return output
 
@@ -473,6 +537,8 @@ async def benchmark(
     input_requests: list[InputRequest],
     request_rate: float,
     disable_tqdm: bool,
+    prefill_quota: AsyncCounter,
+    active_req_quota: AsyncCounter,
 ):
   """Benchmark the online serving performance."""
   pbar = None if disable_tqdm else tqdm(total=len(input_requests))
@@ -482,12 +548,17 @@ async def benchmark(
   benchmark_start_time = time.perf_counter()
   tasks = []
   async for request in get_request(input_requests, request_rate):
+    await prefill_quota.dec()
+    await active_req_quota.dec()
+
     tasks.append(
         asyncio.create_task(
             send_request(
                 api_url=api_url,
                 tokenizer=tokenizer,
                 input_request=request,
+                prefill_quota=prefill_quota,
+                active_req_quota=active_req_quota,
                 pbar=pbar,
             )
         )
@@ -579,6 +650,9 @@ def main(args: argparse.Namespace):
   tokenizer_id = args.tokenizer
   use_hf_tokenizer = args.use_hf_tokenizer
 
+  prefill_quota = AsyncCounter(init_value=3)
+  active_req_quota = AsyncCounter(init_value=450)
+
   api_url = f"{args.server}:{args.port}"
 
   tokenizer = get_tokenizer(model_id, tokenizer_id, use_hf_tokenizer)
@@ -621,6 +695,8 @@ def main(args: argparse.Namespace):
             input_requests=warmup_requests,
             request_rate=args.request_rate,
             disable_tqdm=args.disable_tqdm,
+            prefill_quota=prefill_quota,
+            active_req_quota=active_req_quota,
         )
     )
     print(f"{args.warmup_mode} warmup completed.")
@@ -636,6 +712,8 @@ def main(args: argparse.Namespace):
           input_requests=input_requests,
           request_rate=args.request_rate,
           disable_tqdm=args.disable_tqdm,
+          prefill_quota=prefill_quota,
+          active_req_quota=active_req_quota,
       )
   )
 
@@ -836,4 +914,5 @@ if __name__ == "__main__":
   )
 
   parsed_args = parser.parse_args()
+  gc.disable()
   main(parsed_args)

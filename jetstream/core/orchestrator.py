@@ -74,6 +74,7 @@ Either use :orchestrator test, which tests the multi-threading components,
 to debug hangs due to bugs in threads (it is easier to debug with live logs).
 """
 
+from datetime import datetime
 import dataclasses
 import functools
 import itertools
@@ -98,10 +99,10 @@ from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
 
 root = logging.getLogger()
-root.setLevel(logging.INFO)
+root.setLevel(logging.WARNING)
 
 handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(logging.INFO)
+handler.setLevel(logging.WARNING)
 formatter = logging.Formatter(
     "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
@@ -113,18 +114,25 @@ root.addHandler(handler)
 class ActiveRequestMetadata:
   """Inference request metadata."""
 
-  start_time: Optional[float] = None
+  start_time: float = 0.0
 
-  prefill_enqueue_time: Optional[float] = None
-  prefill_dequeue_time: Optional[float] = None
+  prefill_enqueue_time: float = 0.0
+  prefill_dequeue_time: float = 0.0
 
-  transfer_enqueue_time: Optional[float] = None
-  transfer_dequeue_time: Optional[float] = None
+  transfer_enqueue_time: float = 0.0
+  transfer_dequeue_time: float = 0.0
 
-  generate_enqueue_time: Optional[float] = None
-  generate_dequeue_time: Optional[float] = None
+  generate_enqueue_time: float = 0.0
+  generate_dequeue_time: float = 0.0
 
-  complete_time: Optional[float] = None
+  complete_time: float = 0.0
+
+  def stats(self) -> str:
+    return (
+        f"{self.prefill_enqueue_time - self.start_time:.2f};"
+        f"{self.prefill_dequeue_time - self.prefill_enqueue_time:.2f};"
+        f"{time.perf_counter() - self.prefill_dequeue_time:.2f}"
+    )
 
 
 @dataclasses.dataclass
@@ -245,7 +253,7 @@ class Driver:
     if generate_params is None:
       generate_params = []
 
-    logging.info(
+    logging.warning(
         "Initialising driver with %d prefill engines and %d generate engines.",
         len(prefill_engines),
         len(generate_engines),
@@ -475,6 +483,9 @@ class Driver:
         [e.max_concurrent_decodes for e in self._generate_engines]
     )
     return total_max_concurrent_decodes
+
+  def prefill_backlog_size(self):
+    return self._prefill_backlog.qsize()
 
   def place_request_on_prefill_queue(self, request: ActiveRequest):
     """Used to place new requests for prefilling and generation."""
@@ -980,6 +991,8 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
       context: Optional[grpc.aio.ServicerContext] = None,
   ) -> AsyncIterator[jetstream_pb2.DecodeResponse]:
     """Decode."""
+    request_start_time = time.perf_counter()
+    ttft = 0
     if context is None:
       logging.warning(
           "LLM orchestrator is being used in offline test mode, and will not"
@@ -1031,6 +1044,15 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     buffered_response_list = []
     async for response in active_request.return_channel:
       response = cast(list[ReturnSample], response)
+      if ttft == 0:
+        ttft = time.perf_counter() - request_start_time
+        if ttft > 2.0:
+          print(
+              datetime.now(),
+              f"Slow TTFT: {ttft:.2f}s,"
+              f" stats={active_request.metadata.stats()},"
+              f" prefill_qsize={self._driver.prefill_backlog_size()}",
+          )
       if is_client_side_tokenization:
         # If is_client_side_tokenization, the client should request with token
         # ids, and the JetStream server will return token ids as response.
