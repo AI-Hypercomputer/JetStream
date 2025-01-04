@@ -19,7 +19,7 @@ from typing import Sequence
 from absl import app
 from absl import flags
 
-from jetstream.core.implementations.mock import config as mock_config
+from jetstream.entrypoints.mock import config as mock_config
 from jetstream.core import server_lib
 
 
