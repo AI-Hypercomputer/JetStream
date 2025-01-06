@@ -86,7 +86,7 @@ import sys
 import threading
 import time
 import traceback
-from typing import Any, AsyncIterator, Optional, Tuple, cast
+from typing import Any, AsyncIterator, Optional, Tuple, cast, List
 
 import grpc
 import jax
@@ -931,7 +931,9 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
           True,
       )
 
-  def process_client_side_tokenization_response(self, response: Any):
+  def _process_client_side_tokenization_response(
+      self, response: list[ReturnSample]
+  ):
     samples = []
     for sample in response:
       samples.append(
@@ -945,15 +947,15 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
         )
     )
 
-  def should_buffer_response(self, response: Any) -> bool:
+  def should_buffer_response(self, response: List[ReturnSample]) -> bool:
     for item in response:
       if item.text and token_utils.is_byte_token(item.text[-1]):
         # If any sample ends in bytes, this means we might still need to
         # decode more bytes to compose the string.
         return True
 
-  def process_server_side_tokenization_response(
-      self, response: Any, buffered_response_list
+  def _process_server_side_tokenization_response(
+      self, response: list[ReturnSample], buffered_response_list
   ):
     # Flush the buffered responses to each sample of current response.
     current_response_with_flushed_buffer = list(
@@ -1057,7 +1059,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
         # If is_client_side_tokenization, the client should request with token
         # ids, and the JetStream server will return token ids as response.
         # The client should take care of tokenization and detokenization.
-        yield self.process_client_side_tokenization_response(response)
+        yield self._process_client_side_tokenization_response(response)
       else:
         # Buffer response mechanism is used to handle streaming
         # detokenization with special character (For some edge cases with
@@ -1066,7 +1068,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
         if self.should_buffer_response(response):
           buffered_response_list.append(response)
           continue
-        yield self.process_server_side_tokenization_response(
+        yield self._process_server_side_tokenization_response(
             response, buffered_response_list
         )
         # Reset buffer after flushed.
