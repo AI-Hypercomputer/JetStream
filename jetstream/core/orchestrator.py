@@ -581,6 +581,7 @@ class Driver:
   def _jax_transfer_prefill_result(
       self, new_request: ActiveRequest, target_idx: int
   ):
+    logging.info("AMANGU: In _jax_transfer_prefill_result")
     new_request.prefill_result = jax.device_put(
         new_request.prefill_result,
         self._generate_engines[target_idx].get_prefix_destination_sharding(),
@@ -596,6 +597,7 @@ class Driver:
   def _transfer_prefill_result(
       self, new_request: ActiveRequest, target_idx: int
   ):
+    logging.info("AMANGU: In _transfer_prefill_result")
     if self._is_ray_backend:
       self._ray_transfer_prefill_result(new_request, target_idx)
     else:
@@ -605,6 +607,7 @@ class Driver:
     """Transfers the kv cache on an active request to the least full
     generate backlog."""
     transfer_backlog = self._transfer_backlogs[idx]
+    logging.info("AMANGU: In _transfer_thread")
 
     while self.live:
       # The transfer thread can just sleep until it has work to do.
@@ -641,6 +644,7 @@ class Driver:
   def _generate_thread(self, idx: int):
     """Step token generation and insert prefills from backlog."""
     logging.info("---------Spinning up generate thread %d.---------", idx)
+    logging.info("AMANGU: In _generate_thread")
     generate_engine = self._generate_engines[idx]
     my_slots = self._generate_slots[idx]
     my_generate_backlog = self._generate_backlogs[idx]
@@ -780,6 +784,7 @@ class Driver:
     # For all filled my_slots, pop the sampled token onto the relevant
     # requests return channel. If it done, place it back onto free slots.
 
+    logging.info("AMANGU: In _detokenize_thread")
     if is_prefill:
       my_detokenize_backlog = self._prefill_detokenize_backlogs[idx]
     else:
@@ -908,6 +913,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
   def _get_prefill_content(
       self, request: jetstream_pb2.DecodeRequest
   ) -> Tuple[str | list[int], bool]:
+    logging.info("AMANGU: In LLMOrchestrator::_get_prefill_content")
     which_content = request.WhichOneof("content")
     content = getattr(request, which_content)
     if which_content == "text_content":
@@ -979,6 +985,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
       request: jetstream_pb2.DecodeRequest,
       context: Optional[grpc.aio.ServicerContext] = None,
   ) -> AsyncIterator[jetstream_pb2.DecodeResponse]:
+    logging.info("AMANGU: In LLMOrchestrator::Decode")
     """Decode."""
     if context is None:
       logging.warning(

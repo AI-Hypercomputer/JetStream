@@ -26,7 +26,8 @@ from jetstream.engine.token_utils import load_vocab
 
 _SERVER = flags.DEFINE_string("server", "0.0.0.0", "server address")
 _PORT = flags.DEFINE_string("port", "9000", "port to ping")
-_TEXT = flags.DEFINE_string("text", "My dog is cute", "The message")
+#_TEXT = flags.DEFINE_string("text", "My dog is cute", "The message")
+_TEXT = flags.DEFINE_string("text", "22 year old", "The message")
 _MAX_TOKENS = flags.DEFINE_integer(
     "max_tokens", 3, "Maximum number of output/decode tokens of a sequence"
 )

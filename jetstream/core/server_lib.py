@@ -154,6 +154,8 @@ def create_driver(
       traceback.print_exc()
       os.kill(os.getpid(), signal.SIGKILL)
 
+  logging.info("AMANGU: Going to create the drivers.")
+
   return orchestrator.Driver(
       prefill_engines=prefill_engines,
       generate_engines=generate_engines,
