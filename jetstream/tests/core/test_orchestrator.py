@@ -14,7 +14,7 @@
 
 """Integration test of the orchestrator.
 
-This test tests the multi-htreaded orchestrator, where a prefill request is
+This test tests the multithreaded orchestrator, where a prefill request is
 popped onto a prefill queue, prefilled, sent to a generation queue and run for
 a number of decoding steps.
 

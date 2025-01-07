@@ -71,6 +71,7 @@ import os
 
 
 import grpc
+from benchmarks.metrics import EventMetric, CounterMetric
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine.token_utils import load_vocab
@@ -152,12 +153,10 @@ class BenchmarkMetrics:
   request_throughput: float
   input_throughput: float
   output_throughput: float
-  mean_ttft_ms: float
-  median_ttft_ms: float
-  p99_ttft_ms: float
-  mean_tpot_ms: float
-  median_tpot_ms: float
-  p99_tpot_ms: float
+
+  ttft: EventMetric  # Time-to-first-token
+  ttst: EventMetric  # Time-to-second-token
+  tpot: EventMetric  # Time-per-output-token
 
 
 @dataclass
@@ -171,24 +170,37 @@ class InputRequest:
 
 @dataclass
 class RequestFuncOutput:
+  """Data class to store the response of a request."""
+
   input_request: Optional[InputRequest] = None
-  generated_token_list: list[str] = field(default_factory=list)
+  generated_token_list: list[int] = field(default_factory=list)
   generated_text: str = ""
   success: bool = False
-  latency: float = 0
-  ttft: float = 0
+  latency_sec: float = 0
+  ttft_sec: float = 0
+  ttst_sec: float = 0
   prompt_len: int = 0
 
   # Flatten the structure and return only the necessary results
   def to_dict(self):
+    if self.input_request:
+      prompt = self.input_request.prompt
+      original_output = self.input_request.output
+      sample_idx = self.input_request.sample_idx
+    else:
+      prompt = None
+      original_output = None
+      sample_idx = None
     return {
-        "prompt": self.input_request.prompt,
-        "original_output": self.input_request.output,
+        "prompt": prompt,
+        "original_output": original_output,
         "generated_text": self.generated_text,
         "success": self.success,
-        "latency": self.latency,
+        "latency_sec": self.latency_sec,
+        "ttft_sec": self.ttft_sec,
+        "ttst_sec": self.ttst_sec,
         "prompt_len": self.prompt_len,
-        "sample_idx": self.input_request.sample_idx,
+        "sample_idx": sample_idx,
     }
 
 
@@ -415,11 +427,13 @@ def calculate_metrics(
   total_output = 0
   total_input = 0
   completed = 0
-  per_token_latencies = []
-  ttfts = []
+  ttft = EventMetric("ttft", "Time-to-first-token", "ms")
+  ttst = EventMetric("ttst", "Time-to-second-token", "ms")
+  per_out_token_lat = EventMetric("TPOT", "Time-per-output-token", "ms")
   output_sizes = []
   for i in range(len(outputs)):
     if outputs[i].success:
+      completed += 1
       output_len = len(
           outputs[i].generated_token_list
           if tokenizer != "test"
@@ -434,9 +448,9 @@ def calculate_metrics(
              output: {outputs[i]}"""
         )
         continue
-      per_token_latencies.append(outputs[i].latency / output_len)
-      ttfts.append(outputs[i].ttft)
-      completed += 1
+      ttft.record(outputs[i].ttft_sec * 1000)
+      ttst.record(outputs[i].ttst_sec * 1000)
+      per_out_token_lat.record(outputs[i].latency_sec / output_len * 1000)
 
   print("Mean output size:", float(np.mean(output_sizes)))
   print("Median output size:", float(np.median(output_sizes)))
@@ -449,12 +463,9 @@ def calculate_metrics(
       request_throughput=completed / dur_s,
       input_throughput=total_input / dur_s,
       output_throughput=total_output / dur_s,
-      mean_ttft_ms=float(np.mean(ttfts) * 1000),
-      median_ttft_ms=float(np.median(ttfts) * 1000),
-      p99_ttft_ms=float(np.percentile(ttfts, 99) * 1000),
-      mean_tpot_ms=float(np.mean(per_token_latencies) * 1000),
-      median_tpot_ms=float(np.median(per_token_latencies) * 1000),
-      p99_tpot_ms=float(np.percentile(per_token_latencies, 99) * 1000),
+      ttft=ttft,
+      ttst=ttst,
+      tpot=per_out_token_lat,
   )
 
   return metrics
@@ -465,30 +476,33 @@ async def grpc_async_request(
     request: Any,
     prefill_quota: AsyncCounter,
     active_req_quota: AsyncCounter,
-) -> tuple[list[str], float, float]:
+    out_token_cnt: CounterMetric,
+) -> tuple[list[int], float, float, float]:
   """Send grpc synchronous request since the current grpc server is sync."""
   options = [("grpc.keepalive_timeout_ms", 10000)]
   async with grpc.aio.insecure_channel(api_url, options=options) as channel:
     stub = jetstream_pb2_grpc.OrchestratorStub(channel)
-    ttft = 0
-    token_list = []
     request_start_time = time.perf_counter()
     response = stub.Decode(request)
+    token_list = []
+    ttft = 0
+    ttst = 0
+    stream_resp_cnt = 0
     async for resp in response:
-      if ttft == 0:
+      stream_resp_cnt += 1
+      if stream_resp_cnt == 1:
         await prefill_quota.inc()
-
         ttft = time.perf_counter() - request_start_time
         if ttft > 2.0:
-          print(
-              datetime.now(),
-              f"slow TTFT {ttft:.2f}",
-              prefill_quota.value(),
-          )
-      token_list.extend(resp.stream_content.samples[0].token_ids)
+          print(datetime.now(), f"slow TTFT {ttft:.2f}", prefill_quota.value())
+      elif stream_resp_cnt == 2:
+        ttst = time.perf_counter() - request_start_time
+      resp_tokens = resp.stream_content.samples[0].token_ids
+      token_list.extend(resp_tokens)
+      out_token_cnt.increment(len(resp_tokens))
     await active_req_quota.inc()
-    latency = time.perf_counter() - request_start_time
-    return token_list, ttft, latency
+    req_latency = time.perf_counter() - request_start_time
+    return token_list, ttft, ttst, req_latency
 
 
 async def send_request(
@@ -497,12 +511,15 @@ async def send_request(
     input_request: InputRequest,
     prefill_quota: AsyncCounter,
     active_req_quota: AsyncCounter,
+    req_complete_cnt: CounterMetric,
+    out_token_cnt: CounterMetric,
     pbar: tqdm,
 ) -> RequestFuncOutput:
   """Send the request to JetStream server."""
-
-  # Tokenization on client side following MLPerf standard.
+  # Tokenize on client side following MLPerf standard.
   token_ids = tokenizer.encode(input_request.prompt)
+
+  # Send the request
   request = jetstream_pb2.DecodeRequest(
       token_content=jetstream_pb2.DecodeRequest.TokenContent(
           token_ids=token_ids
@@ -512,17 +529,25 @@ async def send_request(
           start_time=time.perf_counter()
       ),
   )
+  out_tokens, ttft_sec, ttst_sec, latency_sec = await grpc_async_request(
+      api_url,
+      request,
+      prefill_quota,
+      active_req_quota,
+      out_token_cnt,
+  )
+  req_complete_cnt.increment()
+
+  # Collect per-request output and metrics.
   output = RequestFuncOutput()
   output.input_request = input_request
   output.prompt_len = input_request.prompt_len
-  generated_token_list, ttft, latency = await grpc_async_request(
-      api_url, request, prefill_quota, active_req_quota
-  )
-  output.ttft = ttft
-  output.latency = latency
-  output.generated_token_list = generated_token_list
+  output.ttft_sec = ttft_sec
+  output.ttst_sec = ttst_sec
+  output.latency_sec = latency_sec
+  output.generated_token_list = out_tokens
   # generated_token_list is a list of token ids, decode it to generated_text.
-  output.generated_text = tokenizer.decode(generated_token_list)
+  output.generated_text = tokenizer.decode(out_tokens)
   output.success = True
   if pbar:
     pbar.postfix = (
@@ -543,18 +568,39 @@ async def benchmark(
     disable_tqdm: bool,
     prefill_quota: AsyncCounter,
     active_req_quota: AsyncCounter,
-):
-  """Benchmark the online serving performance."""
+    is_warmup: bool = False,
+) -> tuple[dict[str, float | int], list[RequestFuncOutput]]:
+  """Benchmark the online serving performance.
+
+  Args:
+    api_url: URL (e.g. host:port) of the JetStream server to send requests to.
+    tokenizer: The tokenizer used to convert texts into tokens that will be set
+      in requests.
+    input_requests: A list of requests to send.
+    request_rate: The number of requests to send per second.
+    disable_tqdm: Whether progress bar should be disabled or not.
+    prefill_quota: Quota for limiting pending prefill operations.
+    active_req_quota: Quota for limiting inflight requests.
+    is_warmup: Whether this run is to warm up the server.
+
+  Return:
+    A tuple containing the performance statistics for all requests and a list
+    of responses from the executed requests.
+  """
+  print(f"Benchmarking with a total number of {len(input_requests)} requests")
+  print(f"Benchmarking with request rate of {request_rate}")
   pbar = None if disable_tqdm else tqdm(total=len(input_requests))
+  req_complete_cnt = CounterMetric(
+      "ReqCompleteCount", "Request Completion Counter"
+  )
+  out_token_cnt = CounterMetric("OutTokenCount", "OutToken Counter")
 
-  print(f"Traffic request rate: {request_rate}")
-
-  benchmark_start_time = time.perf_counter()
+  # Run benchmarking
   tasks = []
+  benchmark_start_time = time.perf_counter()
   async for request in get_request(input_requests, request_rate):
     await prefill_quota.dec()
     await active_req_quota.dec()
-
     tasks.append(
         asyncio.create_task(
             send_request(
@@ -563,54 +609,69 @@ async def benchmark(
                 input_request=request,
                 prefill_quota=prefill_quota,
                 active_req_quota=active_req_quota,
+                req_complete_cnt=req_complete_cnt,
+                out_token_cnt=out_token_cnt,
                 pbar=pbar,
             )
         )
     )
   outputs = await asyncio.gather(*tasks)
-
-  if not disable_tqdm and pbar:
+  if pbar is not None:
     pbar.close()
 
-  benchmark_duration = time.perf_counter() - benchmark_start_time
+  # Compute metrics
+  output_metrics = {}
+  if not is_warmup:
+    # No need to calculate metrics when executing warmup requests
+    benchmark_duration = time.perf_counter() - benchmark_start_time
+    metrics = calculate_metrics(
+        input_requests=input_requests,
+        outputs=outputs,
+        dur_s=benchmark_duration,
+        tokenizer=tokenizer,
+    )
+    print(f"Successful requests: {metrics.completed}")
+    print(f"Benchmark duration: {benchmark_duration:2f} s")
+    print(f"Total input tokens: {metrics.total_input}")
+    print(f"Total generated tokens: {metrics.total_output}")
+    print(f"Request throughput: {metrics.request_throughput:.2f} requests/s")
+    print(f"Input token throughput: {metrics.input_throughput:.2f} tokens/s")
+    print(f"Output token throughput: {metrics.output_throughput:.2f} tokens/s")
 
-  metrics = calculate_metrics(
-      input_requests=input_requests,
-      outputs=outputs,
-      dur_s=benchmark_duration,
-      tokenizer=tokenizer,
-  )
+    print(f"{metrics.ttft.distribution_summary_str()}")
+    print(f"{metrics.ttst.distribution_summary_str()}")
+    print(f"{metrics.tpot.distribution_summary_str()}")
 
-  print(f"Successful requests: {metrics.completed}")
-  print(f"Benchmark duration: {benchmark_duration:2f} s")
-  print(f"Total input tokens: {metrics.total_input}")
-  print(f"Total generated tokens: {metrics.total_output}")
-  print(f"Request throughput: {metrics.request_throughput:.2f} requests/s")
-  print(f"Input token throughput: {metrics.input_throughput:.2f} tokens/s")
-  print(f"Output token throughput: {metrics.output_throughput:.2f} tokens/s")
-  print(f"Mean TTFT: {metrics.mean_ttft_ms:.2f} ms")
-  print(f"Median TTFT: {metrics.median_ttft_ms:.2f} ms")
-  print(f"P99 TTFT: {metrics.p99_ttft_ms:.2f} ms")
-  print(f"Mean TPOT: {metrics.mean_tpot_ms:.2f} ms")
-  print(f"Median TPOT: {metrics.median_tpot_ms:.2f} ms")
-  print(f"P99 TPOT: {metrics.p99_tpot_ms:.2f} ms")
+    # Calculate one rate for each 10 sec window. Adjusts the window size if
+    # needed to use csv output below for plotting the rate over time.
+    window_size_sec = 10
+    print(
+        f"----- Request complete rate time series "
+        f"(window_size = {window_size_sec} sec) -----"
+    )
+    print(f"{req_complete_cnt.rate_over_window_to_csv(window_size_sec)}")
+    print(
+        f"----- Output token rate time series "
+        f"(window_size = {window_size_sec} sec) -----"
+    )
+    print(f"{out_token_cnt.rate_over_window_to_csv(window_size_sec)}")
 
-  result = {
-      "duration": benchmark_duration,
-      "completed": metrics.completed,
-      "total_input_tokens": metrics.total_input,
-      "total_output_tokens": metrics.total_output,
-      "request_throughput": metrics.request_throughput,
-      "input_throughput": metrics.input_throughput,
-      "output_throughput": metrics.output_throughput,
-      "mean_ttft_ms": metrics.mean_ttft_ms,
-      "median_ttft_ms": metrics.median_ttft_ms,
-      "p99_ttft_ms": metrics.p99_ttft_ms,
-      "mean_tpot_ms": metrics.mean_tpot_ms,
-      "median_tpot_ms": metrics.median_tpot_ms,
-      "p99_tpot_ms": metrics.p99_tpot_ms,
-  }
-  return result, outputs
+    output_metrics = {
+        "duration": benchmark_duration,
+        "completed": metrics.completed,
+        "total_input_tokens": metrics.total_input,
+        "total_output_tokens": metrics.total_output,
+        "request_throughput": metrics.request_throughput,
+        "input_throughput": metrics.input_throughput,
+        "output_throughput": metrics.output_throughput,
+    }
+    output_metrics = {
+        **output_metrics,
+        **metrics.ttft.distribution_summary_dict(),
+        **metrics.ttst.distribution_summary_dict(),
+        **metrics.tpot.distribution_summary_dict(),
+    }
+  return output_metrics, outputs
 
 
 def mock_requests(total_mock_requests: int):
@@ -691,8 +752,8 @@ def main(args: argparse.Namespace):
     warmup_requests = list(sample_warmup_requests(input_requests)) * 2
 
   if warmup_requests:
-    print(f"Starting {args.warmup_mode} warmup:")
-    benchmark_result, request_outputs = asyncio.run(
+    print(f"Warmup (mode: {args.warmup_mode}) is starting.")
+    _, _ = asyncio.run(
         benchmark(
             api_url=api_url,
             tokenizer=tokenizer,
@@ -701,9 +762,10 @@ def main(args: argparse.Namespace):
             disable_tqdm=args.disable_tqdm,
             prefill_quota=prefill_quota,
             active_req_quota=active_req_quota,
+            is_warmup=True,
         )
     )
-    print(f"{args.warmup_mode} warmup completed.")
+    print(f"Warmup (mode: {args.warmup_mode}) has completed.")
 
   # TODO: Replace this with warmup complete signal once supported.
   # Wait for server completely warmup before running the benchmark.
@@ -774,7 +836,6 @@ def main(args: argparse.Namespace):
 
 
 if __name__ == "__main__":
-
   parser = argparse.ArgumentParser(
       description="Benchmark the online serving throughput."
   )
