@@ -75,7 +75,11 @@ class JetstreamMetricsCollector:
       documentation="The percentage of decode slots currently being used",
       labelnames=["id", "idx"],
   )
-
+  _model_load_time = Gauge(
+      name="jetstream_model_load_time",
+      documentation="Total time taken to load the model",
+      labelnames=["id"],
+  )
   _server_startup_latency = Gauge(
       name="jetstream_server_startup_latency",
       documentation="Total time taken to start the Jetstream server",
@@ -231,6 +235,9 @@ class JetstreamMetricsCollector:
 
   def get_server_startup_latency_metric(self):
     return self._server_startup_latency.labels(id=self._id)
+
+  def get_model_load_time_metric(self):
+    return self._model_load_time.labels(id=self._id)
 
   def get_time_to_first_token(self):
     return self._time_to_first_token.labels(id=self._id)
