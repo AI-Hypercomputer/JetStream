@@ -255,3 +255,12 @@ class JetstreamMetricsCollector:
 
   def get_request_success_count_metric(self):
     return self._request_success_count.labels(id=self._id)
+
+  _total_tokens_in_current_batch = Gauge(
+      name="jetstream_total_tokens_in_current_batch",
+      documentation="Total number of tokens in the decode batch",
+      labelnames=["id", "idx"],
+  )
+
+  def get_total_tokens_in_current_batch_metric(self, idx: int):
+    return self._total_tokens_in_current_batch.labels(id=self._id, idx=idx)
