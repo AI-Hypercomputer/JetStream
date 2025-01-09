@@ -1,0 +1,12 @@
+--find-links https://download.pytorch.org/whl/torch_stable.html
+--find-links https://storage.googleapis.com/jax-releases/libtpu_releases.html
+
+absl-py
+torch==2.3.0+cpu
+torchvision==0.18.0+cpu
+jax[tpu]==0.4.33
+huggingface_hub[cli]
+transformers
+pandas
+fastapi
+uvicorn
