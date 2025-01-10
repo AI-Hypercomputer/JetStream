@@ -17,7 +17,7 @@
 import json
 import logging
 import time
-from typing import Sequence
+from typing import Optional, Sequence
 from absl import app as abslapp
 from absl import flags
 from fastapi import APIRouter, Response
@@ -100,21 +100,16 @@ def server(argv: Sequence[str]):
   print(f"server_config: {server_config}")
   del argv
 
-  metrics_server_config: config_lib.MetricsServerConfig | None = None
-  # Setup Prometheus server
-  metrics_collector: JetstreamMetricsCollector = None
+  metrics_collector: Optional[JetstreamMetricsCollector] = None
   if flags.FLAGS.prometheus_port != 0:
-    metrics_server_config = config_lib.MetricsServerConfig(
-        port=flags.FLAGS.prometheus_port
-    )
     logging.info(
-        "Starting Prometheus server on port %d", metrics_server_config.port
+        "Starting Prometheus server on port %d", flags.FLAGS.prometheus_port
     )
-    start_http_server(metrics_server_config.port)
+    start_http_server(flags.FLAGS.prometheus_port)
     metrics_collector = JetstreamMetricsCollector()
   else:
     logging.info(
-        "Not starting Prometheus server: --prometheus_port flag not set"
+        "Not starting Prometheus server as --prometheus_port flag not set"
     )
 
   global llm_orchestrator
