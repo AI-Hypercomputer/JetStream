@@ -404,7 +404,7 @@ class Driver:
             ),
             name=f"prefill_detokenize-{idx}",
         )
-        for idx in range(len(self._generate_engines))
+        for idx in range(len(self._prefill_engines))
     ]
     self.generate_detokenize_threads = [
         JetThread(
