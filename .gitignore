@@ -9,5 +9,7 @@ google_jetstream.egg-info/
 data/
 logs/
 tmp/
+.venv/
 venv/
 .vscode/
+.idea/

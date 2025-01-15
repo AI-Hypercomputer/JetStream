@@ -1,0 +1,30 @@
+DATASET_PATH=open_orca_gpt4_tokenized_llama.calibration_1000.pkl
+REQUEST_RATE=0
+NUM_PROMPTS=20000
+MAX_OUTPUT_LENGTH=1024
+
+python3 benchmarks/benchmark_serving.py \
+  --tokenizer /maxtext/assets/tokenizer.llama2 \
+  --warmup-mode sampled \
+  --save-result \
+  --save-request-outputs \
+  --request-outputs-file-path outputs.json \
+  --request-rate 20 \
+  --num-prompts 1000 \
+  --max-output-length ${MAX_OUTPUT_LENGTH?} \
+  --dataset openorca \
+  --dataset-path ${DATASET_PATH?} \
+  --server=0.0.0.0
+
+python3 benchmarks/benchmark_serving.py \
+  --tokenizer /maxtext/assets/tokenizer.llama2 \
+  --warmup-mode sampled \
+  --save-result \
+  --save-request-outputs \
+  --request-outputs-file-path outputs.json \
+  --request-rate ${REQUEST_RATE?} \
+  --num-prompts ${NUM_PROMPTS?} \
+  --max-output-length ${MAX_OUTPUT_LENGTH?} \
+  --dataset openorca \
+  --dataset-path ${DATASET_PATH?} \
+  --server=0.0.0.0
