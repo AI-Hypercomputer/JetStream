@@ -106,7 +106,7 @@ def server(argv: Sequence[str]):
   if flags.FLAGS.prometheus_port != 0:
     metrics_server_config = config_lib.MetricsServerConfig(
         port=flags.FLAGS.prometheus_port
-        model_name="some_model"
+        model_name=None
     )
     logging.info(
         "Starting Prometheus server on port %d", metrics_server_config.port

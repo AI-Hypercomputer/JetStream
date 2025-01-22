@@ -16,6 +16,7 @@
 
 import os
 import re
+from typing import Optional
 import shortuuid
 from prometheus_client import Counter, Gauge, Histogram
 from jetstream.engine.token_utils import DEFAULT_PREFILL_BUCKETS
@@ -28,20 +29,21 @@ class JetstreamMetricsCollector:
     "id": os.getenv("HOSTNAME", shortuuid.uuid())
   }
 
-  def __new__(cls, model_name: str):
+  def __new__(cls, model_name: Optional[str] = None):
     if not hasattr(cls, "instance"):
       cls.instance = super(JetstreamMetricsCollector, cls).__new__(cls)
     return cls.instance
 
-  def __init__(self, model_name: str):
+  def __init__(self, model_name: Optional[str] = None):
       # '-'s are common in model names but invalid in prometheus labels, these are replaced with '_'s
-      sanitized_model_name=model_name.replace("-", "_")
-      if sanitized_model_name == "":
-        print("No model name provided, omitting from metrics labels")
-      elif not bool(re.match(r'^[a-zA-Z_:][a-zA-Z0-9_:]*$', sanitized_model_name)):
-        print("Provided model name cannot be used to label prometheus metrics (does not match ^[a-zA-Z_:][a-zA-Z0-9_:]*$), omitting from metrics labels")
-      else:
-        self.universal_labels["model_name"]=sanitized_model_name
+      if model_name is not None:
+        sanitized_model_name=model_name.replace("-", "_")
+        if sanitized_model_name == "":
+          print("No model name provided, omitting from metrics labels")
+        elif not bool(re.match(r'^[a-zA-Z_:][a-zA-Z0-9_:]*$', sanitized_model_name)):
+          print("Provided model name cannot be used to label prometheus metrics (does not match ^[a-zA-Z_:][a-zA-Z0-9_:]*$), omitting from metrics labels")
+        else:
+          self.universal_labels["model_name"]=sanitized_model_name
       universal_label_names = list(self.universal_labels.keys())
 
       # Metric definitions
