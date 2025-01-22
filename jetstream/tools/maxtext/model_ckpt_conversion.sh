@@ -58,16 +58,23 @@ else
     pip install torch --index-url https://download.pytorch.org/whl/cpu
     # llama_or_mistral_ckpt.py requires local path, so we need to copy the checkpoint from CHKPT_BUCKET to local.
     tmp_ckpt_path="/tmp/"
-    #gcloud storage cp -r ${CHKPT_BUCKET} ${tmp_ckpt_path}
+    gcloud storage cp -r ${CHKPT_BUCKET} ${tmp_ckpt_path}
     path_parts=(${CHKPT_BUCKET//\// })
     directory_substring=${path_parts[-1]}
     CONVERT_CKPT_SCRIPT="llama_or_mistral_ckpt.py"
-    JAX_PLATFORMS=cpu python MaxText/${CONVERT_CKPT_SCRIPT} \
-    --base-model-path ${tmp_ckpt_path}${directory_substring} \
-    --maxtext-model-path ${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx} \
-    --model-size ${MODEL_NAME} \
-    --lora-config-path ${LORA_LOCAL_PATH}/adapter_config.json \
-    --lora-model-path ${LORA_LOCAL_PATH}/adapter_model.bin
+    if [[ -x "${LORA_LOCAL_PATH}" ]]; then
+	JAX_PLATFORMS=cpu python MaxText/${CONVERT_CKPT_SCRIPT} \
+	--base-model-path ${tmp_ckpt_path}${directory_substring} \
+	--maxtext-model-path ${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx} \
+	--model-size ${MODEL_NAME} \
+	--lora-config-path ${LORA_LOCAL_PATH}/adapter_config.json \
+	--lora-model-path ${LORA_LOCAL_PATH}/adapter_model.bin
+    else
+	JAX_PLATFORMS=cpu python MaxText/${CONVERT_CKPT_SCRIPT} \
+	--base-model-path ${tmp_ckpt_path}${directory_substring} \
+	--maxtext-model-path ${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx} \
+	--model-size ${MODEL_NAME}
+    fi
 fi
 echo "Written MaxText compatible checkpoint to ${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx}"
 
@@ -79,33 +86,26 @@ export SCANNED_CKPT_PATH=${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx}
 # Note that the `SCANNED_CKPT_PATH` is in a `scanned` format which is great for training but for efficient decoding performance we want the checkpoint in an `unscanned` format.
 export RUN_NAME=${MODEL_NAME}_unscanned_chkpt_${idx}
 
-#JAX_PLATFORMS=cpu python MaxText/generate_param_only_checkpoint.py \
-#MaxText/configs/base.yml \
-#base_output_directory=${BASE_OUTPUT_DIRECTORY} \
-#load_parameters_path=${SCANNED_CKPT_PATH}/base_weights/0/items \
-#run_name=${RUN_NAME} \
-#model_name=${MODEL_NAME} \
-#force_unroll=true
-#echo "Written MaxText unscanned checkpoint to ${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/checkpoints"
-
 if [[ -x "${LORA_LOCAL_PATH}" ]]; then
     JAX_PLATFORMS=cpu python MaxText/generate_param_only_checkpoint.py \
     MaxText/configs/base.yml \
     base_output_directory=${BASE_OUTPUT_DIRECTORY} \
-    load_parameters_path=${SCANNED_CKPT_PATH}/lora_A/0/items \
-    run_name=${RUN_NAME}/lora_A \
+    load_parameters_path=${SCANNED_CKPT_PATH}/base_weights/0/items \
+    lora_parameters_base_path=${SCANNED_CKPT_PATH}/lora_weights/0/items \
+    lora_config_path=${LORA_LOCAL_PATH}/adapter_config.json \
+    run_name=${RUN_NAME} \
     model_name=${MODEL_NAME} \
     force_unroll=true
-    echo "Written MaxText unscanned checkpoint to ${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/lora_A/checkpoints"
-    
+    echo "Written MaxText unscanned checkpoint to ${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/checkpoints"
+else
     JAX_PLATFORMS=cpu python MaxText/generate_param_only_checkpoint.py \
     MaxText/configs/base.yml \
     base_output_directory=${BASE_OUTPUT_DIRECTORY} \
-    load_parameters_path=${SCANNED_CKPT_PATH}/lora_B/0/items \
-    run_name=${RUN_NAME}/lora_B \
+    load_parameters_path=${SCANNED_CKPT_PATH}/base_weights/0/items \
+    run_name=${RUN_NAME} \
     model_name=${MODEL_NAME} \
     force_unroll=true
-    echo "Written MaxText unscanned checkpoint to ${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/lora_B/checkpoints"
+    echo "Written MaxText unscanned checkpoint to ${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/checkpoints"
 fi
 
 
