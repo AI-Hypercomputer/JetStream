@@ -48,13 +48,12 @@ class JetstreamMetricsCollector:
       else:
         self.universal_labels["model_name"] = sanitized_model_name
     universal_label_names = list(self.universal_labels.keys())
-    print(f"universal labels {self.universal_labels}")
 
     # Metric definitions
     self._prefill_backlog = Gauge(
         name="jetstream_prefill_backlog_size",
         documentation="Size of prefill queue",
-        labelnames=["model", "id"],
+        labelnames=universal_label_names,
     )
 
     self._transfer_backlog = Gauge(
