@@ -25,6 +25,7 @@ from jetstream.engine.token_utils import DEFAULT_PREFILL_BUCKETS
 class JetstreamMetricsCollector:
   """Wrapper class should be used to assure all metrics have proper tags"""
 
+  _initialized: bool = False
   _model_name: str
   universal_labels = {"id": os.getenv("HOSTNAME", shortuuid.uuid())}
 
