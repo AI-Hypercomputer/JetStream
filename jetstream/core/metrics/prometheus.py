@@ -34,6 +34,10 @@ class JetstreamMetricsCollector:
     return cls.instance
 
   def __init__(self, model_name: Optional[str] = None):
+    if hasattr(self, "_initialized") and self._initialized:
+      return
+    self._initialized = True
+
     # '-'s are common in model names but invalid in prometheus labels, these are replaced with '_'s
     if model_name is not None:
       sanitized_model_name = model_name.replace("-", "_")
