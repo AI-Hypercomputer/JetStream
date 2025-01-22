@@ -86,7 +86,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         credentials=credentials,
         metrics_server_config=config_lib.MetricsServerConfig(
           port=metrics_port,
-          model="some_model_name"
+          model_name="some_model_name"
           )
         if metrics_enabled is True
         else None,
