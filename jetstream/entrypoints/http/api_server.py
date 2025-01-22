@@ -113,7 +113,7 @@ def server(argv: Sequence[str]):
     )
     start_http_server(metrics_server_config.port)
     metrics_collector = JetstreamMetricsCollector(
-      model_name="some_model"
+      model_name=metrics_server_config.model_name
     )
   else:
     logging.info(
