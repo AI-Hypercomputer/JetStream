@@ -111,7 +111,9 @@ def server(argv: Sequence[str]):
         "Starting Prometheus server on port %d", metrics_server_config.port
     )
     start_http_server(metrics_server_config.port)
-    metrics_collector = JetstreamMetricsCollector()
+    metrics_collector = JetstreamMetricsCollector(
+      model_name="some_model"
+    )
   else:
     logging.info(
         "Not starting Prometheus server: --prometheus_port flag not set"
