@@ -56,7 +56,7 @@ class InstantiatedEngines:
 @dataclasses.dataclass
 class MetricsServerConfig:
   port: uint16
-  model_name: Optional[str]
+  model_name: Optional[str] = None
 
 
 # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼#
