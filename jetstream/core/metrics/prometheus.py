@@ -39,7 +39,8 @@ class JetstreamMetricsCollector:
       return
     self._initialized = True
 
-    # '-'s are common in model names but invalid in prometheus labels, these are replaced with '_'s
+    # '-'s are common in model names but invalid in prometheus labels
+    # these are replaced with '_'s
     if model_name is not None:
       sanitized_model_name = model_name.replace("-", "_")
       if sanitized_model_name == "":
@@ -48,7 +49,9 @@ class JetstreamMetricsCollector:
           re.match(r"^[a-zA-Z_:][a-zA-Z0-9_:]*$", sanitized_model_name)
       ):
         print(
-            "Provided model name cannot be used to label prometheus metrics (does not match ^[a-zA-Z_:][a-zA-Z0-9_:]*$), omitting from metrics labels"
+            "Provided model name cannot be used to label prometheus metrics",
+            "(does not match ^[a-zA-Z_:][a-zA-Z0-9_:]*$)",
+            "omitting from metrics labels",
         )
       else:
         self.universal_labels["model_name"] = sanitized_model_name
