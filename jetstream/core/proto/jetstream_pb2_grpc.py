@@ -135,3 +135,75 @@ class Orchestrator(object):
         timeout,
         metadata,
     )
+
+
+class MultiAdapterManagerStub(object):
+  """MultiAdapterManagerStub."""
+
+  def __init__(self, channel):
+    """Constructor.
+
+    Args:
+      channel: A grpc.Channel.
+    """
+    self.ListAdapters = channel.unary_unary(
+        '/jetstream_proto.MultiAdapterManager/ListAdapters',
+        request_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.ListAdaptersRequest.SerializeToString,
+        response_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.ListAdaptersResponse.FromString,
+        _registered_method=True)
+    self.LoadAdapter = channel.unary_unary(
+        '/jetstream_proto.MultiAdapterManager/LoadAdapter',
+        request_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.LoadAdapterRequest.SerializeToString,
+        response_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.LoadAdapterResponse.FromString,
+        _registered_method=True)
+    self.UnloadAdapter = channel.unary_unary(
+        '/jetstream_proto.MultiAdapterManager/UnloadAdapter',
+        request_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.UnloadAdapterRequest.SerializeToString,
+        response_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.UnloadAdapterResponse.FromString,
+        _registered_method=True)
+
+
+class MultiAdapterManagerServicer(object):
+  """TODO: Merge this with main JetStream core once we settle on an API."""
+
+  def ListAdapters(self, request, context):
+    """Lists all the currently loaded LoRA adapters."""
+    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+    context.set_details("Method not implemented!")
+    raise NotImplementedError("Method not implemented!")
+
+  def LoadAdapter(self, request, context):
+    """Check the feasibility and load the new LoRA adapter."""
+    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+    context.set_details("Method not implemented!")
+    raise NotImplementedError("Method not implemented!")
+
+  def UnloadAdapter(self, request, context):
+    """Unload a LoRA adapter."""
+    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+    context.set_details("Method not implemented!")
+    raise NotImplementedError("Method not implemented!")
+
+
+def add_MultiAdapterManagerServicer_to_server(servicer, server):
+  rpc_method_handlers = {
+      "ListAdapters": grpc.unary_unary_rpc_method_handler(
+          servicer.ListAdapters,
+          request_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.ListAdaptersRequest.FromString,
+          response_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.ListAdaptersResponse.SerializeToString,
+      ),
+      "LoadAdapter": grpc.unary_unary_rpc_method_handler(
+          servicer.LoadAdapter,
+          request_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.LoadAdapterRequest.FromString,
+          response_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.LoadAdapterResponse.SerializeToString,
+      ),
+      "UnloadAdapter": grpc.unary_unary_rpc_method_handler(
+          servicer.UnloadAdapter,
+          request_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.UnloadAdapterRequest.FromString,
+          response_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.UnloadAdapterResponse.SerializeToString,
+      ),
+  }
+  generic_handler = grpc.method_handlers_generic_handler(
+      "jetstream_proto.MultiAdapterManager", rpc_method_handlers
+  )
+  server.add_generic_rpc_handlers((generic_handler,))

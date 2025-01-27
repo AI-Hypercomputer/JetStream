@@ -59,8 +59,10 @@ message DecodeRequest {
     Metadata metadata = 7;
   }
 
+  string adapter_id = 8;
+
   reserved 1, 2, 3;
-  // Next ID: 8
+  // Next ID: 9
 }
 
 message DecodeResponse {
@@ -92,3 +94,49 @@ message HealthCheckResponse {
   // Denotes whether the model server is live
   bool is_live = 1;
 }
+
+service MultiAdapterManager {
+  // Lists all the currently loaded LoRA adapters
+  rpc ListAdapters (ListAdaptersRequest) returns (ListAdaptersResponse) {}
+
+  // Loads a new LoRA adapter.
+  rpc LoadAdapter (LoadAdapterRequest) returns (LoadAdapterResponse) {}
+
+  // Unloads a LoRA adapter
+  rpc UnloadAdapter (UnloadAdapterRequest) returns (UnloadAdapterResponse) {}
+}
+
+message ListAdaptersRequest {}
+
+message ListAdaptersResponse {
+  bool success = 1;				// True if successful, False otherwise
+  string error_message = 2;			// Error message if listing the adapters	
+  repeated AdapterInfo adapter_infos = 3;	// List of information about loaded adapters.
+}
+
+// Information about a single loaded LoRA adapter
+message AdapterInfo {
+  string adapter_id = 1;
+  int64 loading_cost = 2;
+}
+
+message LoadAdapterRequest {
+  string adapter_id = 1;			// Unique ID for the adapter
+  string adapter_config_path = 2;		// Path to the LoRA adapter config
+  string adapter_weights_path = 3;		// Path to the LoRA adapter weights (a directory with weights & config)
+}
+
+message LoadAdapterResponse {
+  bool success = 1;				// True if successful, false otherwise
+  string error_message = 2;			// Error message if loading failed
+}
+
+message UnloadAdapterRequest {
+  string adapter_id = 1;			// ID of the adapter to unload
+}
+
+message UnloadAdapterResponse {
+  bool success = 1;				// True if successful, false otherwise
+  string error_message = 2;			// Error message if unloading failed
+}
+

@@ -74,6 +74,7 @@ Either use :orchestrator test, which tests the multi-threading components,
 to debug hangs due to bugs in threads (it is easier to debug with live logs).
 """
 
+import copy
 import dataclasses
 import functools
 import itertools
@@ -149,6 +150,8 @@ class ActiveRequest:
   is_client_side_tokenization: Optional[bool] = False
   ################## Information relevant for metrics ###################
   metadata: ActiveRequestMetadata = ActiveRequestMetadata()
+  ################## Id of the adapter ###################
+  adapter_id: str = ""
 
   def enqueue_samples(self, generated_samples: list[ReturnSample]):
     """Adds the generated sample(s) to return channel for current step.
@@ -512,7 +515,6 @@ class Driver:
     """Thread which runs in the background performing prefills."""
     logging.info("---------Spinning up prefill thread %d.---------", idx)
     prefill_engine = self._prefill_engines[idx]
-    prefill_params = self._prefill_params[idx]
     metadata = prefill_engine.get_tokenizer()
     tokenizer = prefill_engine.build_tokenizer(metadata)
     logging.info("---------Prefill params %d loaded.---------", idx)
@@ -524,6 +526,20 @@ class Driver:
 
       if request is None:
         break
+
+      start_time = time.perf_counter()
+      prefill_params = self._prefill_params[idx]
+      end_time = time.perf_counter()
+
+      elapsed_time = (end_time - start_time) * 1e6
+
+      logging.info(f"AMANGU Log (orchestrator.py): Time taken to set prefill_params=self._prefill_params is {elapsed_time} Micro-seconds.")
+
+      adapter_id = request.adapter_id
+      if adapter_id != "" and adapter_id not in prefill_params:
+        logging.info(f"The adapter is not loaded into prefill_params, so bypassing the processing of the request.")
+        continue
+
       request.metadata.prefill_dequeue_time = time.perf_counter()
       is_bos = True
       logging.info(
@@ -540,7 +556,7 @@ class Driver:
 
       # Compute new kv cache for the prefill_content.
       prefill_result, first_token = prefill_engine.prefill(
-          params=prefill_params,
+          params=prefill_params[adapter_id],
           padded_tokens=padded_tokens,
           true_length=true_length,
       )
@@ -655,7 +671,7 @@ class Driver:
     # State to store things like running kv cache in.
     decode_state = generate_engine.init_decode_state()
 
-    generate_params = self._generate_params[idx]
+    # generate_params = self._generate_params[idx]
     logging.info("---------Generate params %d loaded.---------", idx)
     time_of_last_generate = time.time()
     time_of_last_print = time.time()
@@ -704,8 +720,10 @@ class Driver:
           block |= not self._transfer_backlogs[idx].empty()
         try:
           new_request = my_generate_backlog.get(block=block, timeout=1.0)
+
           if new_request is None:
             break
+
           new_request.metadata.generate_dequeue_time = time.perf_counter()
           if (
               self._metrics_collector
@@ -760,9 +778,24 @@ class Driver:
           my_slots.qsize() < max_concurrent_decodes
       ), "At this point we must have some requests inserted into the slots."
 
+      start_time = time.perf_counter()
+      generate_params = self._generate_params[idx]
+      end_time = time.perf_counter()
+
+      elapsed_time = (end_time - start_time) * 1e6
+
+      logging.info(f"AMANGU Log (orchestrator.py): Time taken to set generate_params=self._generate_params is {elapsed_time} Micro-seconds.")
+
+      adapter_id = "base_params"
+      if new_request != None:
+        adapter_id = new_request.adapter_id
+        if adapter_id != "" and adapter_id not in generate_params:
+          logging.info(f"The adapter is not loaded into generate_params, so bypassing the processing of the request.")
+          continue
+
       # Now we actually take a generate step on requests in the slots.
       decode_state, sampled_tokens = generate_engine.generate(
-          generate_params, decode_state
+          generate_params[adapter_id], decode_state
       )
       sampled_tokens.copy_to_host_async()
       # Respond to detokenization backpressure.
@@ -901,6 +934,63 @@ class Driver:
         slot, active_request = data
         my_live_requests[slot] = active_request
 
+  def loadAndApplyAdapter(
+          self,
+          adapter_id,
+          adapter_config_path,
+          adapter_weights_path):
+    logging.info(f"Loading and applying fine-tuning adapter to base weights")
+
+    for index, params in enumerate(self._prefill_params):
+      if adapter_id not in params:
+        params[adapter_id] = copy.deepcopy(params["base_params"])
+        self._prefill_engines[index].load_and_apply_adapter(params[adapter_id],
+                                                            adapter_config_path,
+                                                            adapter_weights_path)
+      else:
+        logging.info(f"Adapter={adapter_id} is already present in the prefill_params.")
+
+    for index, params in enumerate(self._generate_params):
+      if adapter_id not in params:
+        params[adapter_id] = copy.deepcopy(params["base_params"])
+        self._generate_engines[index].load_and_apply_adapter(params[adapter_id],
+                                                             adapter_config_path,
+                                                             adapter_weights_path)
+      else:
+        logging.info(f"Adapter={adapter_id} is already present in the generate_params.")
+
+  def unloadAdapter(
+          self,
+          adapter_id):
+    logging.info(f"Unloading the adapter with adapter_id={adapter_id}")
+
+    for params in self._prefill_params:
+      if adapter_id in params:
+        del params[adapter_id]
+        logging.info(f"Successfully deleted Adapter={adapter_id} from the prefill_params.")
+      else:
+        logging.info(f"Adapter={adapter_id} is not there in the prefill_params.")
+
+    for params in self._generate_params:
+      if adapter_id in params:
+        del params[adapter_id]
+        logging.info(f"Successfully deleted Adapter={adapter_id} from the generate_params.")
+      else:
+        logging.info(f"Adapter={adapter_id} is not there in the generate_params.")
+
+  def mayBeListLoadedAdapters(self):
+    logging.info(f"Listing loaded adapters:")
+
+    loaded_adapters_in_prefill = []
+    for params in self._prefill_params:
+      loaded_adapters_in_prefill.extend(list(params.keys()))
+    logging.info(f"In prefill_params: {loaded_adapters_in_prefill}")
+
+    loaded_adapters_in_generate = []
+    for params in self._generate_params:
+      loaded_adapters_in_generate.extend(list(params.keys()))
+    logging.info(f"In generate_params: {loaded_adapters_in_generate}")
+
 
 class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
   """Coordinates a set of prefill and generate slices for LLM decoding."""
@@ -1005,6 +1095,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
         prefill_content=prefill_content,
         is_client_side_tokenization=is_client_side_tokenization,
         return_channel=return_channel,
+        adapter_id=request.adapter_id,
         metadata=ActiveRequestMetadata(
             start_time=request.metadata.start_time,
             prefill_enqueue_time=time.perf_counter(),

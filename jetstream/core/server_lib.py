@@ -32,6 +32,7 @@ import grpc
 import jax
 from jetstream.core import config_lib
 from jetstream.core import orchestrator
+from jetstream.core import adapter_manager
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine import warmup_utils, engine_api
@@ -64,6 +65,11 @@ class JetStreamServer:
     jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
         orchestrator.LLMOrchestrator(driver=self._driver), self._grpc_server
     )
+
+    jetstream_pb2_grpc.add_MultiAdapterManagerServicer_to_server(
+        adapter_manager.MultiLoraManager(driver=self._driver), self._grpc_server
+    )
+
     self._grpc_server.add_secure_port(f"{_HOST}:{port}", credentials)
 
   async def _async_start(self) -> None:
@@ -113,9 +119,9 @@ def create_driver(
     An orchestrator driver.
   """
   engines = config_lib.get_engines(config, devices=devices)
-  prefill_params = [pe.load_params() for pe in engines.prefill_engines]
-  generate_params = [ge.load_params() for ge in engines.generate_engines]
-  shared_params = [ie.load_params() for ie in engines.interleaved_engines]
+  prefill_params = [{"base_params": pe.load_params()} for pe in engines.prefill_engines]
+  generate_params = [{"base_params": ge.load_params()} for ge in engines.generate_engines]
+  shared_params = [{"base_params": ie.load_params()} for ie in engines.interleaved_engines]
   logging.info("Loaded all weights.")
   interleaved_mode = (
       len(config.prefill_slices) + len(config.generate_slices) == 0
