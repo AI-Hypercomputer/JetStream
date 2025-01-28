@@ -335,7 +335,7 @@ class SentencePieceTokenizer(tokenizer_api.Tokenizer):
     else:
       # If it's not streaming decoding, we can directly decode the full list
       # of token ids to a complete sequence.
-      return self.vocab.decode(token_ids)
+      return self.vocab.tokenizer.decode(token_ids)
 
   @property
   def pad_id(self) -> int:
