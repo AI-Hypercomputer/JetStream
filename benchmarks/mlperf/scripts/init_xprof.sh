@@ -1,2 +1,0 @@
-pip install keyring keyrings.google-artifactregistry-auth  # install keyring
-pip install --extra-index-url https://us-central1-python.pkg.dev/cloud-tpu-multipod-dev/multipod-python-repo/simple/ previewutilities
