@@ -396,6 +396,12 @@ class Driver:
     )
     self.live = True
     self._is_ray_backend = is_ray_backend
+
+    # logging time spent
+    self._prefill_time = 0.0
+    self._generate_time = 0.0
+    self._insert_time = 0.0
+
     # Start all threads
     for t in self._all_threads:
       t.start()
@@ -514,12 +520,22 @@ class Driver:
       )
 
       # Compute new kv cache for the prefill_content.
+      prefill_start_time = time.time()
       prefill_result, first_token = prefill_engine.prefill(
           params=prefill_params,
           padded_tokens=padded_tokens,
           true_length=true_length,
       )
       request.prefill_result = prefill_result
+      
+      # logging prefill time
+      prefill_end_time = time.time()
+      logging.info(
+        "Prefill %d tokens in %fms.", 
+        true_length, 
+        (prefill_end_time - prefill_start_time) * 10**3)
+      self._prefill_time += prefill_end_time - prefill_start_time
+      logging.info("Total prefill time: %fms", self._prefill_time * 10**3)
 
       # put first token to detokenize queue
       request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
@@ -715,9 +731,16 @@ class Driver:
             generate_timestep,
         )
 
+        insert_start_time = time.time()
         decode_state = generate_engine.insert(
             new_request.prefill_result, decode_state, slot=slot
         )
+
+        # logging insert time
+        insert_end_time = time.time()
+        self._insert_time += insert_end_time - insert_start_time
+        logging.info("Total insert time: %fms", self._insert_time * 10**3)
+
         del new_request.prefill_result
         new_request.generate_timestep_added = generate_timestep
         new_request.complete = np.zeros(
@@ -732,10 +755,18 @@ class Driver:
       ), "At this point we must have some requests inserted into the slots."
 
       # Now we actually take a generate step on requests in the slots.
+      generate_start_time = time.time()
       decode_state, sampled_tokens = generate_engine.generate(
           generate_params, decode_state
       )
       sampled_tokens.copy_to_host_async()
+      
+      # logging generate time
+      generate_end_time = time.time()
+      self._generate_time += generate_end_time - generate_start_time
+      logging.info("Total generate time: %fms", self._generate_time * 10**3)
+
+      
       # Respond to detokenization backpressure.
       my_detokenize_backlog.put((generate_timestep, sampled_tokens), block=True)
       generate_timestep += 1
