@@ -739,7 +739,7 @@ class Driver:
         # logging insert time
         insert_end_time = time.time()
         self._insert_time += insert_end_time - insert_start_time
-        logging.info("Total insert time: %fms", self._insert_time * 10**3)
+        logging.info("Insert time: %fms", (insert_end_time - insert_start_time) * 10**3)
 
         del new_request.prefill_result
         new_request.generate_timestep_added = generate_timestep
@@ -764,7 +764,7 @@ class Driver:
       # logging generate time
       generate_end_time = time.time()
       self._generate_time += generate_end_time - generate_start_time
-      logging.info("Total generate time: %fms", self._generate_time * 10**3)
+      logging.info("Generate time: %fms", (generate_end_time - generate_start_time) * 10**3)
 
       
       # Respond to detokenization backpressure.
