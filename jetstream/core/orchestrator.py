@@ -771,7 +771,7 @@ class Driver:
       if self._num_prefill_requests > (995 + 10 + 10):
         self._generate_time += generate_end_time - generate_start_time
         logging.info("Generate time: %fms", (generate_end_time - generate_start_time) * 10**3)
-        logging.info("Total generate time: %fms", self._generate_time)
+        logging.info("Total generate time: %fms", self._generate_time * 10**3)
       
       # Respond to detokenization backpressure.
       my_detokenize_backlog.put((generate_timestep, sampled_tokens), block=True)
