@@ -401,6 +401,7 @@ class Driver:
     self._prefill_time = 0.0
     self._generate_time = 0.0
     self._insert_time = 0.0
+    self._num_prefill_requests = 0
 
     # Start all threads
     for t in self._all_threads:
