@@ -156,7 +156,9 @@ class ActiveRequest:
   generate_timestep_added: Optional[int] = None
   is_client_side_tokenization: Optional[bool] = False
   ################## Information relevant for metrics ###################
-  metadata: ActiveRequestMetadata = ActiveRequestMetadata()
+  metadata: ActiveRequestMetadata = dataclasses.field(
+      default_factory=ActiveRequestMetadata
+  )
 
   def enqueue_samples(self, generated_samples: list[ReturnSample]):
     """Adds the generated sample(s) to return channel for current step.
