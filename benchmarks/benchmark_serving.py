@@ -64,23 +64,21 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import gc
 import json
+import os
 import random
 import time
 from typing import Any, AsyncGenerator, Optional
-import os
 
-
+from benchmarks.eval_accuracy import eval_accuracy
+from benchmarks.metrics import CounterMetric, EventMetric
 import grpc
-from benchmarks.metrics import EventMetric, CounterMetric
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine.token_utils import load_vocab
 from jetstream.external_tokenizers.llama3 import llama3_tokenizer
 import numpy as np
-from tqdm.asyncio import tqdm  # pytype: disable=pyi-error
 import pandas
-
-from eval_accuracy import eval_accuracy
+from tqdm.asyncio import tqdm  # pytype: disable=pyi-error
 from transformers import AutoTokenizer
 
 
