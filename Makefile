@@ -51,4 +51,4 @@ unit-tests:
 	coverage run -m unittest -v
 
 check-test-coverage:
-	coverage report -m --omit="jetstream/core/proto/*,jetstream/engine/tokenizer_pb2.py,jetstream/external_tokenizers/*,jetstream/benchmarks/benchmark_serving.py" --fail-under=96
+	coverage report -m --omit="jetstream/core/proto/*,jetstream/engine/tokenizer_pb2.py,jetstream/external_tokenizers/*,benchmarks/benchmark_serving.py,benchmarks/tests/test_benchmark_serving.py" --fail-under=96
