@@ -20,8 +20,9 @@ from unittest import mock
 from benchmarks import benchmark_serving
 from jetstream.core.proto import jetstream_pb2
 
+
 class TestBenchmarkServing(unittest.IsolatedAsyncioTestCase):
-  """"Tests for benchmark_serving.py."""
+  """ "Tests for benchmark_serving.py."""
 
   async def test_benchmark(self):
     api_url = "test_url"
@@ -35,7 +36,7 @@ class TestBenchmarkServing(unittest.IsolatedAsyncioTestCase):
         benchmark_serving.InputRequest(
             prompt="another_prompt", prompt_len=3, output_len=5, sample_idx=0
         ),
-   ]
+    ]
     request_rate = 0.0
     prefill_quota = benchmark_serving.AsyncCounter(1)
     active_req_quota = benchmark_serving.AsyncCounter(10)
@@ -48,7 +49,8 @@ class TestBenchmarkServing(unittest.IsolatedAsyncioTestCase):
               stream_content=jetstream_pb2.DecodeResponse.StreamContent(
                   samples=[
                       jetstream_pb2.DecodeResponse.StreamContent.Sample(
-                          token_ids=[1]),
+                          token_ids=[1]
+                      ),
                   ]
               )
           ),
@@ -111,7 +113,8 @@ class TestBenchmarkServing(unittest.IsolatedAsyncioTestCase):
     dur_s = 1.0
 
     metrics = benchmark_serving.calculate_metrics(
-        input_requests, outputs, dur_s, tokenizer)
+        input_requests, outputs, dur_s, tokenizer
+    )
 
     self.assertIsInstance(metrics, benchmark_serving.BenchmarkMetrics)
     self.assertEqual(metrics.completed, 1)
