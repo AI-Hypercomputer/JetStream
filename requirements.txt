@@ -1,4 +1,5 @@
 absl-py
+transfomers
 coverage
 flax
 grpcio
