@@ -835,7 +835,7 @@ def main(args: argparse.Namespace):
       )
 
 
-if __name__ == "__main__":
+def parse_args():
   parser = argparse.ArgumentParser(
       description="Benchmark the online serving throughput."
   )
@@ -909,7 +909,6 @@ if __name__ == "__main__":
       default=150,
       help="The maximum number of mock requests to send for benchmark testing.",
   )
-
   parser.add_argument(
       "--max-output-length",
       type=int,
@@ -926,7 +925,6 @@ if __name__ == "__main__":
           "the output length of the golden dataset would be passed."
       ),
   )
-
   parser.add_argument("--seed", type=int, default=0)
   parser.add_argument(
       "--disable-tqdm",
@@ -977,7 +975,9 @@ if __name__ == "__main__":
       choices=["human", "gpt", "both"],
       help="What entity should be the one starting the conversations.",
   )
+  return parser.parse_args()
 
-  parsed_args = parser.parse_args()
+
+if __name__ == "__main__":
   gc.disable()
-  main(parsed_args)
+  main(parse_args())
