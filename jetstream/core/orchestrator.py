@@ -685,7 +685,8 @@ class Driver:
           # For interleaved mode, we also blocks when prefill backlog
           # is not empty or there are transfer work to do.
           block |= not self._prefill_backlog.empty()
-          block |= not self._transfer_backlogs[idx].empty()
+          for transfer_backlog in self._transfer_backlogs:
+            block |= not transfer_backlog.empty()
         try:
           new_request = my_generate_backlog.get(block=block, timeout=1.0)
           if new_request is None:
