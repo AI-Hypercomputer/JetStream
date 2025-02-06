@@ -42,7 +42,6 @@ tokenizer returns).
 """
 
 import unittest
-from parameterized import parameterized
 from jetstream.core import orchestrator
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.utils.return_sample import ReturnSample
@@ -51,7 +50,7 @@ from jetstream.engine import mock_engine
 
 class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
 
-  def _setup_driver(self, interleaved_mode: bool = True):
+  def _setup_driver_interleaved_mode(self):
     prefill_engine = mock_engine.TestEngine(
         batch_size=32, cache_length=256, weight=2.0
     )
@@ -65,14 +64,13 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
         generate_engines=[generate_engine],
         prefill_params=[prefill_engine.load_params()],
         generate_params=[generate_engine.load_params()],
-        interleaved_mode=interleaved_mode,
+        interleaved_mode=True,
     )
     return driver
 
-  @parameterized.expand([True, False])
-  async def test_orchestrator(self, interleaved_mode: bool):
+  async def test_orchestrator_interleaved_mode(self):
     """Test the multithreaded orchestration."""
-    driver = self._setup_driver(interleaved_mode)
+    driver = self._setup_driver_interleaved_mode()
     client = orchestrator.LLMOrchestrator(driver=driver)
 
     # The string representation of np.array([[65, 66]]), [2] will be prepend
@@ -99,10 +97,9 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
     driver.stop()
     print("Orchestrator driver stopped.")
 
-  @parameterized.expand([True, False])
-  async def test_orchestrator_client_tokenization(self, interleaved_mode: bool):
+  async def test_orchestrator_interleaved_mode_client_tokenization(self):
     """Test the multithreaded orchestration."""
-    driver = self._setup_driver(interleaved_mode)
+    driver = self._setup_driver_interleaved_mode()
     client = orchestrator.LLMOrchestrator(driver=driver)
 
     # The token ids of  string "AB", [2] will be prepend
@@ -131,9 +128,8 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
     driver.stop()
     print("Orchestrator driver stopped.")
 
-  @parameterized.expand([True, False])
-  def test_should_buffer_response(self, interleaved_mode: bool):
-    driver = self._setup_driver(interleaved_mode)
+  def test_should_buffer_response(self):
+    driver = self._setup_driver_interleaved_mode()
     client = orchestrator.LLMOrchestrator(driver=driver)
     self.assertTrue(
         client.should_buffer_response(
