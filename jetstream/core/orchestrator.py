@@ -98,20 +98,23 @@ from jetstream.engine import engine_api, tokenizer_api, token_utils
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
 
-root = logging.getLogger()
-root.setLevel(logging.WARNING)
+log_level = os.getenv("LOG_LEVEL", "WARNING").upper()
+
+logger = logging.getLogger("JetstreamLogger")
+logger.propagate = False
+logger.setLevel(getattr(logging, log_level, logging.WARNING))
 
 handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(logging.WARNING)
+handler.setLevel(getattr(logging, log_level, logging.WARNING))
 formatter = logging.Formatter(
     "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 handler.setFormatter(formatter)
-root.addHandler(handler)
+logger.addHandler(handler)
 
 
 def ThreadDebugLog(thread_name: str, message: str) -> None:
-  logging.debug(f"[{thread_name}] {message}")
+  logger.debug("[%s] %s", thread_name, message)
 
 
 @dataclasses.dataclass
@@ -190,7 +193,7 @@ class JetThread(threading.Thread):
       os.kill(os.getpid(), signal.SIGKILL)
 
 
-async def _abort_or_raise(
+async def AbortOrRaise(
     context: grpc.aio.ServicerContext | None,
     code: grpc.StatusCode,
     details: str,
@@ -250,23 +253,21 @@ class Driver:
       is_ray_backend: bool = False,
   ):
     if prefill_engines is None:
-      logging.warning("No prefill engines provided.")
-      prefill_engines = []
+      raise ValueError("No prefill engine provided.")
     if generate_engines is None:
-      logging.warning("No generate engines provided.")
-      generate_engines = []
+      raise ValueError("No generate engine provided.")
     if prefill_params is None:
-      logging.warning("No prefill parameters provided.")
-      prefill_params = []
+      raise ValueError("No prefill parameter provided.")
     if generate_params is None:
-      logging.warning("No generate parameters provided.")
-      generate_params = []
+      raise ValueError("No generate parameter provided.")
 
-    logging.info(
-        "Initializing the driver with %d prefill engines and %d generate engines in %s mode",
+    logger.info(
+        "Initializing the driver with %d prefill engines and %d "
+        "generate engines in %s mode",
         len(prefill_engines),
         len(generate_engines),
-        "interleaved" if interleaved_mode else "disaggregated")
+        "interleaved" if interleaved_mode else "disaggregated",
+    )
 
     self._prefill_engines = prefill_engines
     self._generate_engines = generate_engines
@@ -362,12 +363,14 @@ class Driver:
         for idx, engine in enumerate(self._generate_engines)
     ]
 
-    logging.debug(
-        "Initializing the driver with 1 prefill backlogs, %d transfer backlogs, \n"
+    logger.debug(
+        "Initializing the driver with 1 prefill backlogs, "
+        "%d transfer backlogs, \n"
         "%d generate backlogs and %d detokenize backlogs.",
         len(self._transfer_backlogs),
         len(self._generate_backlogs),
-        len(self._detokenize_backlogs))
+        len(self._detokenize_backlogs),
+    )
 
     self._jax_padding = jax_padding
 
@@ -426,19 +429,20 @@ class Driver:
     for t in self._all_threads:
       t.start()
 
-    logging.debug(
+    logger.debug(
         "Started %d prefill threads, %d transfer threads, \n"
         "%d generate threads, and %d detokenize threads.",
         len(self._prefill_threads),
         len(self._transfer_threads),
         len(self._generate_threads),
-        len(self.detokenize_threads))
+        len(self.detokenize_threads),
+    )
 
-    logging.info("Driver initialized.")
+    logger.info("Driver initialized.")
 
   def stop(self):
     """Stops the driver and all background threads."""
-    logging.info("Stopping the driver and all background threads...")
+    logger.info("Stopping the driver and all background threads...")
     # Signal to all threads that they should stop.
     self.live = False
 
@@ -479,7 +483,7 @@ class Driver:
     for t in self._all_threads:
       t.join()
 
-    logging.info("Driver stopped.")
+    logger.info("Driver stopped.")
 
   def get_total_concurrent_requests(self) -> int:
     """Gets the total number of concurrent requests the driver can handle."""
@@ -527,13 +531,13 @@ class Driver:
 
   def _prefill_thread(self, idx: int):
     """Thread which runs in the background performing prefills."""
-    logging.info("Spinning up prefill thread %d.", idx)
+    logger.info("Spinning up prefill thread %d.", idx)
     prefill_engine = self._prefill_engines[idx]
     prefill_params = self._prefill_params[idx]
     metadata = prefill_engine.get_tokenizer()
     tokenizer = prefill_engine.build_tokenizer(metadata)
-    thread_name = "Prefill thread %d" % idx
-    ThreadDebugLog(thread_name, "Prefill params %d loaded." % idx)
+    thread_name = f"Prefill thread {idx}"
+    ThreadDebugLog(thread_name, f"Prefill params {idx} loaded.")
 
     while self.live:
       my_transfer_backlog = self._transfer_backlogs[idx]
@@ -546,9 +550,10 @@ class Driver:
       is_bos = True
       ThreadDebugLog(
           thread_name,
-          "Executing prefilling for one ActiveRequest. Current prefill backlog size: %d,"
-          " is_bos: %s", idx, self._prefill_backlog.qsize(),
-          is_bos)
+          f"Executing prefilling for one ActiveRequest. Current prefill "
+          f"backlog size: {self._prefill_backlog.qsize()},"
+          f" is_bos: {is_bos}",
+      )
       # Tokenize and padding the text or token input.
       padded_tokens, true_length = self._process_prefill_content(
           request, tokenizer, is_bos, prefill_engine.max_prefill_length
@@ -571,16 +576,15 @@ class Driver:
           block=True,
       )
 
-      ThreadDebugLog(
-          thread_name,
-          "Completed prefilling for one ActiveRequest.")
+      ThreadDebugLog(thread_name, "Completed prefilling for one ActiveRequest.")
       # Once prefill is complete, place it on the transfer queue and block if
       # full.
       my_transfer_backlog.put(request, block=True)
       ThreadDebugLog(
           thread_name,
-          "Placed request on transfer backlog %d. Current transfer backlog size: %d.",
-          idx, my_transfer_backlog.qsize())
+          f"Placed request on transfer backlog {idx}. "
+          f"Current transfer backlog size: {my_transfer_backlog.qsize()}.",
+      )
       if self._metrics_collector:
         self._metrics_collector.get_request_input_length().observe(true_length)
 
@@ -596,7 +600,7 @@ class Driver:
       del prefill_result
       del request
 
-    logging.info("Prefill thread %d stopped.", idx)
+    logger.info("Prefill thread %d stopped.", idx)
 
   def _jax_transfer_prefill_result(
       self, new_request: ActiveRequest, target_idx: int
@@ -624,8 +628,8 @@ class Driver:
   def _transfer_thread(self, idx: int):
     """Transfers the kv cache on an active request to the least full
     generate backlog."""
-    logging.info("Spinning up transfer thread %d.", idx)
-    thread_name = "Transfer thread %d" % idx
+    logger.info("Spinning up transfer thread %d.", idx)
+    thread_name = f"Transfer thread {idx}"
     transfer_backlog = self._transfer_backlogs[idx]
 
     while self.live:
@@ -642,10 +646,9 @@ class Driver:
       if not self._interleaved_mode:
         ThreadDebugLog(
             thread_name,
-            "Transferring prefill result from prefill engine %d "
-            "to generate engine %d.",
-            idx,
-            target_idx)
+            f"Transferring prefill result from prefill engine {idx} "
+            f"to generate engine {target_idx}.",
+        )
         # Transfer the info to the relevant generate slice.
         self._transfer_prefill_result(new_request, target_idx)
       # Place the request on the correct generate backlog and block if full.
@@ -653,17 +656,17 @@ class Driver:
       self._generate_backlogs[target_idx].put(new_request, block=True)
       ThreadDebugLog(
           thread_name,
-          "Transferred ActiveRequest from prefill engine %d to generate backlog %d. "
-          "Current generate backlog size: %d.",
-          idx,
-          target_idx,
-          self._generate_backlogs[target_idx].qsize())
+          f"Transferred ActiveRequest from prefill engine {idx} "
+          f"to generate backlog {target_idx}. "
+          f"Current generate backlog size: "
+          f"{ self._generate_backlogs[target_idx].qsize()}.",
+      )
 
-    logging.info("Transfer thread %d stopped.", idx)
+    logger.info("Transfer thread %d stopped.", idx)
 
   def _generate_thread(self, idx: int):
     """Step token generation and insert prefills from backlog."""
-    logging.info("Spinning up generate thread %d.", idx)
+    logger.info("Spinning up generate thread %d.", idx)
     generate_engine = self._generate_engines[idx]
     my_slots = self._generate_slots[idx]
     my_generate_backlog = self._generate_backlogs[idx]
@@ -675,18 +678,18 @@ class Driver:
     decode_state = generate_engine.init_decode_state()
 
     generate_params = self._generate_params[idx]
-    thread_name = "Generate thread %d" % idx
-    ThreadDebugLog(thread_name, "Generate params %d loaded." % idx)
+    thread_name = f"Generate thread {idx}"
+    ThreadDebugLog(thread_name, f"Generate params {idx} loaded.")
     time_of_last_generate = time.time()
     time_of_last_print = time.time()
     while self.live:
       if (time.time() - time_of_last_print) > 1:
-        ThreadDebugLog(thread_name,
-                       "Generate thread making a decision with:"
-                       " prefill_backlog=%d"
-                       " generate_free_slots=%d",
-                       self._prefill_backlog.qsize(),
-                       my_slots.qsize())
+        ThreadDebugLog(
+            thread_name,
+            f"Generate thread making a decision with:"
+            f" prefill_backlog={self._prefill_backlog.qsize()}"
+            f" generate_free_slots={my_slots.qsize()}",
+        )
         time_of_last_print = time.time()
 
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
@@ -731,8 +734,8 @@ class Driver:
             break
           ThreadDebugLog(
               thread_name,
-              "Got a new ActiveRequest from generate backlog %d." %
-              idx)
+              f"Got a new ActiveRequest from generate backlog {idx}.",
+          )
           new_request.metadata.generate_dequeue_time = time.perf_counter()
           if (
               self._metrics_collector
@@ -755,7 +758,9 @@ class Driver:
           my_slots.put(slot, block=False)
           ThreadDebugLog(
               thread_name,
-              "No new ActiveRequest from generate backlog %d. Put back the slot." % idx)
+              f"No new ActiveRequest from generate backlog {idx}. "
+              f"Put back the slot.",
+          )
           # If we were blocking and hit the timeout, then retry the loop.
           # Otherwise, we can exit and proceed to generation.
           if block:
@@ -768,10 +773,9 @@ class Driver:
         )
         ThreadDebugLog(
             thread_name,
-            "Generate slice %d filled slot %d at step %d.",
-            idx,
-            slot,
-            generate_timestep)
+            f"Generate slice {idx} filled slot {slot} at step "
+            f"{generate_timestep}.",
+        )
 
         del new_request.prefill_result
         new_request.generate_timestep_added = generate_timestep
@@ -783,8 +787,10 @@ class Driver:
         my_detokenize_backlog.put((slot, new_request), block=True)
         ThreadDebugLog(
             thread_name,
-            "Put the ActiveRequest into detokenize backlog %d. Current detokenize backlog size: %d.",
-            idx, my_detokenize_backlog.qsize())
+            f"Put the ActiveRequest into detokenize backlog {idx}. "
+            f"Current detokenize backlog size: "
+            f"{my_detokenize_backlog.qsize()}.",
+        )
 
       # At this point, we know that we have at least some slots filled.
       assert (
@@ -801,21 +807,20 @@ class Driver:
       generate_timestep += 1
       ThreadDebugLog(
           thread_name,
-          "Step %d - slots free : %d / %d, took %.2fms",
-          generate_timestep,
-          my_slots_size,
-          max_concurrent_decodes,
-          (time.time() - time_of_last_generate) * 10**3)
+          f"Step {generate_timestep} - slots free : {my_slots_size} / "
+          f"{max_concurrent_decodes}, took "
+          f"{((time.time() - time_of_last_generate) * 10**3):.2f}ms",
+      )
       time_of_last_generate = time.time()
 
-    logging.info("Generate thread %d stopped.", idx)
+    logger.info("Generate thread %d stopped.", idx)
 
   def _detokenize_thread(self, idx: int):
     """Detokenize sampled tokens and returns them to the user."""
     # One of these per generate engine.
     # For all filled my_slots, pop the sampled token onto the relevant
     # requests return channel. If it done, place it back onto free slots.
-    logging.info("Spinning up detokenize thread %d.", idx)
+    logger.info("Spinning up detokenize thread %d.", idx)
     my_detokenize_backlog = self._detokenize_backlogs[idx]
     my_generate_engine = self._generate_engines[idx]
     my_slots = self._generate_slots[idx]
@@ -825,7 +830,7 @@ class Driver:
     my_live_requests = {
         i: None for i in range(my_generate_engine.max_concurrent_decodes)
     }
-    thread_name = "Detokenize thread %d" % idx
+    thread_name = f"Detokenize thread {idx}"
     while self.live:
       ThreadDebugLog(thread_name, "Waiting for a detokenization task.")
       data = my_detokenize_backlog.get(block=True)
@@ -838,7 +843,8 @@ class Driver:
         request_first_token = request_first_token.convert_to_numpy()
 
         ThreadDebugLog(
-            thread_name, "Detokenizing the first token of a sequence.")
+            thread_name, "Detokenizing the first token of a sequence."
+        )
         results, complete = token_utils.process_result_tokens(
             tokenizer=tokenizer,
             slot=0,  # always 0 as prefill only run 1 sample
@@ -859,9 +865,14 @@ class Driver:
 
         ThreadDebugLog(
             thread_name,
-            "TTFT duration: %fms",
-            (first_token_return_time - request.metadata.prefill_dequeue_time)
-            * 1000)
+            "TTFT duration: {ttft}ms".format(  # pylint: disable=consider-using-f-string
+                ttft=(
+                    first_token_return_time
+                    - request.metadata.prefill_dequeue_time
+                )
+                * 1000
+            ),
+        )
       # generate step tokens
       elif isinstance(data[1], engine_api.ResultTokens):
         # We want to detokenize them.
@@ -925,15 +936,15 @@ class Driver:
               my_generate_engine.free_resource(slot)
         ThreadDebugLog(
             thread_name,
-            "Detokenizing generate step %d took %.2fms",
-            generate_timestep_added,
-            (time.time() - start_detokenize_time) * 10**3)
+            f"Detokenizing generate step {generate_timestep_added} "
+            f"took {((time.time() - start_detokenize_time) * 10**3): .2f}ms",
+        )
       else:
         # We want to update a slot with the new channel.
         slot, active_request = data
         my_live_requests[slot] = active_request
 
-    logging.info("Detokenize thread %d stopped.", idx)
+    logger.info("Detokenize thread %d stopped.", idx)
 
 
 class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
@@ -1024,7 +1035,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     request_start_time = time.perf_counter()
     ttft = 0
     if context is None:
-      logging.warning(
+      logger.warning(
           "LLM orchestrator is being used in offline test mode, and will not"
           " respond to gRPC queries - only direct function calls."
       )
@@ -1052,7 +1063,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
       self._driver.place_request_on_prefill_queue(active_request)
     except queue.Full:
       # Safely abort the gRPC server thread with a retriable error.
-      await _abort_or_raise(
+      await AbortOrRaise(
           context=context,
           code=grpc.StatusCode.RESOURCE_EXHAUSTED,
           details=(
@@ -1060,7 +1071,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
               " handled. You may retry this request."
           ),
       )
-    logging.info(
+    logger.info(
         "Placed request on the prefill queue.",
     )
     # When an active request is created a queue is instantiated. New tokens
@@ -1109,7 +1120,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
   ) -> jetstream_pb2.HealthCheckResponse:
     """HealthCheck."""
     if context is None:
-      logging.warning(
+      logger.warning(
           "LLM orchestrator is being used in offline test mode, and will not"
           " respond to gRPC queries - only direct function calls."
       )
