@@ -1,4 +1,5 @@
 nltk
 evaluate
 rouge-score
+transformers
 tqdm
