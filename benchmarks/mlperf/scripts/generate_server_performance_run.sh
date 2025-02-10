@@ -14,6 +14,9 @@
 
 source run_utils.sh
 
+export TOKENIZER_PATH=meta-llama/Llama-2-70b-chat-hf
+export DATASET_PREFIX=""
+export MODEL_ID="llama2-70b"
 DATASET_NAME=$(get_dataset_name ${DATASET_TYPE})
 export DATASET_PATH=${DATA_DISK_DIR}/${DATASET_NAME}.pkl
 export API_URL=${API_URL}
@@ -52,4 +55,5 @@ cd ../ && python3 main.py \
 	--log-interval ${LOG_INTERVAL} \
 	--num-client-threads ${NUM_CLIENT_THREADS} \
 	--rename-dataset-cols "${MIXTRAL_COLS_RENAME}" \
+	--mlperf-conf-id "${MODEL_ID}" \
 	--output-log-dir ${OUTPUT_LOG_DIR} 2>&1 | tee ${OUTPUT_LOG_DIR}/server_performance_log.log
