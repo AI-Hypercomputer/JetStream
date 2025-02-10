@@ -14,6 +14,9 @@
 
 source run_utils.sh
 
+export TOKENIZER_PATH=meta-llama/Llama-2-70b-chat-hf
+export DATASET_PREFIX=""
+export MODEL_ID="llama2-70b"
 DATASET_NAME=$(get_dataset_name ${DATASET_TYPE})
 export DATASET_PATH=${DATA_DISK_DIR}/${DATASET_NAME}.pkl
 export API_URL=${API_URL}
@@ -33,6 +36,7 @@ echo "OUTPUT_ACCURACY_JSON_PATH: ${OUTPUT_ACCURACY_JSON_PATH}"
 echo "USER_CONFIG: ${USER_CONFIG}"
 
 mkdir -p ${OUTPUT_LOG_DIR} && cp ../${USER_CONFIG} ${OUTPUT_LOG_DIR}
+MIXTRAL_COLS_RENAME="{\"tok_input_len\": \"tok_input_length\", \"tok_ref_output_len\": \"tok_output_length\"}"
 
 # Accuracy Run
 cd ../ && python3 main.py \
@@ -53,6 +57,8 @@ cd ../ && python3 main.py \
 	--tokenizer-path ${TOKENIZER_PATH} \
 	--log-interval ${LOG_INTERVAL} \
 	--num-client-threads ${NUM_CLIENT_THREADS} \
+	--mlperf-conf-id "${MODEL_ID}" \
+        --rename-dataset-cols "${MIXTRAL_COLS_RENAME}" \
 	--output-log-dir ${OUTPUT_LOG_DIR} 2>&1 | tee ${OUTPUT_LOG_DIR}/server_accuracy_log.log
 
 # Eval Run
