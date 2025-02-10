@@ -11,3 +11,5 @@ logs/
 tmp/
 venv/
 .vscode/
+.venv/
+.idea/

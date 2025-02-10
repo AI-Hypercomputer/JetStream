@@ -95,6 +95,7 @@ from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.core.utils.return_sample import ReturnSample
 from jetstream.engine import engine_api, tokenizer_api, token_utils
+from jetstream.engine import aot_utils
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
 
@@ -259,10 +260,17 @@ class Driver:
         len(prefill_engines),
         len(generate_engines),
     )
-    self._prefill_engines = prefill_engines
-    self._generate_engines = generate_engines
-    self._prefill_params = prefill_params
-    self._generate_params = generate_params
+    (
+      self._prefill_params,
+      self._generate_params,
+      self._prefill_executables,
+      self._generate_executables
+    ) = aot_utils.layout_params_and_compile_executables(
+      prefill_engines,
+      generate_engines,
+      prefill_params,
+      generate_params,
+    )
     self._interleaved_mode = interleaved_mode
     self._metrics_collector = metrics_collector
 
@@ -643,6 +651,12 @@ class Driver:
     logging.info("---------Generate params %d loaded.---------", idx)
     time_of_last_generate = time.time()
     time_of_last_print = time.time()
+
+    insert_executable, generate_executable, decode_state_executable = (
+      self._generate_executables[idx]
+    )
+    decode_state = decode_state_executable()
+
     while self.live:
       if (time.time() - time_of_last_print) > 1:
         logging.info(
@@ -729,7 +743,7 @@ class Driver:
             generate_timestep,
         )
 
-        decode_state = generate_engine.insert(
+        decode_state = insert_executable(
             new_request.prefill_result, decode_state, slot=slot
         )
         del new_request.prefill_result
@@ -746,7 +760,7 @@ class Driver:
       ), "At this point we must have some requests inserted into the slots."
 
       # Now we actually take a generate step on requests in the slots.
-      decode_state, sampled_tokens = generate_engine.generate(
+      decode_state, sampled_tokens = generate_executable(
           generate_params, decode_state
       )
       sampled_tokens.copy_to_host_async()

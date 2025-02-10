@@ -49,7 +49,7 @@ def layout_params_and_compile_executables(
   for i, pe in enumerate(prefill_engines):
     any_prefill_engine = pe
     any_prefill_params = prefill_params[i]
-    prefill_compiled = initialize_prefill_jit_cache(
+    prefill_compiled = _initialize_prefill_jit_cache(
         prefill_engine=pe,
         prefill_params=prefill_params[i],
         prefill_idx=i,
@@ -57,7 +57,7 @@ def layout_params_and_compile_executables(
     prefills_compiled.append(prefill_compiled)
 
   for i, ge in enumerate(generate_engines):
-    insert_generate_compiled = initialize_insert_generate_jit_cache(
+    insert_generate_compiled = _initialize_insert_generate_jit_cache(
         prefill_engine=any_prefill_engine,
         generate_engine=ge,
         prefill_params=any_prefill_params,
@@ -71,7 +71,7 @@ def layout_params_and_compile_executables(
   return False
 
 
-def initialize_prefill_jit_cache(
+def _initialize_prefill_jit_cache(
     *,
     prefill_engine: engine_api.JetStreamEngine,
     prefill_params: Any,
@@ -127,7 +127,7 @@ def initialize_prefill_jit_cache(
   return prefill_engine.warm
 
 
-def initialize_insert_generate_jit_cache(
+def _initialize_insert_generate_jit_cache(
     *,
     prefill_engine: engine_api.JetStreamEngine,
     generate_engine: engine_api.JetStreamEngine,
@@ -172,7 +172,7 @@ def initialize_insert_generate_jit_cache(
         length,
     )
 
-  def compile_generate():
+  def _compile_generate():
 
     logging.info(
         "---------Generate compilation %d begun.---------", generate_idx
@@ -197,7 +197,7 @@ def initialize_insert_generate_jit_cache(
       generate_idx,
   )
 
-  compile_generate()
+  _compile_generate()
 
   logging.info(
       "---------Generate engine %d compiled generation step.---------",

@@ -43,6 +43,7 @@ CpuDevices = Any
 # Tokenkizer used by the engine
 Tokenizer = Any
 
+XLAFlags = dict[str, bool | int | float | str]
 
 @struct.dataclass
 class SlotData:
@@ -272,7 +273,20 @@ class JetStreamEngine(Engine):
     self._downstream_engine = downstream_engine
 
     self.prefill_buckets = None
+    # TODO(wyzhang): Deprecate in favor of AOT
     self.warm = False
+    self.aot = False
+
+  def prefill_aot(
+      self,
+      params: Params,
+      padded_tokens: jax.Array,
+      true_length: int
+  )-> Tuple[Prefix, ResultTokens]:
+    """Wrapper for prefill for ahead-of-time compilation."""
+    return self._downstream_engine.prefill(
+      params=params, padded_tokens=padded_tokens, true_length=true_length
+    )
 
   def prefill(
       self,
@@ -303,6 +317,14 @@ class JetStreamEngine(Engine):
         slot=slot,
     )
     return decode_state
+
+  def generate_aot(
+      self, params: Params, decode_state: DecodeState
+  ) -> Tuple[DecodeState, ResultTokens]:
+    """Wrapper to generate for ahead of time compilation."""
+    return self._downstream_engine.generate(
+      params=params, decode_state=decode_state
+    )
 
   def generate(
       self, params: Params, decode_state: DecodeState
