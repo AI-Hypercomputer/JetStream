@@ -111,15 +111,14 @@ def layout_params_and_compile_executables(
   any_prefill_params = None
 
   for i, pe in enumerate(prefill_engines):
-    any_prefill_engine = pe
-    any_prefill_params = prefill_params[i]
     prefill_executables, prefill_params[i] = _initialize_prefill_jit_cache(
       prefill_engine=pe,
       prefill_params=prefill_params[i],
       prefill_idx=i,
       relayout_params_optimally=relayout_params_optimally,
     )
-    prefill_executables_list.append(prefill_executables)
+    any_prefill_engine = pe
+    any_prefill_params = prefill_params[i]
 
   for i, ge in enumerate(generate_engines):
     (
