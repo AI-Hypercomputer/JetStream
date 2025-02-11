@@ -145,20 +145,20 @@ def create_driver(
   generate_engines = [
       engine_api.JetStreamEngine(ge) for ge in generate_engines
   ]
-  if enable_model_warmup:
-    # TODO(wyzhang): re-enable below after introduce aot option
-    # try:
-    #   _ = warmup_utils.layout_params_and_compile_executables(
-    #       prefill_engines,  # pylint: disable=protected-access
-    #       generate_engines,  # pylint: disable=protected-access
-    #       prefill_params,  # pylint: disable=protected-access
-    #       generate_params,  # pylint: disable=protected-access
-    #   )
-    #
-    # except ValueError as e:
-    #   print(f"Model warmup encountered an error: {e}")
-    #   traceback.print_exc()
-    #   os.kill(os.getpid(), signal.SIGKILL)
+  # # TODO(wyzhang): re-enable below after introduce aot option
+  # if enable_model_warmup:
+  #   try:
+  #     _ = warmup_utils.layout_params_and_compile_executables(
+  #         prefill_engines,  # pylint: disable=protected-access
+  #         generate_engines,  # pylint: disable=protected-access
+  #         prefill_params,  # pylint: disable=protected-access
+  #         generate_params,  # pylint: disable=protected-access
+  #     )
+  #
+  #   except ValueError as e:
+  #     print(f"Model warmup encountered an error: {e}")
+  #     traceback.print_exc()
+  #     os.kill(os.getpid(), signal.SIGKILL)
 
   return orchestrator.Driver(
       prefill_engines=prefill_engines,
