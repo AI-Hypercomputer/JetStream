@@ -99,10 +99,10 @@ from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
 
 root = logging.getLogger()
-root.setLevel(logging.WARNING)
+root.setLevel(logging.INFO)
 
 handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(logging.WARNING)
+handler.setLevel(logging.INFO)
 formatter = logging.Formatter(
     "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
@@ -197,30 +197,45 @@ async def _abort_or_raise(
 
   await context.abort(code, details)
 
+thread_num = 0
+def free_slots_if_possible(
+        live_requests: dict[int, queue.Queue[ActiveRequest]],
+        tokenizer: tokenizer_api.Tokenizer,
+        sampled_tokens: engine_api.ResultTokens, my_slots: queue.Queue[int],
+        generate_engine: engine_api.Engine,
+        lock: threading.Lock,
+        generate_timestep: int) -> None:
+  # global thread_num
+  # thread_num += 1
+  # logging.warning(f"Current thread num: {thread_num} ")
+  time_before_wait = time.time()
+  sampled_tokens.copy_to_host_async()
+  sampled_tokens.convert_to_numpy()
+  logging.info(
+      "transfer took %.2fms",
+      (time.time() - time_before_wait) * 10**3,
+  )
+  lock.acquire()
+  try:
+    for slot, request in live_requests.items():
+      if request is not None and request.generate_timestep_added <= generate_timestep:
+        slot_data = sampled_tokens.convert_to_numpy().get_result_at_slot(slot)
 
-# def free_slots_if_possible(
-#         live_requests: dict[int, queue.Queue[ActiveRequest]],
-#         tokenizer: tokenizer_api.Tokenizer,
-#         sampled_tokens: engine_api.ResultTokens, my_slots: queue.Queue[int],
-#         generate_engine: engine_api.Engine) -> None:
-
-#   sampled_tokens.copy_to_host_async()
-
-#   for slot, request in live_requests.items():
-#     if request is not None:
-#       slot_data = sampled_tokens.convert_to_numpy().get_result_at_slot(slot)
-
-#       if token_utils.should_stop_generating(
-#           stop_tokens=tokenizer.stop_tokens,
-#           slot_max_length=request.max_tokens,
-#           slot_data=slot_data,
-#           complete=request.complete,
-#       ):
-#         logging.info(f"Free slot {slot} early")
-#         # Free the request and release the slot
-#         live_requests[slot] = None
-#         my_slots.put(slot, block=False)  # Should always have space
-#         generate_engine.free_resource(slot)
+        if token_utils.should_stop_generating(
+            stop_tokens=tokenizer.stop_tokens,
+            slot_max_length=request.max_tokens,
+            slot_data=slot_data,
+            complete=request.complete,
+        ):
+          # Free the request and release the slot
+          live_requests[slot] = None
+          my_slots.put(slot, block=False)  # Should always have space
+          logging.info(f"Free slot {slot} early")
+          generate_engine.free_resource(slot)
+  finally:
+    # thread_num -= 1
+    # logging.warning(f"Current thread num: {thread_num} ")
+    lock.release()
 
 
 class Driver:
@@ -673,6 +688,7 @@ class Driver:
     }
     metadata = generate_engine.get_tokenizer()
     tokenizer = generate_engine.build_tokenizer(metadata)
+    lock = threading.Lock()
     while self.live:
       if (time.time() - time_of_last_print) > 1:
         logging.info(
@@ -683,7 +699,7 @@ class Driver:
             my_slots.qsize(),
         )
         time_of_last_print = time.time()
-
+      logging.info(f"slots: {list(my_slots.queue)}")
       max_concurrent_decodes = generate_engine.max_concurrent_decodes
 
       if self._metrics_collector:
@@ -701,10 +717,13 @@ class Driver:
 
         try:
           slot = my_slots.get(block=False)
+          logging.info("===================================================")
+          logging.info(f"Got a free slot {slot}.")
           # Found a slot, now see if we can fill it.
         except queue.Empty:
           # Exit this while loop as we have no free slots to insert into.
           break
+        # logging.info(f"Got a free slot {slot}.")
 
         # We block when the decode slots are all free since we need to get a
         # prefilled request to insert. We add timeout for the block to handle
@@ -718,6 +737,7 @@ class Driver:
           for transfer_backlog in self._transfer_backlogs:
             block |= not transfer_backlog.empty()
         try:
+          # logging.info(f"Trying to get new request from generate backlog. Block: {block}.")
           new_request = my_generate_backlog.get(block=block, timeout=1.0)
           if new_request is None:
             break
@@ -741,6 +761,9 @@ class Driver:
         except queue.Empty:
           # No new requests, we can't insert, so put back slot.
           my_slots.put(slot, block=False)
+          logging.info(
+              "Putting back slot %d as no new requests.", slot
+          )
           # If we were blocking and hit the timeout, then retry the loop.
           # Otherwise, we can exit and proceed to generation.
           if block:
@@ -771,6 +794,8 @@ class Driver:
         # Respond to detokenization backpressure.
         my_detokenize_backlog.put((slot, new_request), block=True)
 
+
+      logging.info("===================================================")
       # At this point, we know that we have at least some slots filled.
       assert (
           my_slots.qsize() < max_concurrent_decodes
@@ -781,27 +806,33 @@ class Driver:
           generate_params, decode_state
       )
       
-      sampled_tokens.copy_to_host_async()
+      # sampled_tokens.copy_to_host_async()
       
-      for slot, request in live_requests.items():
-        if request is not None:
-          slot_data = sampled_tokens.convert_to_numpy().get_result_at_slot(slot)
+      # for slot, request in live_requests.items():
+      #   if request is not None:
+      #     slot_data = sampled_tokens.convert_to_numpy().get_result_at_slot(slot)
 
-          if token_utils.should_stop_generating(
-              stop_tokens=tokenizer.stop_tokens,
-              slot_max_length=request.max_tokens,
-              slot_data=slot_data,
-              complete=request.complete,
-          ):
-            logging.info(f"Free slot {slot} early")
-            # Free the request and release the slot
-            live_requests[slot] = None
-            my_slots.put(slot, block=False)  # Should always have space
-            generate_engine.free_resource(slot)
-      # threading.Thread(target=free_slots_if_possible, args=(
-      #     live_requests, tokenizer, sampled_tokens, my_slots, generate_engine)).start()
+      #     if token_utils.should_stop_generating(
+      #         stop_tokens=tokenizer.stop_tokens,
+      #         slot_max_length=request.max_tokens,
+      #         slot_data=slot_data,
+      #         complete=request.complete,
+      #     ):
+      #       logging.info(f"Free slot {slot} early")
+      #       # Free the request and release the slot
+      #       live_requests[slot] = None
+      #       my_slots.put(slot, block=False)  # Should always have space
+      #       generate_engine.free_resource(slot)
+      threading.Thread(target=free_slots_if_possible, args=(
+          live_requests, tokenizer, sampled_tokens, my_slots, generate_engine, lock, generate_timestep)).start()
       # Respond to detokenization backpressure.
+      # logging.info(f"detokenization backlog size: {my_detokenize_backlog.qsize()}")
+      time_before_wait = time.time()
       my_detokenize_backlog.put((generate_timestep, sampled_tokens), block=True)
+      logging.info(
+          "Waiting took %.2fms",
+          (time.time() - time_before_wait) * 10**3,
+      )
       generate_timestep += 1
       logging.info(
           "Generate engine %d step %d - slots free : %d / %d, took %.2fms",
@@ -828,6 +859,7 @@ class Driver:
         i: None for i in range(my_generate_engine.max_concurrent_decodes)
     }
     while self.live:
+      # logging.info(f'my live requests: {my_live_requests}')
       data = my_detokenize_backlog.get(block=True)
       if data is None:
         break
@@ -854,11 +886,11 @@ class Driver:
           self._metrics_collector.get_time_to_first_token().observe(
               first_token_return_time - request.metadata.prefill_dequeue_time
           )
-        logging.info(
-            "TTFT duration: %fms",
-            (first_token_return_time - request.metadata.prefill_dequeue_time)
-            * 1000,
-        )
+        # logging.info(
+        #     "TTFT duration: %fms",
+        #     (first_token_return_time - request.metadata.prefill_dequeue_time)
+        #     * 1000,
+        # )
       # generate step tokens
       elif isinstance(data[1], engine_api.ResultTokens):
         # We want to detokenize them.
@@ -921,13 +953,16 @@ class Driver:
               logging.info(f"slot {slot} should have been freed here")
               # my_slots.put(slot, block=False)  # This should always have space.
               # my_generate_engine.free_resource(slot)
-        logging.info(
-            "Detokenizing generate step %d took %.2fms",
-            generate_timestep_added,
-            (time.time() - start_detokenize_time) * 10**3,
-        )
+          # else:
+          #   logging.info(f"slot {slot} is free now")
+        # logging.info(
+        #     "Detokenizing generate step %d took %.2fms",
+        #     generate_timestep_added,
+        #     (time.time() - start_detokenize_time) * 10**3,
+        # )
       else:
         # We want to update a slot with the new channel.
+        # logging.info(f"slot {slot} received a new active request")
         slot, active_request = data
         my_live_requests[slot] = active_request
 
