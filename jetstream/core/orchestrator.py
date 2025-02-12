@@ -260,6 +260,8 @@ class Driver:
         len(prefill_engines),
         len(generate_engines),
     )
+    self._prefill_engines = prefill_engines
+    self._generate_engines = generate_engines
     (
       self._prefill_params,
       self._generate_params,
