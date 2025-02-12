@@ -120,6 +120,7 @@ def layout_params_and_compile_executables(
     )
     any_prefill_engine = pe
     any_prefill_params = prefill_params[i]
+    prefill_executables_list.append(prefill_executables)
 
   for i, ge in enumerate(generate_engines):
     (
@@ -378,8 +379,8 @@ def _initialize_insert_generate_jit_cache(
     print(f'get transfer prefix dest sharding {prefix_dest_sharding}')
     print(f'prefix_shape pre {prefix_shape}')
     prefix_shape = jax.tree.map(
-        lambda x: None if x is None else jax.ShapeDtypeStruct(  # pylint: disable=g-long-lambda
-            x.shape, x.dtype, sharding=None,
+        lambda x, sharding: None if x is None else jax.ShapeDtypeStruct(  # pylint: disable=g-long-lambda
+            x.shape, x.dtype, sharding=sharding,
         ),
         prefix_shape,
         _get_transferred_prefix_destination_sharding(

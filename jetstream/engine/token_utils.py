@@ -33,19 +33,20 @@ from jetstream.external_tokenizers.llama3 import llama3_tokenizer
 # ResultToken class to store tokens ids.
 ResultTokens = Any
 
+# TODO(wyzhang): revert the change below.
 DEFAULT_PREFILL_BUCKETS = [
     16,
-    32,
-    64,
-    128,
-    256,
-    512,
-    1024,
-    2048,
-    4096,
-    8192,
-    16384,
-    32768,
+    # 32,
+    # 64,
+    # 128,
+    # 256,
+    # 512,
+    # 1024,
+    # 2048,
+    # 4096,
+    # 8192,
+    # 16384,
+    # 32768,
 ]
 
 
