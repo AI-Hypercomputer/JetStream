@@ -64,23 +64,21 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import gc
 import json
+import os
 import random
 import time
 from typing import Any, AsyncGenerator, Optional
-import os
 
-
+from benchmarks.eval_accuracy import eval_accuracy
+from benchmarks.metrics import CounterMetric, EventMetric
 import grpc
-from benchmarks.metrics import EventMetric, CounterMetric
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine.token_utils import load_vocab
 from jetstream.external_tokenizers.llama3 import llama3_tokenizer
 import numpy as np
-from tqdm.asyncio import tqdm  # pytype: disable=pyi-error
 import pandas
-
-from eval_accuracy import eval_accuracy
+from tqdm.asyncio import tqdm  # pytype: disable=pyi-error
 from transformers import AutoTokenizer
 
 
@@ -706,6 +704,149 @@ def sample_warmup_requests(requests):
         break
 
 
+def parse_args() -> argparse.Namespace:
+  parser = argparse.ArgumentParser(
+      description="Benchmark the online serving throughput."
+  )
+  parser.add_argument(
+      "--server",
+      type=str,
+      default="0.0.0.0",
+      help="Server address.",
+  )
+  parser.add_argument("--port", type=str, default=9000)
+  parser.add_argument(
+      "--dataset",
+      type=str,
+      default="test",
+      choices=["test", "sharegpt", "openorca"],
+      help="The dataset name.",
+  )
+  parser.add_argument("--dataset-path", type=str, help="Path to the dataset.")
+  parser.add_argument(
+      "--model",
+      type=str,
+      default="no_model",
+      help=(
+          "Name of the model like llama-2, llama-3, gemma. (it's just used to"
+          " label the benchmark, pick the tokenizer, the model config is"
+          " defined in config_lib, and passed as the server config flag when"
+          " we run the JetStream server)"
+      ),
+  )
+  parser.add_argument(
+      "--tokenizer",
+      type=str,
+      default="test",
+      help=(
+          "Name or path of the tokenizer. (For mock model testing, use the"
+          " default value)"
+      ),
+  )
+  parser.add_argument(
+      "--use-hf-tokenizer",
+      type=str2bool,
+      default=False,
+      help=(
+          "Whether to use tokenizer from HuggingFace. If so, set this flag"
+          " to True, and provide name of the tokenizer in the tokenizer flag."
+      ),
+  )
+  parser.add_argument(
+      "--num-prompts",
+      type=int,
+      default=1000,
+      help=(
+          "Number of prompts to process. (number of sample requests we randomly"
+          " collect from dataset)"
+      ),
+  )
+  parser.add_argument(
+      "--request-rate",
+      type=float,
+      default=0.0,
+      help=(
+          "Number of requests per second. If this is 0., "
+          "then all the requests are sent at time 0. "
+          "Otherwise, we use Poisson process to synthesize "
+          "the request arrival times."
+      ),
+  )
+  parser.add_argument(
+      "--total-mock-requests",
+      type=int,
+      default=150,
+      help="The maximum number of mock requests to send for benchmark testing.",
+  )
+  parser.add_argument(
+      "--max-output-length",
+      type=int,
+      default=0,
+      help=(
+          "The maximum output length for reference request. It would be passed"
+          " to `max_tokens` parameter of the JetStream's DecodeRequest proto,"
+          " and used in JetStream to control the output/decode length of a"
+          " sequence. It would not be used in the engine. We should always set"
+          " max_tokens <= (max_target_length - max_prefill_predict_length)."
+          " max_target_length is the maximum length of a sequence;"
+          " max_prefill_predict_length is the maximum length of the"
+          " input/prefill of a sequence. Default to 0, in this case, "
+          "the output length of the golden dataset would be passed."
+      ),
+  )
+  parser.add_argument("--seed", type=int, default=0)
+  parser.add_argument(
+      "--disable-tqdm",
+      action="store_true",
+      help="Specify to disable tqdm progress bar.",
+  )
+  parser.add_argument(
+      "--save-result",
+      action="store_true",
+      help="Specify to save benchmark results to a json file",
+  )
+  parser.add_argument(
+      "--additional-metadata-metrics-to-save",
+      type=str,
+      help=(
+          "Additional metadata about the workload. Should be a dictionary in"
+          " the form of a string."
+      ),
+  )
+  parser.add_argument(
+      "--save-request-outputs",
+      action="store_true",
+      help="Specify to store request outputs into a json file",
+  )
+  parser.add_argument(
+      "--request-outputs-file-path",
+      type=str,
+      default="/tmp/request-outputs.json",
+      help="File path to store request outputs",
+  )
+  parser.add_argument(
+      "--run-eval",
+      type=str2bool,
+      default=False,
+      help="Whether to run evaluation script on the saved outputs",
+  )
+  parser.add_argument(
+      "--warmup-mode",
+      type=str,
+      default="none",
+      choices=["none", "sampled", "full"],
+      help="Whether to warmup first, and set the warmup mode",
+  )
+  parser.add_argument(
+      "--conversation-starter",
+      type=str,
+      default="human",
+      choices=["human", "gpt", "both"],
+      help="What entity should be the one starting the conversations.",
+  )
+  return parser.parse_args()
+
+
 def main(args: argparse.Namespace):
   print(args)
   random.seed(args.seed)
@@ -836,148 +977,5 @@ def main(args: argparse.Namespace):
 
 
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser(
-      description="Benchmark the online serving throughput."
-  )
-  parser.add_argument(
-      "--server",
-      type=str,
-      default="0.0.0.0",
-      help="Server address.",
-  )
-  parser.add_argument("--port", type=str, default=9000)
-  parser.add_argument(
-      "--dataset",
-      type=str,
-      default="test",
-      choices=["test", "sharegpt", "openorca"],
-      help="The dataset name.",
-  )
-  parser.add_argument("--dataset-path", type=str, help="Path to the dataset.")
-  parser.add_argument(
-      "--model",
-      type=str,
-      default="no_model",
-      help=(
-          "Name of the model like llama-2, llama-3, gemma. (it's just used to"
-          " label the benchmark, pick the tokenizer, the model config is"
-          " defined in config_lib, and passed as the server config flag when"
-          " we run the JetStream server)"
-      ),
-  )
-  parser.add_argument(
-      "--tokenizer",
-      type=str,
-      default="test",
-      help=(
-          "Name or path of the tokenizer. (For mock model testing, use the"
-          " default value)"
-      ),
-  )
-  parser.add_argument(
-      "--use-hf-tokenizer",
-      type=str2bool,
-      default=False,
-      help=(
-          "Whether to use tokenizer from HuggingFace. If so, set this flag"
-          " to True, and provide name of the tokenizer in the tokenizer flag."
-      ),
-  )
-  parser.add_argument(
-      "--num-prompts",
-      type=int,
-      default=1000,
-      help=(
-          "Number of prompts to process. (number of sample requests we randomly"
-          " collect from dataset)"
-      ),
-  )
-  parser.add_argument(
-      "--request-rate",
-      type=float,
-      default=0.0,
-      help=(
-          "Number of requests per second. If this is 0., "
-          "then all the requests are sent at time 0. "
-          "Otherwise, we use Poisson process to synthesize "
-          "the request arrival times."
-      ),
-  )
-  parser.add_argument(
-      "--total-mock-requests",
-      type=int,
-      default=150,
-      help="The maximum number of mock requests to send for benchmark testing.",
-  )
-
-  parser.add_argument(
-      "--max-output-length",
-      type=int,
-      default=0,
-      help=(
-          "The maximum output length for reference request. It would be passed"
-          " to `max_tokens` parameter of the JetStream's DecodeRequest proto,"
-          " and used in JetStream to control the output/decode length of a"
-          " sequence. It would not be used in the engine. We should always set"
-          " max_tokens <= (max_target_length - max_prefill_predict_length)."
-          " max_target_length is the maximum length of a sequence;"
-          " max_prefill_predict_length is the maximum length of the"
-          " input/prefill of a sequence. Default to 0, in this case, "
-          "the output length of the golden dataset would be passed."
-      ),
-  )
-
-  parser.add_argument("--seed", type=int, default=0)
-  parser.add_argument(
-      "--disable-tqdm",
-      action="store_true",
-      help="Specify to disable tqdm progress bar.",
-  )
-  parser.add_argument(
-      "--save-result",
-      action="store_true",
-      help="Specify to save benchmark results to a json file",
-  )
-  parser.add_argument(
-      "--additional-metadata-metrics-to-save",
-      type=str,
-      help=(
-          "Additional metadata about the workload. Should be a dictionary in"
-          " the form of a string."
-      ),
-  )
-  parser.add_argument(
-      "--save-request-outputs",
-      action="store_true",
-      help="Specify to store request outputs into a json file",
-  )
-  parser.add_argument(
-      "--request-outputs-file-path",
-      type=str,
-      default="/tmp/request-outputs.json",
-      help="File path to store request outputs",
-  )
-  parser.add_argument(
-      "--run-eval",
-      type=str2bool,
-      default=False,
-      help="Whether to run evaluation script on the saved outputs",
-  )
-  parser.add_argument(
-      "--warmup-mode",
-      type=str,
-      default="none",
-      choices=["none", "sampled", "full"],
-      help="Whether to warmup first, and set the warmup mode",
-  )
-  parser.add_argument(
-      "--conversation-starter",
-      type=str,
-      default="human",
-      choices=["human", "gpt", "both"],
-      help="What entity should be the one starting the conversations.",
-  )
-
-  parsed_args = parser.parse_args()
   gc.disable()
-  main(parsed_args)
+  main(parse_args())
