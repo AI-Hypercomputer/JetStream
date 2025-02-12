@@ -16,6 +16,7 @@ limitations under the License.
 
 """mesh module"""
 
+import math
 from collections.abc import Iterable
 from typing import Sequence
 import jax
@@ -29,7 +30,7 @@ from inference.parallel.device import platform
 
 def create_device_mesh(
     devices: Sequence[Device],
-    shape: int | Sequence[int],
+    shape: tuple[int],
 ) -> Mesh:
   """Create a powerful mesh given the devices and shape.
 
@@ -39,38 +40,31 @@ def create_device_mesh(
   will affect the performance. (it depends on the collective algorithm
   implementation.)
   """
-  if len(devices) == 0:
-    raise ValueError("no devices is provided for mesh creation")
-
+  assert devices, "no devices is provided for mesh creation"
+  assert len(devices) == math.prod(shape)
   axis_names = (
       ParallelAxis.X.name,
       ParallelAxis.Y.name,
   )
+  assert len(shape) == len(axis_names)
 
-  if not isinstance(shape, Sequence):
-    shape = (shape,)
-
-  shape = tuple(list(shape) + [1 for _ in range(len(axis_names) - len(shape))])
-
-  if len(shape) != len(axis_names):
-    raise ValueError(
-        f"The number of mesh dimensions {len(shape)}"
-        + "doesn't match with number of axis_names {axis_names}"
-    )
-  if platform == "gpu" or platform == "cpu":
+  p = platform()
+  if p == "gpu" or p == "cpu":
     devices = jax_mesh_utils.create_device_mesh(
         mesh_shape=shape,
         devices=devices,
         allow_split_physical_axes=True,
     )
     return Mesh(devices=devices, axis_names=axis_names)
-
-  # TODO: Figure out a general method.
-  # Current mesh builder is very limited.
-  # only support (2,x) underlying topology shape to .
-  # form a 1D ring for the devices.
-  devices = devices[::2] + devices[1::2][::-1]
-  return Mesh(devices=np.reshape(devices, shape), axis_names=axis_names)
+  else:
+    assert p == "tpu"
+    # TODO: Figure out a general method.
+    # Current mesh builder is very limited.
+    # only support (2,x) underlying topology shape to .
+    # form a 1D ring for the devices.
+    devices = devices[::2] + devices[1::2][::-1]
+    devices = np.reshape(devices, shape)
+    return Mesh(devices=devices, axis_names=axis_names)
 
 
 def get_num_partitions(axis_names):
