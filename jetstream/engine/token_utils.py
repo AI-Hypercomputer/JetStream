@@ -33,6 +33,8 @@ from jetstream.external_tokenizers.llama3 import llama3_tokenizer
 # ResultToken class to store tokens ids.
 ResultTokens = Any
 
+SlotData = Any
+
 DEFAULT_PREFILL_BUCKETS = [
     16,
     32,
@@ -231,6 +233,31 @@ def process_result_tokens(
     if debug:
       logging.info("Return samples %s", str(return_samples))
   return return_samples, complete
+
+
+def should_stop_generating(
+    stop_tokens: set[int],
+    slot_max_length: int,
+    slot_data: SlotData,
+    complete: np.ndarray,
+) -> bool:
+  slot_tokens = slot_data.tokens
+  slot_valid = slot_data.valid
+  slot_lengths = slot_data.lengths
+  samples, speculations = slot_tokens.shape
+  # Stop anything which has reached its max length.
+  complete = complete | (slot_lengths > slot_max_length)
+  for idx in range(samples):
+    if not complete[idx].item():
+      for spec_idx in range(speculations):
+        tok_id = slot_tokens[idx, spec_idx].item()
+        valid = slot_valid[idx, spec_idx].item()
+        if tok_id in stop_tokens or not valid:
+          complete[idx] = True
+          break
+  if complete.all():
+    return True
+  return False
 
 
 def load_vocab(path: str, extra_ids: int = 0) -> Vocabulary:

@@ -198,6 +198,31 @@ async def _abort_or_raise(
   await context.abort(code, details)
 
 
+# def free_slots_if_possible(
+#         live_requests: dict[int, queue.Queue[ActiveRequest]],
+#         tokenizer: tokenizer_api.Tokenizer,
+#         sampled_tokens: engine_api.ResultTokens, my_slots: queue.Queue[int],
+#         generate_engine: engine_api.Engine) -> None:
+
+#   sampled_tokens.copy_to_host_async()
+
+#   for slot, request in live_requests.items():
+#     if request is not None:
+#       slot_data = sampled_tokens.convert_to_numpy().get_result_at_slot(slot)
+
+#       if token_utils.should_stop_generating(
+#           stop_tokens=tokenizer.stop_tokens,
+#           slot_max_length=request.max_tokens,
+#           slot_data=slot_data,
+#           complete=request.complete,
+#       ):
+#         logging.info(f"Free slot {slot} early")
+#         # Free the request and release the slot
+#         live_requests[slot] = None
+#         my_slots.put(slot, block=False)  # Should always have space
+#         generate_engine.free_resource(slot)
+
+
 class Driver:
   """Drives the engines."""
 
@@ -643,6 +668,11 @@ class Driver:
     logging.info("---------Generate params %d loaded.---------", idx)
     time_of_last_generate = time.time()
     time_of_last_print = time.time()
+    live_requests = {
+        i: None for i in range(generate_engine.max_concurrent_decodes)
+    }
+    metadata = generate_engine.get_tokenizer()
+    tokenizer = generate_engine.build_tokenizer(metadata)
     while self.live:
       if (time.time() - time_of_last_print) > 1:
         logging.info(
@@ -737,6 +767,7 @@ class Driver:
         new_request.complete = np.zeros(
             (generate_engine.samples_per_slot,), dtype=np.bool_
         )
+        live_requests[slot] = new_request
         # Respond to detokenization backpressure.
         my_detokenize_backlog.put((slot, new_request), block=True)
 
@@ -749,7 +780,26 @@ class Driver:
       decode_state, sampled_tokens = generate_engine.generate(
           generate_params, decode_state
       )
+      
       sampled_tokens.copy_to_host_async()
+      
+      for slot, request in live_requests.items():
+        if request is not None:
+          slot_data = sampled_tokens.convert_to_numpy().get_result_at_slot(slot)
+
+          if token_utils.should_stop_generating(
+              stop_tokens=tokenizer.stop_tokens,
+              slot_max_length=request.max_tokens,
+              slot_data=slot_data,
+              complete=request.complete,
+          ):
+            logging.info(f"Free slot {slot} early")
+            # Free the request and release the slot
+            live_requests[slot] = None
+            my_slots.put(slot, block=False)  # Should always have space
+            generate_engine.free_resource(slot)
+      # threading.Thread(target=free_slots_if_possible, args=(
+      #     live_requests, tokenizer, sampled_tokens, my_slots, generate_engine)).start()
       # Respond to detokenization backpressure.
       my_detokenize_backlog.put((generate_timestep, sampled_tokens), block=True)
       generate_timestep += 1
@@ -770,7 +820,7 @@ class Driver:
     # requests return channel. If it done, place it back onto free slots.
     my_detokenize_backlog = self._detokenize_backlogs[idx]
     my_generate_engine = self._generate_engines[idx]
-    my_slots = self._generate_slots[idx]
+    # my_slots = self._generate_slots[idx]
 
     metadata = my_generate_engine.get_tokenizer()
     tokenizer = my_generate_engine.build_tokenizer(metadata)
@@ -868,8 +918,9 @@ class Driver:
                   )
               # Place the slot back on the free queue.
               my_live_requests[slot] = None
-              my_slots.put(slot, block=False)  # This should always have space.
-              my_generate_engine.free_resource(slot)
+              logging.info(f"slot {slot} should have been freed here")
+              # my_slots.put(slot, block=False)  # This should always have space.
+              # my_generate_engine.free_resource(slot)
         logging.info(
             "Detokenizing generate step %d took %.2fms",
             generate_timestep_added,
