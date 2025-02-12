@@ -747,7 +747,7 @@ class Driver:
 
         insert_executable = insert_executables[new_request.prefill_padded_length]
         decode_state = insert_executable(
-            new_request.prefill_result, decode_state, slot=slot
+            new_request.prefill_result, decode_state, slot
         )
         del new_request.prefill_result
         new_request.generate_timestep_added = generate_timestep
