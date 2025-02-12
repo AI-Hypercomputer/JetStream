@@ -14,6 +14,7 @@
 
 """Model server warmup utils."""
 
+import numpy as np
 import concurrent.futures
 import logging
 from typing import Any, Optional
@@ -258,6 +259,69 @@ def _compile_generate_and_get_layouts(
   return (executable, arg_layouts[0], arg_layouts[1], generated_out_layouts)
 
 
+def replace_devices_in_sharding(
+    sharding: Any,
+    devices: np.ndarray,
+) -> Any:
+  """Util function to replace the devices in the sharding.
+
+  This is typically used when the output of a program is transferred to another
+  slice of devices to be further processed, e.g. prefill -> generate transfer.
+
+  Args:
+    sharding: PyTree of shardings. The leaves of the tree has to be of type
+      jax.sharding.NamedSharding.
+    devices: The devices to replace with.
+  Returns:
+    A tree-structured sharding object with the same structure as input @sharding
+    while all the devices are replaced with @devices.
+  """
+
+  def replace_mesh_devices(
+      mesh: jax.sharding.Mesh, spec: jax.sharding.PartitionSpec
+  ) -> jax.sharding.Mesh:
+    return jax.sharding.Mesh(
+        devices.reshape(mesh.devices.shape), mesh.axis_names
+    )
+
+  def replace_sharding_devices(sharding: Any) -> jax.sharding.NamedSharding:
+    assert isinstance(sharding, jax.sharding.NamedSharding)
+    if list(sharding.mesh.devices.flat) == list(devices.flat):
+      return sharding
+    return jax.sharding.NamedSharding(
+        replace_mesh_devices(sharding.mesh, sharding.spec),
+        sharding.spec,
+        memory_kind=sharding.memory_kind,
+        _parsed_pspec=sharding._parsed_pspec,  # pylint: disable=protected-access
+        _manual_axes=sharding._manual_axes,  # pylint: disable=protected-access
+    )
+
+  return jax.tree_util.tree_map(replace_sharding_devices, sharding)
+
+def _get_transferred_prefix_destination_sharding(
+    prefill_engine: engine_api.Engine,
+    generate_engine: engine_api.Engine,
+) -> Any:
+  """Returns the sharding of the prefix destination upon transfer."""
+
+  if prefill_engine.mesh.devices.size == generate_engine.mesh.devices.size:
+    shardings = prefill_engine.get_prefix_destination_sharding()
+    print(f'shardings\n {shardings}')
+    return replace_devices_in_sharding(
+        shardings,
+        generate_engine.mesh.devices,
+    )
+  # TODO(b/345685171): Remove this warning once transfer with different number
+  # of devices has a verified fast path.
+  logging.error(
+      'Prefill and generate engines have different number of devices. '
+      'Resharding will be extremely slow. Please use the same number of '
+      'devices for prefill and generate engines unless you are sure about what '
+      'you are doing.'
+  )
+  return generate_engine.get_prefix_destination_sharding()
+
+
 def _initialize_insert_generate_jit_cache(
     *,
     prefill_engine: engine_api.JetStreamEngine,
@@ -298,13 +362,33 @@ def _initialize_insert_generate_jit_cache(
 
   # Compile insert
   def _compile_insert(length) -> tuple[int, Executable]:
-    prefix, _ = prefill_engine._downstream_engine.prefill(
-      # pylint: disable=protected-access
-      params=prefill_params,
-      padded_tokens=jnp.ones((length), dtype=jnp.int32),
-      true_length=length,
+    def _prefill():
+      prefix, _ = prefill_engine._downstream_engine.prefill(
+        # pylint: disable=protected-access
+        params=prefill_params,
+        padded_tokens=jnp.ones((length), dtype=jnp.int32),
+        true_length=length,
+      )
+      return prefix
+    prefix_shape = jax.eval_shape(_prefill)
+    prefix_dest_sharding = _get_transferred_prefix_destination_sharding(
+        prefill_engine=prefill_engine,
+        generate_engine=generate_engine,
     )
-    prefix_shape = jax.tree.map(_to_shape_dtype, prefix)
+    print(f'get transfer prefix dest sharding {prefix_dest_sharding}')
+    print(f'prefix_shape pre {prefix_shape}')
+    prefix_shape = jax.tree.map(
+        lambda x: None if x is None else jax.ShapeDtypeStruct(  # pylint: disable=g-long-lambda
+            x.shape, x.dtype, sharding=None,
+        ),
+        prefix_shape,
+        _get_transferred_prefix_destination_sharding(
+            prefill_engine=prefill_engine,
+            generate_engine=generate_engine,
+        ),
+        is_leaf=lambda x: x is None,
+    )
+    print(f'prefix_shape post {prefix_shape}')
     slot_shape = jax.ShapeDtypeStruct((), jnp.int32)
     # TODO(wyzhang): Pass XLA flag
     insert_executable = jax.jit(

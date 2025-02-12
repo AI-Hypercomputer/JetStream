@@ -46,91 +46,99 @@ class EngineTest(unittest.TestCase):
     params = engine.load_params()
     return engine, params
 
-  def _prefill(self):
+  def _prefill(self, engine, params):
     """Performs prefill and returns a kv cache."""
-    engine, params = self._setup()
     # A 2 will be pre-pended as 'bos' token from the vocab.
     text = "AB"
-    metadata = engine.get_tokenizer()
-    tokenizer = engine.build_tokenizer(metadata)
+    tokenizer = engine.build_tokenizer(engine.get_tokenizer())
     tokens, true_length = tokenizer.encode(text, is_bos=True)
-    prefill_result, first_token = engine.prefill(
-        params=params, padded_tokens=tokens, true_length=3
+    prefill_result, result_tokens = engine.prefill(
+      params=params, padded_tokens=tokens, true_length=3
     )
-    return engine, params, prefill_result, true_length, first_token
+    return prefill_result, true_length, result_tokens
 
-  def _prefill_np(self):
+  def _prefill_nopadding(self, engine, params):
     """Performs prefill and returns a kv cache."""
-    engine, params = self._setup()
     # A 2 will be pre-pended as 'bos' token from the vocab.
     text = "AB"
     metadata = engine.get_tokenizer()
     tokenizer = engine.build_tokenizer(metadata)
     tokens, true_length = tokenizer.encode(text, is_bos=True, jax_padding=False)
     prefill_result, first_token = engine.prefill(
-        params=params, padded_tokens=tokens, true_length=3
+      params=params, padded_tokens=tokens, true_length=3
     )
-    return engine, params, prefill_result, true_length, first_token
+    return prefill_result, true_length, first_token
 
-  def _generate(self, slot=1):
+  def _generate(self, engine, params, slot=1):
     """Performs a single generation step."""
-    engine, params, prefill_result, _, _ = self._prefill()
+    prefill_result, _, _ = self._prefill(engine, params)
     decode_state = engine.init_decode_state()
     decode_state = engine.insert(
-        prefix=prefill_result, decode_state=decode_state, slot=slot
+      prefix=prefill_result, decode_state=decode_state, slot=slot
     )
     decode_state, sampled_tokens = engine.generate(
-        params=params, decode_state=decode_state
+      params=params, decode_state=decode_state
     )
-    return engine, params, decode_state, sampled_tokens
+    return decode_state, sampled_tokens
+
+  def _get_tokenizer(self, engine):
+    tokenizer_metadata = engine.get_tokenizer()
+    return token_utils.load_vocab(
+      tokenizer_metadata.path, tokenizer_metadata.extra_ids
+    ).tokenizer
 
   def test_load_params(self):
     """Just loads params."""
     _, params = self._setup()
-    assert params == jnp.array([2.0])
+    self.assertEqual(params, jnp.array([2.0]))
 
   def test_prefill(self):
-    """Tests prefill with weight = 2."""
-    engine, _, prefill_result, true_length, first_token = self._prefill()
-    prefill_cache, _ = prefill_result
-    np.testing.assert_array_equal(
-        prefill_cache[:, :true_length], np.array([[4.0, 130.0, 132.0]])
+    """Tests prefill for input with padding."""
+    engine, params = self._setup()
+
+    prefill_result, true_length, first_token = self._prefill(engine, params)
+
+    # Verify prefill cache.
+    prefill_cache = prefill_result['cache']
+    print(type(prefill_cache))
+    self.assertTrue(
+      jnp.array_equal(
+        prefill_cache[:, :true_length],
+        jnp.array([[4.0, 130.0, 132.0]])
+      )
     )
 
-    # test first token
+    # Verify the first generated token
     token_data = first_token.get_result_at_slot(0)
-    tok = token_data.tokens
+    tokenizer = self._get_tokenizer(engine)
+    assert tokenizer.IdToPiece(int(token_data.tokens.item())) == "Ċ"
 
-    metadata = engine.get_tokenizer()
-    tokenizer = token_utils.load_vocab(
-        metadata.path, metadata.extra_ids
-    ).tokenizer
-    assert tokenizer.IdToPiece(int(tok.item())) == "Ċ"
-
-  def test_prefill_np(self):
-    """Tests prefill with weight = 2."""
-    _, _, prefill_result, true_length, _ = self._prefill_np()
-    prefill_cache, _ = prefill_result
-    np.testing.assert_array_equal(
-        prefill_cache[:, :true_length], np.array([[4.0, 130.0, 132.0]])
+  def test_prefill_without_padding(self):
+    """Tests prefill for input without padding."""
+    engine, params = self._setup()
+    prefill_result, true_length, _ = self._prefill_nopadding(engine, params)
+    prefill_cache = prefill_result['cache']
+    self.assertTrue(
+      jnp.array_equal(
+        prefill_cache[:, :true_length],
+        jnp.array([[4.0, 130.0, 132.0]])
+      )
     )
 
   def test_generate(self, slot=1):
     """Tests multiple generation steps."""
-    engine, params, decode_state, sampled_tokens = self._generate(slot=slot)
-    metadata = engine.get_tokenizer()
-    tokenizer = token_utils.load_vocab(
-        metadata.path, metadata.extra_ids
-    ).tokenizer
+    engine, params = self._setup()
+    tokenizer = self._get_tokenizer(engine)
+
+    decode_state, sampled_tokens = self._generate(engine, params, slot=slot)
 
     # Char for 399
     token_data = sampled_tokens.get_result_at_slot(slot)
-    tok = token_data.tokens
-    assert tokenizer.IdToPiece(int(tok.item())) == "Ə"
+    self.assertEqual(tokenizer.IdToPiece(int(token_data.tokens.item())), "Ə")
+
     _, sampled_tokens = engine.generate(
-        params=params, decode_state=decode_state
+      params=params, decode_state=decode_state
     )
     # Char for 598
     token_data = sampled_tokens.get_result_at_slot(slot)
-    tok = token_data.tokens
-    assert tokenizer.IdToPiece(int(tok.item())) == "ɖ"
+    self.assertEqual(tokenizer.IdToPiece(int(token_data.tokens.item())), "ɖ")

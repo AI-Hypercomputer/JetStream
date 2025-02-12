@@ -32,6 +32,7 @@ I.e. ['Ċ', 'Ə', 'ɖ'] when converted back with chr()
 
 import functools
 from typing import Any, Optional, Tuple
+from uu import decode
 
 from flax import struct
 import jax
@@ -41,9 +42,17 @@ import jax.numpy as jnp
 from jetstream.engine import engine_api
 from jetstream.engine import tokenizer_pb2
 
-
 Params = jax.Array  # [1,].
-Prefix = jax.Array  # [batch,] of strings with different lengths.
+# Prefill result.
+# A sample prefill output in Maxtext
+# {
+#   "logits": selected_logits,
+#   "cache": cache,
+#   "next_pos": next_pos,
+#   "generated_tokens": generated_num_tokens
+#   "tokens": first_generated_token,
+# }
+Prefix = dict[str, Any]
 
 
 @struct.dataclass
@@ -64,14 +73,23 @@ class TestEngine(engine_api.Engine):
   JetStream efficient serving infrastructure.
   """
 
-  def __init__(self, batch_size: int, cache_length: int, weight: float):
+  def __init__(
+      self,
+      batch_size: int,
+      cache_length: int,
+      weight: float,
+      vocab_size: int = 1024
+  ):
     self.prefill_cache_batch = batch_size
     self.generate_cache_batch = batch_size
     self.cache_length = cache_length
     self.weight = weight
+    self.vocab_size = vocab_size
     self._mesh = jax.sharding.Mesh(
-        mesh_utils.create_device_mesh((1, 1, 1), jax.devices()), ("x", "y", "z")
+      mesh_utils.create_device_mesh((1, 1, 1), jax.devices()),
+      ("x", "y", "z")
     )
+    self._prng_key = jax.random.PRNGKey(42)
 
   def load_params(self) -> Params:
     """Loads model weights."""
@@ -101,35 +119,48 @@ class TestEngine(engine_api.Engine):
     """
     if existing_prefix is not None:
       raise NotImplementedError
-    del true_length
     assert padded_tokens.ndim == 1
-    # Wait to simulate model step time.
-    fake_size = 4096
-    fake_work = jnp.ones((fake_size, fake_size)) @ jnp.ones(
-        (fake_size, fake_size)
-    )
-    # Do some fake work that isn't eliminated by dead code elimination (DCE).
-    params = params + fake_work.mean() - fake_work.mean()
+
+    # # Wait to simulate model step time.
+    # fake_size = 4096
+    # fake_work = jnp.ones((fake_size, fake_size)) @ jnp.ones(
+    #     (fake_size, fake_size)
+    # )
+    # # Do some fake work that isn't eliminated by dead code elimination (DCE).
+    # params = params + fake_work.mean() - fake_work.mean()
+
     prefill_cache = padded_tokens[None, :] * params
 
-    # get dummy first token
-    first_step = (prefill_cache.sum(axis=-1))[:, jnp.newaxis]
-    first_token_data = jnp.concatenate(
-        [first_step, jnp.ones_like(first_step), jnp.ones_like(first_step)],
-        axis=-1,
-    )
-    speculations = first_step.shape[1]
-    first_token = engine_api.ResultTokens(
-        data=first_token_data.astype(jnp.int32),
-        tokens_idx=(0, speculations),
-        # Validity occupies the same amount of space, but next in line.
-        valid_idx=(speculations, 2 * speculations),
-        # And lengths is rank 1.
-        length_idx=(2 * speculations, 2 * speculations + 1),
-        samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
-    )
+    # Calculate the first generated token.
+    first_generated_token = (prefill_cache.sum(axis=-1))[:, jnp.newaxis]
 
-    return (prefill_cache, first_step), first_token
+    prefill = {
+      "logits": jax.random.normal(self._prng_key, (1, self.vocab_size)),
+      "cache": prefill_cache,
+      "next_pos": jnp.full((1, 1), true_length, dtype=jnp.int32),
+      # generated_tokens is the number of generated tokens.
+      "generated_tokens": jnp.zeros((1, 1), dtype=jnp.int32),
+      "tokens": first_generated_token,
+    }
+
+    speculations = first_generated_token.shape[1]
+    result_tokens = engine_api.ResultTokens(
+      data=jnp.concatenate(
+        (
+          first_generated_token,
+          jnp.ones_like(first_generated_token),
+          jnp.ones_like(first_generated_token)
+        ),
+        axis=-1,
+      ),
+      tokens_idx=(0, speculations),
+      # Validity occupies the same amount of space, but next in line.
+      valid_idx=(speculations, 2 * speculations),
+      # And lengths is rank 1.
+      length_idx=(2 * speculations, 2 * speculations + 1),
+      samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
+    )
+    return (prefill, result_tokens)
 
   @functools.partial(jax.jit, static_argnums=(0,))
   def generate(
@@ -193,8 +224,8 @@ class TestEngine(engine_api.Engine):
     # into one tensor so that copy operations are faster on Cloud TPU
     # infrastructure.
     token_data = jnp.concatenate(
-        [new_timestep, jnp.ones_like(new_timestep), new_lengths[:, None]],
-        axis=-1,
+      [new_timestep, jnp.ones_like(new_timestep), new_lengths[:, None]],
+      axis=-1,
     )
     return DecodeState(
         prefill_cache=prefill_cache,
@@ -223,8 +254,10 @@ class TestEngine(engine_api.Engine):
       slot: int,
   ) -> DecodeState:
     """Adds `prefix` into `decode_state` at `slot`."""
-    # [B, T], [T,] -> [B, T]
-    prefill_cache, previous_timestep = prefix
+    print(f'wyzhangd: prefix = {prefix}')
+    print(f'wyzhangd: decode_state = {decode_state}')
+    prefill_cache = prefix['cache']
+    tokens = prefix['tokens']
     prefill_cache = jax.lax.dynamic_update_slice_in_dim(
         decode_state.prefill_cache, prefill_cache, slot, axis=0
     )
@@ -243,7 +276,7 @@ class TestEngine(engine_api.Engine):
     )
     generate_tokens = jax.lax.dynamic_update_slice_in_dim(
         decode_state.generate_tokens,
-        previous_timestep,
+        tokens,
         slot * samples_per_slot,
         axis=0,
     )
@@ -255,9 +288,16 @@ class TestEngine(engine_api.Engine):
     )
 
   def get_prefix_destination_sharding(self) -> Any:
-    return jax.sharding.NamedSharding(
-        mesh=self.mesh, spec=jax.sharding.PartitionSpec()
+    sharding = jax.sharding.NamedSharding(
+      mesh=self.mesh, spec=jax.sharding.PartitionSpec()
     )
+    return {
+      "logits": sharding,
+      "cache": sharding,
+      "next_pos": sharding,
+      "generated_tokens": sharding,
+      "tokens": sharding,
+    }
 
   def get_tokenizer(self) -> tokenizer_pb2.TokenizerParameters:
     """Return a protobuf of tokenizer info, callable from Py or C++."""
