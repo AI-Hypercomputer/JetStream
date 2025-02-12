@@ -87,7 +87,7 @@ class Executor:
   def compile(
       self,
       prefill_chunk_sizes: list[int],
-      max_num_seqs: int,
+      batch_size: int,
       max_seq_len: int,
       max_input_len: int,
       kv_caches: list[KVCache],
@@ -138,7 +138,7 @@ class Executor:
           generate_state=None,
           kv_caches=kv_caches,
           sampling_params=sampling_params,
-          max_num_seqs=max_num_seqs,
+          batch_size=batch_size,
       )
 
       key = self.executable_key(input.attn_metadata)
@@ -150,12 +150,12 @@ class Executor:
 
     # Generate only compile.
     dummy_batch_tensor = jnp.ones(
-        (max_num_seqs),
+        (batch_size),
         dtype=jnp.int32,
         device=NamedSharding(self.mesh, P(None)),
     )
     dummy_page_table_tensor = jnp.ones(
-        (max_num_seqs, max_seq_len // page_size),
+        (batch_size, max_seq_len // page_size),
         dtype=jnp.int32,
         device=NamedSharding(self.mesh, P(None, None)),
     )
@@ -179,7 +179,7 @@ class Executor:
         generate_state=dummy_generate_state,
         kv_caches=kv_caches,
         sampling_params=sampling_params,
-        max_num_seqs=max_num_seqs,
+        batch_size=batch_size,
     )
 
     key = self.executable_key(input.attn_metadata)
@@ -234,7 +234,7 @@ class Executor:
           generate_state=dummy_generate_state,
           kv_caches=kv_caches,
           sampling_params=sampling_params,
-          max_num_seqs=max_num_seqs,
+          batch_size=batch_size,
       )
 
       key = self.executable_key(input.attn_metadata)
@@ -272,27 +272,24 @@ class Executor:
   ) -> tuple[ModelOutput, list[KVCache]]:
     key = self.executable_key(input.attn_metadata)
     if self.debug_mode:
-      return self.model_forward(input)
-
-    if key not in self.executables_dict:
-      print(
-          (
-              "Warning: the cache is missing, "
-              f"for {jax.tree.map(lambda a: a.shape, input.attn_metadata)}, compile and execute"
-          )
+      return self.shard_mapped_model_forward_func(input)(
+          self.weights_dict,
+          input.input_ids,
+          input.positions,
+          input.kv_caches,
+          input.attn_metadata,
+          input.sampling_params,
       )
-      self.compile_once(key, input, None)
-
-    executable = self.executables_dict[key]
-
-    return executable(
-        self.weights_dict,
-        input.input_ids,
-        input.positions,
-        input.kv_caches,
-        input.attn_metadata,
-        input.sampling_params,
-    )
+    else:
+      executable = self.executables_dict[key]
+      return executable(
+          self.weights_dict,
+          input.input_ids,
+          input.positions,
+          input.kv_caches,
+          input.attn_metadata,
+          input.sampling_params,
+      )
 
   def executable_key(self, attn_meta: AttentionMetadata) -> str:
     prefill_chunk_size = 0
@@ -302,16 +299,6 @@ class Executor:
     if len(attn_meta.generate_pos.shape) > 0:
       generate_batch_size = attn_meta.generate_pos.shape[0]
     return f"prefill_chunk_size={prefill_chunk_size}, generate_batch_size={generate_batch_size}"
-
-  def model_forward(self, input: ModelForwardInput):
-    return self.shard_mapped_model_forward_func(input)(
-        self.weights_dict,
-        input.input_ids,
-        input.positions,
-        input.kv_caches,
-        input.attn_metadata,
-        input.sampling_params,
-    )
 
   def jitted_model_forward_func(self, input: ModelForwardInput):
     return jax.jit(
@@ -350,7 +337,7 @@ class Executor:
       generate_state: GenerateState,
       kv_caches: list[KVCache],
       sampling_params: SamplingParams,
-      max_num_seqs: int,
+      batch_size: int,
   ) -> ModelForwardInput:
     attn_meta = AttentionMetadata(
         prefill_length=self.dummy_scalar,
@@ -398,11 +385,11 @@ class Executor:
           generate_state.page_table,
       )
       update_token_ids = []
-      update_pos = np.full((max_num_seqs,), 1e6, dtype=np.int32)
+      update_pos = np.full((batch_size,), 1e6, dtype=np.int32)
       update_page_indices = np.full(
-          (max_num_seqs, self.num_pages_per_seq), 1e6, dtype=np.int32
+          (batch_size, self.num_pages_per_seq), 1e6, dtype=np.int32
       )
-      slots = np.full((max_num_seqs,), 1e6, dtype=np.int32)
+      slots = np.full((batch_size,), 1e6, dtype=np.int32)
 
       for i, gr in enumerate(schedule.new_generate_requests):
         update_token_ids.append(gr.device_prefill_token_id)
@@ -410,16 +397,16 @@ class Executor:
         update_page_indices[i] = np.array(gr.page_indices)
         slots[i] = gr.slot
 
-      for i in range(max_num_seqs - len(schedule.new_generate_requests)):
+      for i in range(batch_size - len(schedule.new_generate_requests)):
         update_token_ids.append(self.dummy_scalar)
 
       update_generate_tpp = (update_token_ids, update_pos, update_page_indices)
       insert_slots = slots
 
       # Handle page indices update.
-      page_update_slots = np.full((max_num_seqs,), 1e6, dtype=np.int32)
-      page_update_page_idxs = np.full((max_num_seqs,), 1e6, dtype=np.int32)
-      page_update_mapped_idxs = np.full((max_num_seqs,), 1e6, dtype=np.int32)
+      page_update_slots = np.full((batch_size,), 1e6, dtype=np.int32)
+      page_update_page_idxs = np.full((batch_size,), 1e6, dtype=np.int32)
+      page_update_mapped_idxs = np.full((batch_size,), 1e6, dtype=np.int32)
 
       for i, update in enumerate(schedule.generate_state_page_updates):
         page_update_slots[i] = update.slot

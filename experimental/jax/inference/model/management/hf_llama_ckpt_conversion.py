@@ -18,7 +18,7 @@ limitations under the License.
 
 from jax import numpy as jnp
 from transformers import LlamaConfig
-from .util import convert_to_jax_array
+from .util import convert_to_jax_array_on_cpu
 
 
 def merge_gate_up_proj_weights(gate, up, num_devices):
@@ -43,18 +43,18 @@ def merge_gate_up_proj_weights(gate, up, num_devices):
 def convert_hf_llama(torch_weight_state, num_devices, config: LlamaConfig):
   jax_weight_state = {
       "embed_tokens": {
-          "weight": convert_to_jax_array(
+          "weight": convert_to_jax_array_on_cpu(
               torch_weight_state["model.embed_tokens.weight"]
           ),
       },
       "layers": {},
       "norm": {
-          "weight": convert_to_jax_array(
+          "weight": convert_to_jax_array_on_cpu(
               torch_weight_state["model.norm.weight"]
           ),
       },
       "lm_head": {
-          "weight": convert_to_jax_array(
+          "weight": convert_to_jax_array_on_cpu(
               torch_weight_state["lm_head.weight"].T
           ),
       },
@@ -64,10 +64,10 @@ def convert_hf_llama(torch_weight_state, num_devices, config: LlamaConfig):
   del torch_weight_state["lm_head.weight"]
   for i in range(config.num_hidden_layers):
     gate_up_proj_weight = merge_gate_up_proj_weights(
-        gate=convert_to_jax_array(
+        gate=convert_to_jax_array_on_cpu(
             torch_weight_state[f"model.layers.{i}.mlp.gate_proj.weight"].T
         ),
-        up=convert_to_jax_array(
+        up=convert_to_jax_array_on_cpu(
             torch_weight_state[f"model.layers.{i}.mlp.up_proj.weight"].T
         ),
         num_devices=num_devices,
@@ -77,28 +77,28 @@ def convert_hf_llama(torch_weight_state, num_devices, config: LlamaConfig):
     jax_weight_state["layers"][i] = {
         "self_attn": {
             "q_proj": {
-                "weight": convert_to_jax_array(
+                "weight": convert_to_jax_array_on_cpu(
                     torch_weight_state[
                         f"model.layers.{i}.self_attn.q_proj.weight"
                     ].T
                 ),
             },
             "k_proj": {
-                "weight": convert_to_jax_array(
+                "weight": convert_to_jax_array_on_cpu(
                     torch_weight_state[
                         f"model.layers.{i}.self_attn.k_proj.weight"
                     ].T
                 ),
             },
             "v_proj": {
-                "weight": convert_to_jax_array(
+                "weight": convert_to_jax_array_on_cpu(
                     torch_weight_state[
                         f"model.layers.{i}.self_attn.v_proj.weight"
                     ].T
                 ),
             },
             "o_proj": {
-                "weight": convert_to_jax_array(
+                "weight": convert_to_jax_array_on_cpu(
                     torch_weight_state[
                         f"model.layers.{i}.self_attn.o_proj.weight"
                     ].T
@@ -110,7 +110,7 @@ def convert_hf_llama(torch_weight_state, num_devices, config: LlamaConfig):
                 "weight": gate_up_proj_weight,
             },
             "down_proj": {
-                "weight": convert_to_jax_array(
+                "weight": convert_to_jax_array_on_cpu(
                     torch_weight_state[
                         f"model.layers.{i}.mlp.down_proj.weight"
                     ].T
@@ -118,12 +118,12 @@ def convert_hf_llama(torch_weight_state, num_devices, config: LlamaConfig):
             },
         },
         "input_layernorm": {
-            "weight": convert_to_jax_array(
+            "weight": convert_to_jax_array_on_cpu(
                 torch_weight_state[f"model.layers.{i}.input_layernorm.weight"]
             ),
         },
         "post_attention_layernorm": {
-            "weight": convert_to_jax_array(
+            "weight": convert_to_jax_array_on_cpu(
                 torch_weight_state[
                     f"model.layers.{i}.post_attention_layernorm.weight"
                 ]

@@ -27,8 +27,9 @@ torch_jax_dtype_map = {
 }
 
 
-def convert_to_jax_array(x: torch.Tensor):
+def convert_to_jax_array_on_cpu(x: torch.Tensor):
+  device = jax.devices("cpu")[0]
   return jax.device_put(
       jnp.asarray(x.float().numpy(), dtype=torch_jax_dtype_map[x.dtype]),
-      device=jax.devices("cpu")[0],
+      device=device,
   )
