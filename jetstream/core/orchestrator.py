@@ -150,6 +150,7 @@ class ActiveRequest:
   # requests.
   complete: Optional[np.ndarray] = None
   prefill_result: Any = None
+  prefill_padded_length: Any = None
   #################### Information relevant for prefill ########################
   prefill_content: Optional[str | list[int]] = None
   ################## Information relevant for detokenization ###################
@@ -535,6 +536,7 @@ class Driver:
       padded_tokens, true_length = self._process_prefill_content(
           request, tokenizer, is_bos, prefill_engine.max_prefill_length
       )
+      request.prefill_padded_length = padded_tokens.shape[-1]
 
       # Compute new kv cache for the prefill_content.
       prefill_result, first_token = prefill_engine.prefill(
@@ -543,6 +545,7 @@ class Driver:
           true_length=true_length,
       )
       request.prefill_result = prefill_result
+      request.prefill_padded_length =
 
       # put first token to detokenize queue
       request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
@@ -652,7 +655,7 @@ class Driver:
     time_of_last_generate = time.time()
     time_of_last_print = time.time()
 
-    decode_state_executable, insert_executable, generate_executable = (
+    decode_state_executable, insert_executables, generate_executable = (
       self._generate_executables[idx]
     )
     decode_state = decode_state_executable()
@@ -743,6 +746,7 @@ class Driver:
             generate_timestep,
         )
 
+        insert_executable = insert_executables[new_request.prefill_padded_length]
         decode_state = insert_executable(
             new_request.prefill_result, decode_state, slot=slot
         )
