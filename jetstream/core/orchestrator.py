@@ -545,7 +545,6 @@ class Driver:
           true_length=true_length,
       )
       request.prefill_result = prefill_result
-      request.prefill_padded_length =
 
       # put first token to detokenize queue
       request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
