@@ -372,24 +372,21 @@ def _initialize_insert_generate_jit_cache(
       )
       return prefix
     prefix_shape = jax.eval_shape(_prefill)
-    prefix_dest_sharding = _get_transferred_prefix_destination_sharding(
-        prefill_engine=prefill_engine,
-        generate_engine=generate_engine,
-    )
-    print(f'get transfer prefix dest sharding {prefix_dest_sharding}')
-    print(f'prefix_shape pre {prefix_shape}')
-    prefix_shape = jax.tree.map(
-        lambda x, sharding: None if x is None else jax.ShapeDtypeStruct(  # pylint: disable=g-long-lambda
-            x.shape, x.dtype, sharding=sharding,
-        ),
-        prefix_shape,
-        _get_transferred_prefix_destination_sharding(
-            prefill_engine=prefill_engine,
-            generate_engine=generate_engine,
-        ),
-        is_leaf=lambda x: x is None,
-    )
-    print(f'prefix_shape post {prefix_shape}')
+    print(f'prefix_shape {prefix_shape}')
+    # prefix_dest_sharding = _get_transferred_prefix_destination_sharding(
+    #     prefill_engine=prefill_engine,
+    #     generate_engine=generate_engine,
+    # )
+    # print(f'get transfer prefix dest sharding {prefix_dest_sharding}')
+    # prefix_shape = jax.tree.map(
+    #     lambda x, sharding: None if x is None else jax.ShapeDtypeStruct(  # pylint: disable=g-long-lambda
+    #         x.shape, x.dtype, sharding=sharding,
+    #     ),
+    #     prefix_shape,
+    #     prefix_dest_sharding,
+    #     is_leaf=lambda x: x is None,
+    # )
+    # print(f'prefix_shape post {prefix_shape}')
     slot_shape = jax.ShapeDtypeStruct((), jnp.int32)
     # TODO(wyzhang): Pass XLA flag
     insert_executable = jax.jit(
