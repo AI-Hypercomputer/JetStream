@@ -161,7 +161,6 @@ def main():
   else:
     user_conf = args.user_conf
 
-  settings.FromConfig(args.mlperf_conf, args.mlperf_conf_id, args.scenario)
   settings.FromConfig(user_conf, args.mlperf_conf_id, args.scenario)
   log.info("Mlperf config: %s", args.mlperf_conf)
   log.info("User config: %s", user_conf)
