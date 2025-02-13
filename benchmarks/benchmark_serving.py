@@ -518,6 +518,7 @@ async def send_request(
   """Send the request to JetStream server."""
   # Tokenize on client side following MLPerf standard.
   token_ids = tokenizer.encode(input_request.prompt)
+  print("len token_ids ", len(token_ids))
 
   # Send the request
   request = jetstream_pb2.DecodeRequest(
