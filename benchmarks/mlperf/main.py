@@ -140,7 +140,7 @@ def get_args():
       type=str,
       default=_MLPERF_ID,
       help="When given overrides the default user.conf path",
- )
+  )
   args = parser.parse_args()
   return args
 
