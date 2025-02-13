@@ -99,10 +99,10 @@ from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
 
 root = logging.getLogger()
-root.setLevel(logging.WARNING)
-
 handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(logging.WARNING)
+
+root.setLevel(logging.INFO)
+handler.setLevel(logging.INFO)
 formatter = logging.Formatter(
     "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
