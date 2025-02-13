@@ -47,7 +47,7 @@ make install-deps
 Use the following commands to run a server locally:
 ```
 # Start a server
-python -m jetstream.core.implementations.mock.server
+python -m jetstream.entrypoints.mock.server
 
 # Test local mock server
 python -m jetstream.tools.requester

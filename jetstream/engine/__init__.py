@@ -21,3 +21,11 @@ try:
 except ImportError as e:
   print("Proxy backend support is not added")
   pass
+
+import os
+import sys
+
+submodule_path = os.path.join(
+    os.path.dirname(__file__), "implementations/maxtext/MaxText"
+)
+sys.path.append(submodule_path)

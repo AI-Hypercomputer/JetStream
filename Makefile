@@ -5,8 +5,14 @@ GRPC_TOOLS_VERSION := 1.62.1
 all: install-deps generate-protos format check
 
 # Dependency management targets
+
 install-deps:
 	$(PIP) install pytype pylint pyink -r requirements.txt -r benchmarks/requirements.in
+
+install-submodules:
+	git submodule update --init --recursive
+	- $(PIP) install -r ./jetstream/engine/implementations/maxtext/requirements.txt
+	- $(PIP) install jetstream_pt@git+https://github.com/google/jetstream-pytorch.git@jetstream-v0.2.2#egg=jetstream_pt
 
 # Code generation/formatting targets
 generate-protos: generate-and-prepend-preambles format
