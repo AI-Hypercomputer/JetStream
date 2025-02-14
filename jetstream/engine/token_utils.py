@@ -184,6 +184,7 @@ def process_result_tokens(
     complete: Updated complete.
   """
   # tokens: [samples, speculations]
+  print(result_tokens.data.shape)
   slot_data = result_tokens.get_result_at_slot(slot)
   slot_tokens = slot_data.tokens
   slot_valid = slot_data.valid
@@ -200,6 +201,7 @@ def process_result_tokens(
         str(slot_lengths),
     )
   return_samples = []
+  # logging.warning(f"{samples} samples processed.")
   for idx in range(samples):
     text_so_far = []
     tok_id_so_far = []
