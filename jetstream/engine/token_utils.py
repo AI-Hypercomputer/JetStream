@@ -200,6 +200,7 @@ def process_result_tokens(
         str(slot_lengths),
     )
   return_samples = []
+  # logging.warning(f"{samples} samples processed.")
   for idx in range(samples):
     text_so_far = []
     tok_id_so_far = []
