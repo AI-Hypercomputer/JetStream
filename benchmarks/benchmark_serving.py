@@ -526,6 +526,7 @@ async def send_request(
       metadata=jetstream_pb2.DecodeRequest.Metadata(
           start_time=time.perf_counter()
       ),
+      num_samples=1,
   )
   out_tokens, ttft_sec, ttst_sec, latency_sec = await grpc_async_request(
       api_url,

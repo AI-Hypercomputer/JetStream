@@ -43,6 +43,8 @@ CpuDevices = Any
 # Tokenkizer used by the engine
 Tokenizer = Any
 
+PRNGKeyType = Any
+
 
 @struct.dataclass
 class SlotData:
@@ -126,6 +128,23 @@ class ResultTokens(abc.ABC):
         ][:, 0],
     )
 
+  def get_result_at_slots(self, slots: tuple[int]) -> SlotData:
+    """Returns the token at a given slot.
+
+    Args:
+      slot: An integer from [0, n) representing an index into the batch.
+
+    Note: implementations of this method must correctly handle
+    microbatches, if microbatches are used.
+    """
+    # Mask out any non valid tokens.
+    return SlotData(
+        tokens=self.data[slots, self.tokens_idx[0] : self.tokens_idx[1]],
+        valid=self.data[slots, self.valid_idx[0] : self.valid_idx[1]],
+        # Only get a 1D representation here
+        lengths=self.data[slots, self.length_idx[0] : self.length_idx[1]][:, 0],
+    )
+
 
 class Engine(abc.ABC):
   """The computational core of the generative model server.
@@ -143,6 +162,8 @@ class Engine(abc.ABC):
       padded_tokens: jax.Array,
       true_length: int,
       sampler: Optional[Callable[[Any], Any]] = None,
+      rng: Optional[PRNGKeyType] = None,
+      num_samples: int = 1,
   ) -> Tuple[Prefix, ResultTokens]:
     """Computes a kv-cache for a set of tokens conditional on existing cache.
 
@@ -193,6 +214,24 @@ class Engine(abc.ABC):
     The slot may represent a tuple of positions (e.g. microbatch, pipeline stage
     and batch), but at the engine interface level all of these are exposed as
     a [0, n) range of slots and converted internally.
+    """
+    
+  @abc.abstractmethod
+  def bulk_insert(
+      self,
+      prefix: Prefix,
+      decode_state: DecodeState,
+      slots: list[int],
+  ) -> DecodeState:
+    """_summary_
+
+    Args:
+        prefix (Prefix): _description_
+        decode_state (DecodeState): _description_
+        slots (tuple[int]): _description_
+
+    Returns:
+        DecodeState: _description_
     """
 
   def free_resource(

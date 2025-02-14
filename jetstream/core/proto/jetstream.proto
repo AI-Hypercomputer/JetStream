@@ -59,8 +59,10 @@ message DecodeRequest {
     Metadata metadata = 7;
   }
 
+  int32 num_samples = 8;
+
   reserved 1, 2, 3;
-  // Next ID: 8
+  // Next ID: 9
 }
 
 message DecodeResponse {

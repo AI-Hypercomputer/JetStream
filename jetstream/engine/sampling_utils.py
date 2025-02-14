@@ -24,7 +24,15 @@ import jax.numpy as jnp
 NEG_INF = -1.0e7  # Masking purpose
 
 
-def sampling(logits, rng, algorithm, topk=0, nucleus_topp=0, temperature=1.0):
+def sampling(
+    logits,
+    rng,
+    algorithm,
+    topk=0,
+    nucleus_topp=0,
+    temperature=1.0,
+    num_samples=1,
+):
   """
   logits: unnormalized logits to sample, shaped [YOUR_LEADING_DIMS, Vocab],
   before logit
