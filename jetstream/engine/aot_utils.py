@@ -118,10 +118,10 @@ def layout_params_and_compile_executables(
       prefill_idx=i,
       relayout_params_optimally=relayout_params_optimally,
     )
-    any_prefill_engine = pe
-    any_prefill_params = prefill_params[i]
     prefill_executables_list.append(prefill_executables)
     prefill_params[i] = prefill_params_i
+    any_prefill_engine = pe
+    any_prefill_params = prefill_params[i]
 
   for i, ge in enumerate(generate_engines):
     (
