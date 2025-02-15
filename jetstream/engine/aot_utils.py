@@ -410,8 +410,8 @@ def _initialize_insert_generate_jit_cache(
   (
     generate_executable,
     generate_params_layouts,
+    _,
     decode_state_layouts,
-    generated_out_layouts,
   ) = _compile_generate_and_get_layouts(
     generate_engine,
     generate_param_shapes,
