@@ -125,6 +125,7 @@ def layout_params_and_compile_executables(
     prefill_executables, prefill_params_i = _initialize_prefill_jit_cache(
       prefill_engine=pe,
       prefill_params=prefill_params[i],
+      prefill_params_layouts_override=None,
       prefill_idx=i,
       relayout_params_optimally=relayout_params_optimally,
     )
@@ -137,7 +138,8 @@ def layout_params_and_compile_executables(
   for i, ge in enumerate(generate_engines):
     (
       generate_executables,
-      generate_params_i
+      generate_params_i,
+      _,
     ) = _initialize_insert_generate_jit_cache(
       prefill_engine=any_prefill_engine,
       generate_engine=ge,
@@ -156,7 +158,8 @@ def layout_params_and_compile_executables(
   for i, (pe, ge) in enumerate(interleaved_engines):
     (
       generate_executables,
-      generate_params_i
+      generate_params_i,
+      generate_params_layouts_i
     ) = _initialize_insert_generate_jit_cache(
       prefill_engine=pe,
       generate_engine=ge,
@@ -173,6 +176,7 @@ def layout_params_and_compile_executables(
     ) = _initialize_prefill_jit_cache(
       prefill_engine=pe,
       prefill_params=prefill_params_i,
+      prefill_params_layouts_override=generate_params_layouts_i,
       prefill_idx=i,
       # No need to relayout for prefill params.
       relayout_params_optimally=False
@@ -221,8 +225,9 @@ def _initialize_prefill_jit_cache(
     *,
     prefill_engine: engine_api.JetStreamEngine,
     prefill_params: engine_api.Params,
+    prefill_params_layouts_override: Any,
     prefill_idx: int,
-    relayout_params_optimally: bool = False,
+    relayout_params_optimally: bool,
 ) -> tuple[PrefillExecutables, engine_api.Params]:
   """Precompile all prefill functions in parallel.
   If we don't do this, then when a new request triggers a new prefill bucket it
@@ -251,9 +256,13 @@ def _initialize_prefill_jit_cache(
 
   # TODO(wyzhang): Consider if this can be merged into maxtext
   def _compile_prefill(length) -> tuple[int, Executable]:
+    if prefill_params_layouts_override:
+      in_shardings = (prefill_params_layouts_override, None, None)
+    else:
+      in_shardings = (Layout(DLL.AUTO), None, None)
     prefill_executable = jax.jit(
       prefill_engine.prefill_aot,
-      in_shardings=(Layout(DLL.AUTO), None, None)
+      in_shardings=in_shardings
     ).lower(
       prefill_param_shapes, padded_tokens_shape, length_shape
     ).compile(compiler_options=None)  # TODO(wyzhang): pass in xla flag
@@ -383,8 +392,8 @@ def _initialize_insert_generate_jit_cache(
     generate_idx: int,
     relayout_params_optimally: bool = False,
     relayout_decode_state_optimally: bool = False,
-) -> tuple[GenerateExecutables, engine_api.Params]:
-  """Initialiszes jit cache for insert and generate.
+) -> tuple[GenerateExecutables, engine_api.Params, Any]:
+  """Initializes jit cache for insert and generate.
 
   Args:
       generate_engine: A generate engine to be compiled for.
@@ -396,7 +405,7 @@ def _initialize_insert_generate_jit_cache(
   generate_param_shapes = jax.tree.map(_to_shape_dtype, generate_params)
   (
     generate_executable,
-    param_layouts,
+    generate_params_layouts,
     decode_state_layouts,
     generated_out_layouts,
   ) = _compile_generate_and_get_layouts(
@@ -408,11 +417,7 @@ def _initialize_insert_generate_jit_cache(
     relayout_decode_state_optimally,
   )
   if relayout_params_optimally:
-    input_args, _ = generate_executable.input_layouts
-    generate_param_layouts = input_args[0]
-    new_generate_params = _iterated_layout(generate_params, generate_param_layouts)
-  else:
-    new_generate_params = generate_params
+    generate_params = _iterated_layout(generate_params, generate_params_layouts)
 
   # Compile insert
   def _compile_insert(length) -> tuple[int, Executable]:
@@ -425,7 +430,7 @@ def _initialize_insert_generate_jit_cache(
       )
       return prefix
     prefix_shape = jax.eval_shape(_prefill)
-    print(f'prefix_shape {prefix_shape}')
+    # print(f'prefix_shape {prefix_shape}')
     # prefix_dest_sharding = _get_transferred_prefix_destination_sharding(
     #     prefill_engine=prefill_engine,
     #     generate_engine=generate_engine,
@@ -483,5 +488,5 @@ def _initialize_insert_generate_jit_cache(
   generate_engine.aot = True
   return (
     (init_decode_state_executable, insert_executables, generate_executable),
-    new_generate_params,
+    generate_params, generate_params_layouts,
   )
