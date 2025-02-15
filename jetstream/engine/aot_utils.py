@@ -112,7 +112,7 @@ def layout_params_and_compile_executables(
   any_prefill_params = None
 
   for i, pe in enumerate(prefill_engines):
-    prefill_executables, prefill_params[i] = _initialize_prefill_jit_cache(
+    prefill_executables, prefill_params_i = _initialize_prefill_jit_cache(
       prefill_engine=pe,
       prefill_params=prefill_params[i],
       prefill_idx=i,
@@ -121,11 +121,12 @@ def layout_params_and_compile_executables(
     any_prefill_engine = pe
     any_prefill_params = prefill_params[i]
     prefill_executables_list.append(prefill_executables)
+    prefill_params[i] = prefill_params_i
 
   for i, ge in enumerate(generate_engines):
     (
       generate_executables,
-      generate_params[i]
+      generate_params_i
     ) = _initialize_insert_generate_jit_cache(
       prefill_engine=any_prefill_engine,
       generate_engine=ge,
@@ -136,6 +137,7 @@ def layout_params_and_compile_executables(
       relayout_decode_state_optimally=relayout_decode_state_optimally,
     )
     generate_executables_list.append(generate_executables)
+    generate_params[i] = generate_params_i
 
   return (
     prefill_params,
@@ -363,7 +365,7 @@ def _initialize_insert_generate_jit_cache(
     generate_param_layouts = input_args[0]
     new_generate_params = _iterated_layout(generate_params, generate_param_layouts)
   else:
-    new_generate_param_layouts = generate_params
+    new_generate_params = generate_params
 
   # Compile insert
   def _compile_insert(length) -> tuple[int, Executable]:
