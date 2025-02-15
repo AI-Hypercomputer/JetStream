@@ -263,7 +263,8 @@ def _initialize_prefill_jit_cache(
       in_shardings = (Layout(DLL.AUTO), None, None)
     prefill_executable = jax.jit(
       prefill_engine.prefill_aot,
-      in_shardings=in_shardings
+      in_shardings=in_shardings,
+      out_shardings=(Layout(DLL.AUTO), Layout(DLL.AUTO)),
     ).lower(
       prefill_param_shapes, padded_tokens_shape, length_shape
     ).compile(compiler_options=None)  # TODO(wyzhang): pass in xla flag
@@ -318,6 +319,8 @@ def _compile_generate_and_get_layouts(
     "---Generate engine %d compiled for generate.---",
     generate_idx,
   )
+  print(f'wyzhangd: jax jit generate: input logits: {arg_layouts[1]['logits']}')
+  print(f'wyzhangd: jax jit generate: out logits: {generated_out_layouts['logits']}')
   return (executable, arg_layouts[0], arg_layouts[1], generated_out_layouts)
 
 
@@ -450,7 +453,7 @@ def _initialize_insert_generate_jit_cache(
     # print(f'prefix_shape post {prefix_shape}')
     slot_shape = jax.ShapeDtypeStruct((), jnp.int32)
     # TODO(wyzhang): Pass XLA flag
-    print(f'wyzhangd: jax.jit insert decode_state_layouts: {decode_state_layouts}')
+    print(f'wyzhangd: jax.jit insert: logits: {decode_state_layouts['logits']}')
     insert_executable = jax.jit(
       generate_engine.insert,
       in_shardings=(None, decode_state_layouts, None),
@@ -475,6 +478,7 @@ def _initialize_insert_generate_jit_cache(
   # Compile init decode state
   def _compile_init_decode_state():
     # TODO(wyzhang): Pass in XLA flag
+    print(f'wyzhangd: jax jit init_decode_state: out logits: {decode_state_layouts['logits']}')
     decode_state_executable = jax.jit(
       generate_engine.init_decode_state,
       in_shardings=(None),
