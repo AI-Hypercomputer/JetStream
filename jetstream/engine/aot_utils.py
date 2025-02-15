@@ -420,8 +420,8 @@ def _initialize_insert_generate_jit_cache(
     relayout_params_optimally,
     relayout_decode_state_optimally,
   )
-  print(f'wyzhangd: generate input decode_state_layouts: {decode_state_layouts}')
-  print(f'wyzhangd: generate output decode_state_layouts: {generated_out_layouts}')
+  # print(f'wyzhangd: generate input decode_state_layouts: {decode_state_layouts}')
+  # print(f'wyzhangd: generate output decode_state_layouts: {generated_out_layouts}')
   if relayout_params_optimally:
     generate_params = _iterated_layout(generate_params, generate_params_layouts)
 
