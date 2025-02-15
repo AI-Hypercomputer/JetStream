@@ -225,9 +225,11 @@ def _initialize_prefill_jit_cache(
   if relayout_params_optimally:
     input_args, _ = executables[prefill_engine.max_prefill_length].input_layouts
     prefill_param_layouts = input_args[0]
-    prefill_params = _iterated_layout(prefill_params, prefill_param_layouts)
+    new_prefill_params = _iterated_layout(prefill_params, prefill_param_layouts)
+  else:
+    new_prefill_params = prefill_params
 
-  return (executables, prefill_params)
+  return (executables, new_prefill_params)
 
 
 def _compile_generate_and_get_layouts(
@@ -359,7 +361,9 @@ def _initialize_insert_generate_jit_cache(
   if relayout_params_optimally:
     input_args, _ = generate_executable.input_layouts
     generate_param_layouts = input_args[0]
-    generate_params = _iterated_layout(generate_params, generate_param_layouts)
+    new_generate_params = _iterated_layout(generate_params, generate_param_layouts)
+  else:
+    new_generate_param_layouts = generate_params
 
   # Compile insert
   def _compile_insert(length) -> tuple[int, Executable]:
@@ -430,5 +434,5 @@ def _initialize_insert_generate_jit_cache(
   generate_engine.aot = True
   return (
     (init_decode_state_executable, insert_executables, generate_executable),
-    generate_params,
+    new_generate_params,
   )
