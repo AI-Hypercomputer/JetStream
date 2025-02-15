@@ -242,7 +242,7 @@ class Driver:
       self,
       prefill_engines: Optional[list[engine_api.Engine]] = None,
       generate_engines: Optional[list[engine_api.Engine]] = None,
-      interleaved_engines: Optinal[list[tuple[engine_api.Engine, engine_api.Engine]]] = None,
+      interleaved_engines: Optional[list[tuple[engine_api.Engine, engine_api.Engine]]] = None,
       prefill_params: Optional[list[Any]] = None,
       generate_params: Optional[list[Any]] = None,
       shared_params: Optional[list[Any]] = None,
