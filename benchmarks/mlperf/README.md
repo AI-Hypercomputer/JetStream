@@ -2,6 +2,18 @@
 ## Create TPU VM.
 Follow these [instructions](https://cloud.google.com/tpu/docs/v5e-inference#tpu-vm) to create TPU v5e-8 VM and ssh into the VM
 
+## Install JAX on Cloud TPU VM
+```
+pip install jax[tpu] -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+```
+Verify that JAX can access the TPU and can run basic operations:
+
+Start the Python 3 interpreter:
+```
+$ python3
+>>> import jax
+>>> jax.device_count()
+```
 
 ## Clone repo
 ```
