@@ -14,9 +14,9 @@
 
 
 # Tokenizer
-# export TOKENIZER_PATH=meta-llama/Llama-2-70b-chat-hf
-export DATASET_PREFIX=mixtral
-export TOKENIZER_PATH=mistralai/Mixtral-8x7B-Instruct-v0.1
+export TOKENIZER_PATH=meta-llama/Llama-2-70b-chat-hf
+export DATASET_PREFIX=llama
+#export TOKENIZER_PATH=mistralai/Mixtral-8x7B-Instruct-v0.1
 export NUM_CLIENT_THREADS=${NUM_CLIENT_THREADS:=600}
 
 # Loadgen

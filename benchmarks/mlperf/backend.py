@@ -202,6 +202,7 @@ class SUT:
     self._input_mode = dataset.validate_sample_mode(input_mode)
     self._output_mode = dataset.validate_sample_mode(output_mode)
     assert tokenizer_path is not None
+    print(f'wyzhangd: tokenizer_path={tokenizer_path}')
     self._tokenizer = self.load_tokenizer(tokenizer_path)
     self._max_output_len = max_output_len
     self._api_url = api_url

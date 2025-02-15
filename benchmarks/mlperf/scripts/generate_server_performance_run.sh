@@ -14,23 +14,25 @@
 
 source run_utils.sh
 
-DATASET_NAME=$(get_dataset_name ${DATASET_TYPE})
-export DATASET_PATH=${DATA_DISK_DIR}/${DATASET_NAME}.pkl
-export API_URL=${API_URL}
-export LOADGEN_RUN_TYPE=server-performance
-export OUTPUT_LOG_ID=${MODEL_NAME}-${DATASET_TYPE}-${LOADGEN_RUN_TYPE}-${LOADGEN_RUN_TIMESTAMP}
-export OUTPUT_LOG_DIR=${DATA_DISK_DIR}/logs/${OUTPUT_LOG_ID}
+DATASET_NAME=$(get_dataset_name ${DATASET_TYPE?})
+export DATASET_PATH=${DATA_DISK_DIR?}/${DATASET_NAME?}.pkl
+export API_URL=${API_URL?}
+export LOADGEN_RUN_TYPE=server-performance/
+export OUTPUT_LOG_ID=${MODEL_NAME?}-${DATASET_TYPE?}-${LOADGEN_RUN_TYPE?}-${LOADGEN_RUN_TIMESTAMP?}
+export OUTPUT_LOG_DIR=${DATA_DISK_DIR?}/logs/${OUTPUT_LOG_ID?}
 
-echo "LOADGEN_RUN_TYPE: ${LOADGEN_RUN_TYPE}"
-echo "LOADGEN_RUN_TIMESTAMP: ${LOADGEN_RUN_TIMESTAMP}"
-echo "DATASET_PATH: ${DATASET_PATH}"
-echo "TOTAL_SAMPLE_COUNT: ${TOTAL_SAMPLE_COUNT}"
-echo "API_URL: ${API_URL}"
-echo "BATCH_SIZE_EXP: ${BATCH_SIZE_EXP}"
-echo "OUTPUT_LOG_DIR: ${OUTPUT_LOG_DIR}"
-echo "USER_CONFIG: ${USER_CONFIG}"
+echo "LOADGEN_RUN_TYPE: ${LOADGEN_RUN_TYPE?}"
+echo "LOADGEN_RUN_TIMESTAMP: ${LOADGEN_RUN_TIMESTAMP?}"
+echo "DATASET_PATH: ${DATASET_PATH?}"
+echo "TOTAL_SAMPLE_COUNT: ${TOTAL_SAMPLE_COUNT?}"
+echo "API_URL: ${API_URL?}"
+echo "BATCH_SIZE_EXP: ${BATCH_SIZE_EXP?}"
+echo "OUTPUT_LOG_DIR: ${OUTPUT_LOG_DIR?}"
+echo "USER_CONFIG: ${USER_CONFIG?}"
 
-mkdir -p ${OUTPUT_LOG_DIR} && cp ../${USER_CONFIG} ${OUTPUT_LOG_DIR}
+echo "TOKENIZER_PATH: ${TOKENIZER_PATH?}"
+
+mkdir -p ${OUTPUT_LOG_DIR?} && cp ../${USER_CONFIG?} ${OUTPUT_LOG_DIR?}
 MIXTRAL_COLS_RENAME="{\"tok_input_len\": \"tok_input_length\", \"tok_ref_output_len\": \"tok_output_length\"}"
 
 # Perf Run
@@ -48,7 +50,7 @@ cd ../ && python3 main.py \
 	--total-sample-count ${TOTAL_SAMPLE_COUNT} \
 	--batch-size-exp ${BATCH_SIZE_EXP} \
 	--dataset-path ${DATASET_PATH} \
-	--tokenizer-path ${TOKENIZER_PATH} \
+	--tokenizer-path ${TOKENIZER_PATH?} \
 	--log-interval ${LOG_INTERVAL} \
 	--num-client-threads ${NUM_CLIENT_THREADS} \
 	--rename-dataset-cols "${MIXTRAL_COLS_RENAME}" \
