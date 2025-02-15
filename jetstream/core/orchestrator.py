@@ -97,6 +97,7 @@ from jetstream.core.utils.return_sample import ReturnSample
 from jetstream.engine import engine_api, tokenizer_api, token_utils
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
+import jax.numpy as jnp
 
 root = logging.getLogger()
 root.setLevel(logging.WARNING)
@@ -475,19 +476,44 @@ class Driver:
       tokenizer: tokenizer_api.Tokenizer,
       is_bos: bool,
       max_prefill_length: int,
-  ) -> Tuple[jax.Array | np.ndarray, int]:
+      chunked_prefill: bool = False,
+      chunk_size: Optional[int] = None,
+  ) -> Tuple[jax.Array | np.ndarray, int, jax.Array| np.ndarray]:
     content = request.prefill_content
     if isinstance(content, str):
       # If it's text input, tokenize and pad the input.
-      return tokenizer.encode(
+      tokens, true_length = tokenizer.encode(
           content,
           is_bos=is_bos,
           max_prefill_length=max_prefill_length,
           jax_padding=self._jax_padding,
       )
+      positions = jnp.expand_dims(jnp.arange(0, len(tokens), dtype=jnp.int32), 0)
+
+      if chunked_prefill:
+        return token_utils.chunk_and_pad_tokens(
+          tokens[:true_length],
+          tokenizer.bos_id,
+          tokenizer.pad_id,
+          is_bos=is_bos,
+          max_prefill_length=max_prefill_length,
+          chunk_size=chunk_size,
+          jax_padding=self._jax_padding,)
+      return tokens, true_length, positions
+
     else:
+      if chunked_prefill:
+        return token_utils.chunk_and_pad_tokens(
+          content,
+          tokenizer.bos_id,
+          tokenizer.pad_id,
+          is_bos=is_bos,
+          max_prefill_length=max_prefill_length,
+          chunk_size=chunk_size,
+          jax_padding=self._jax_padding,)
+
       # If it's token input, pad the input.
-      return token_utils.pad_tokens(
+      tokens, true_length = token_utils.pad_tokens(
           content,
           tokenizer.bos_id,
           tokenizer.pad_id,
@@ -495,6 +521,10 @@ class Driver:
           max_prefill_length=max_prefill_length,
           jax_padding=self._jax_padding,
       )
+      positions = jnp.expand_dims(jnp.arange(0, len(tokens), dtype=jnp.int32), 0)
+      return tokens, true_length, positions
+
+      
 
   def _prefill_thread(self, idx: int):
     """Thread which runs in the background performing prefills."""
@@ -522,16 +552,48 @@ class Driver:
           is_bos,
       )
       # Tokenize and padding the text or token input.
-      padded_tokens, true_length = self._process_prefill_content(
-          request, tokenizer, is_bos, prefill_engine.max_prefill_length
+      padded_tokens, true_length, positions = self._process_prefill_content(
+          request, tokenizer, is_bos, prefill_engine.max_prefill_length, False,
       )
 
-      # Compute new kv cache for the prefill_content.
-      prefill_result, first_token = prefill_engine.prefill(
+      # if chunked_prefill is used, 
+      if prefill_engine.use_chunked_prefill:
+        padded_tokens, true_lengths, positions = self._process_prefill_content(
+          request, tokenizer, is_bos, prefill_engine.max_prefill_length, prefill_engine.use_chunked_prefill, prefill_engine.chunk_size)
+        prefill_result = None
+        next_pos = 0
+        for chunk_num, _ in enumerate(padded_tokens):
+          if prefill_result is None:
+            jax.debug.print("calling chunked_prefill for {chunk_num}", chunk_num=chunk_num)
+            prefill_result, first_token = prefill_engine.prefill(params=prefill_params,
+                                                                 padded_tokens=padded_tokens[chunk_num],
+                                                                 true_length=true_lengths[chunk_num],
+                                                                 positions=positions[chunk_num],
+                                                                 all_true_length=true_length,
+                                                                 previous_chunk=prefill_result,
+                                                                 )
+          else:
+            jax.debug.print("calling chunked_prefill for {chunk_num}", chunk_num=chunk_num)
+            prefill_result, first_token = prefill_engine.prefill(params=prefill_params | {"cache": prefill_result["cache"]},
+                                                                 padded_tokens=padded_tokens[chunk_num],
+                                                                 true_length=true_lengths[chunk_num],
+                                                                 positions=positions[chunk_num],
+                                                                 all_true_length=true_length,
+                                                                 previous_chunk=prefill_result,
+                                                                 )
+          t_l_array = jnp.expand_dims(jnp.arange(0, chunk_num*prefill_engine.chunk_size + true_lengths[chunk_num]), 0)
+          prefill_result['t_l_array'] =  t_l_array
+          prefill_result['next_pos'] = jnp.full((1,1), next_pos + true_lengths[chunk_num], dtype=jnp.int32)
+          next_pos = next_pos + true_lengths[chunk_num]
+      
+      else:
+        # Compute new kv cache for the prefill_content.
+        prefill_result, first_token = prefill_engine.prefill(
           params=prefill_params,
           padded_tokens=padded_tokens,
           true_length=true_length,
-      )
+        )  
+      
       request.prefill_result = prefill_result
 
       # put first token to detokenize queue
