@@ -99,6 +99,8 @@ from jetstream.engine import aot_utils
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
 
+from jetstream.engine.engine_api import Engine
+
 root = logging.getLogger()
 root.setLevel(logging.WARNING)
 
@@ -240,8 +242,10 @@ class Driver:
       self,
       prefill_engines: Optional[list[engine_api.Engine]] = None,
       generate_engines: Optional[list[engine_api.Engine]] = None,
+      interleaved_engines: Optinal[list[tuple[engine_api.Engine, engine_api.Engine]]] = None,
       prefill_params: Optional[list[Any]] = None,
       generate_params: Optional[list[Any]] = None,
+      shared_params: Optional[list[Any]] = None,
       interleaved_mode: bool = False,
       jax_padding: bool = True,
       metrics_collector: JetstreamMetricsCollector | None = None,
@@ -251,28 +255,34 @@ class Driver:
       prefill_engines = []
     if generate_engines is None:
       generate_engines = []
+    if interleaved_engines is None:
+      interleaved_engines = []
     if prefill_params is None:
       prefill_params = []
     if generate_params is None:
       generate_params = []
+    if shared_params is None:
+      shared_params = []
 
     logging.warning(
         "Initialising driver with %d prefill engines and %d generate engines.",
         len(prefill_engines),
         len(generate_engines),
     )
-    self._prefill_engines = prefill_engines
-    self._generate_engines = generate_engines
     (
+      self._prefill_engines,
+      self._generate_engines,
+      self._prefill_executables,
+      self._generate_executables,
       self._prefill_params,
       self._generate_params,
-      self._prefill_executables,
-      self._generate_executables
     ) = aot_utils.layout_params_and_compile_executables(
       prefill_engines,
       generate_engines,
+      interleaved_engines,
       prefill_params,
       generate_params,
+      shared_params,
     )
     self._interleaved_mode = interleaved_mode
     self._metrics_collector = metrics_collector

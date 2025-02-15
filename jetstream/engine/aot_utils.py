@@ -82,15 +82,19 @@ def _iterated_layout(
 def layout_params_and_compile_executables(
     prefill_engines: Optional[list[engine_api.JetStreamEngine]] = None,
     generate_engines: Optional[list[engine_api.JetStreamEngine]] = None,
+    interleaved_engines: Optional[list[tuple[engine_api.JetStreamEngine, engine_api.JetStreamEngine]]] = None,
     prefill_params: Optional[list[engine_api.Params]] = None,
     generate_params: Optional[list[engine_api.Params]] = None,
+    shared_params: Optional[list[engine_api.Params]] = None,
     relayout_params_optimally: bool = True,
     relayout_decode_state_optimally: bool = True,
 ) -> tuple[
-  list[engine_api.Params],
-  list[engine_api.Params],
+  list[engine_api.JetStreamEngine],
+  list[engine_api.JetStreamEngine],
   list[PrefillExecutables],
   list[GenerateExecutables],
+  list[engine_api.Params],
+  list[engine_api.Params],
 ]:
   """Organizes the engines and executables.
 
@@ -102,11 +106,17 @@ def layout_params_and_compile_executables(
   """
   prefill_engines = prefill_engines if prefill_engines else []
   generate_engines = generate_engines if generate_engines else []
+  interleaved_engines = interleaved_engines if interleaved_engines else []
   prefill_params = prefill_params if prefill_params else []
   generate_params = generate_params if generate_params else []
+  shared_params = shared_params if shared_params else []
 
-  prefill_executables_list: list[PrefillExecutables] = []
-  generate_executables_list: list[GenerateExecutables] = []
+  out_prefill_engines = []
+  out_generate_engines = []
+  out_prefill_executables = []
+  out_generate_executables = []
+  out_prefill_params = []
+  out_generate_params = []
 
   any_prefill_engine = None
   any_prefill_params = None
@@ -118,10 +128,11 @@ def layout_params_and_compile_executables(
       prefill_idx=i,
       relayout_params_optimally=relayout_params_optimally,
     )
-    prefill_executables_list.append(prefill_executables)
-    prefill_params[i] = prefill_params_i
+    out_prefill_engines.append(pe)
+    out_prefill_executables.append(prefill_executables)
+    out_prefill_params.append(prefill_params_i)
     any_prefill_engine = pe
-    any_prefill_params = prefill_params[i]
+    any_prefill_params = prefill_params_i
 
   for i, ge in enumerate(generate_engines):
     (
@@ -136,14 +147,50 @@ def layout_params_and_compile_executables(
       relayout_params_optimally=relayout_params_optimally,
       relayout_decode_state_optimally=relayout_decode_state_optimally,
     )
-    generate_executables_list.append(generate_executables)
-    generate_params[i] = generate_params_i
+    out_generate_engines.append(ge)
+    out_generate_executables.append(generate_executables)
+    out_generate_params.append(generate_params_i)
+
+  # For interleaved engines, we lay out the params according to the generate
+  # engine.
+  for i, (pe, ge) in enumerate(interleaved_engines):
+    (
+      generate_executables,
+      generate_params_i
+    ) = _initialize_insert_generate_jit_cache(
+      prefill_engine=pe,
+      generate_engine=ge,
+      prefill_params=shared_params[i],
+      generate_params=shared_params[i],
+      generate_idx=i,
+      relayout_params_optimally=relayout_params_optimally,
+      relayout_decode_state_optimally=relayout_decode_state_optimally,
+    )
+    prefill_params_i = generate_params_i
+    (
+        prefill_executables,
+        _
+    ) = _initialize_prefill_jit_cache(
+      prefill_engine=pe,
+      prefill_params=prefill_params_i,
+      prefill_idx=i,
+      # No need to relayout for prefill params.
+      relayout_params_optimally=False
+    )
+    out_prefill_engines.append(pe)
+    out_prefill_executables.append(prefill_executables)
+    out_prefill_params.append(prefill_params_i)
+    out_generate_engines.append(ge)
+    out_generate_executables.append(generate_executables)
+    out_generate_params.append(generate_params_i)
 
   return (
-    prefill_params,
-    generate_params,
-    prefill_executables_list,
-    generate_executables_list,
+    out_prefill_engines,
+    out_generate_engines,
+    out_prefill_executables,
+    out_generate_executables,
+    out_prefill_params,
+    out_generate_params,
   )
 
 

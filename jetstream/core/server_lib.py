@@ -127,15 +127,20 @@ def create_driver(
       len(config.prefill_slices) + len(config.generate_slices) == 0
   )
 
-  prefill_engines = engines.prefill_engines + engines.interleaved_engines
-  generate_engines = engines.generate_engines + engines.interleaved_engines
-  prefill_params = prefill_params + shared_params
-  generate_params = generate_params + shared_params
+  prefill_engines = engines.prefill_engines
+  generate_engines = engines.generate_engines
+  interleaved_engines = engines.interleaved_engines
+  prefill_params = prefill_params
+  generate_params = generate_params
 
   if prefill_engines is None:
     prefill_engines = []
   if generate_engines is None:
     generate_engines = []
+  if interleaved_engines is None:
+    interleaved_engines = []
+  else:
+    interleaved_engines = [(ie, ie) for ie in interleaved_engines]
   if prefill_params is None:
     prefill_params = []
   if generate_params is None:
@@ -144,6 +149,12 @@ def create_driver(
   prefill_engines = [engine_api.JetStreamEngine(pe) for pe in prefill_engines]
   generate_engines = [
       engine_api.JetStreamEngine(ge) for ge in generate_engines
+  ]
+  interleaved_engines = [
+      (
+          engine_api.JetStreamEngine(pe),
+          engine_api.JetStreamEngine(ge)
+      ) for (pe, ge) in interleaved_engines
   ]
   # # TODO(wyzhang): re-enable below after introduce aot option
   # if enable_model_warmup:
@@ -163,9 +174,10 @@ def create_driver(
   return orchestrator.Driver(
       prefill_engines=prefill_engines,
       generate_engines=generate_engines,
+      interleaved_engines=interleaved_engines,
       prefill_params=prefill_params,
       generate_params=generate_params,
-      interleaved_mode=interleaved_mode,
+      shared_params=shared_params,
       jax_padding=jax_padding,
       metrics_collector=metrics_collector,
       is_ray_backend=config.is_ray_backend,
