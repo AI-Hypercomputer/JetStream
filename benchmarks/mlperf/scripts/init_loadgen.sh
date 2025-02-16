@@ -1,3 +1,7 @@
+set -e  # Exit script if any command fails
+set -u  # Exit if an unset variable is used
+set -o pipefail  # Fail if any command in a pipeline fails
+
 cd /inference_mlperf4.1/language/llama2-70b/tpu/scripts/
 export API_URL=0.0.0.0:9000
 

@@ -1,5 +1,9 @@
 #!/bin/bash
 
+set -e  # Exit script if any command fails
+set -u  # Exit if an unset variable is used
+set -o pipefail  # Fail if any command in a pipeline fails
+
 # Multi-Host vlp (TODO: replace these params for your own config)
 NAME="jwyang-tpu-sh2"
 # NAME="jwyang-v5p8-vm"

@@ -1,3 +1,7 @@
+set -e  # Exit script if any command fails
+set -u  # Exit if an unset variable is used
+set -o pipefail  # Fail if any command in a pipeline fails
+
 export DATA_DISK_DIR=/loadgen_run_data
 
 mkdir -p ${DATA_DISK_DIR}

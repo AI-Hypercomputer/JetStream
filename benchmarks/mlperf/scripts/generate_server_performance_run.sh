@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+set -e  # Exit script if any command fails
+set -u  # Exit if an unset variable is used
+set -o pipefail  # Fail if any command in a pipeline fails
+
 source run_utils.sh
 
 DATASET_NAME=$(get_dataset_name ${DATASET_TYPE?})

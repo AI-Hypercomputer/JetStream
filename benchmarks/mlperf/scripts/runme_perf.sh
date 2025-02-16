@@ -1,0 +1,1 @@
+bash generate_server_performance_run.sh

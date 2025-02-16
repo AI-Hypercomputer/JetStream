@@ -1,3 +1,7 @@
+set -e  # Exit script if any command fails
+set -u  # Exit if an unset variable is used
+set -o pipefail  # Fail if any command in a pipeline fails
+
 export base_output_dir=gs://${USER}-tpu/mlperf-4.1
 export experiment_time=$(date +%Y-%m-%d-%H-%M)
 

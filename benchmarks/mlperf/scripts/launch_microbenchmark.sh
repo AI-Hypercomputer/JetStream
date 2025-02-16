@@ -1,3 +1,7 @@
+set -e  # Exit script if any command fails
+set -u  # Exit if an unset variable is used
+set -o pipefail  # Fail if any command in a pipeline fails
+
 echo "config: ${config}"
 source ./${config}.sh
 export run_name=${model_name}_${tpu}_${attention}_ici_${ici_tensor_parallelism}-${ici_autoregressive_parallelism}_${reshape_q}_${quant_mode}_pbs${per_device_batch_size}_${compute_axis_order//,/}-${prefill_cache_axis_order//,/}-${ar_cache_axis_order//,/}

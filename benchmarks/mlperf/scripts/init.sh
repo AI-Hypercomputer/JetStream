@@ -1,3 +1,7 @@
+set -e  # Exit script if any command fails
+set -u  # Exit if an unset variable is used
+set -o pipefail  # Fail if any command in a pipeline fails
+
 git clone https://github.com/google/jax.git
 cd jax
 git reset 44359cb30ab5cdbe97e6b78c2c64fe9f8add29ca --hard

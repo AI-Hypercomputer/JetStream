@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+set -e  # Exit script if any command fails
+set -u  # Exit if an unset variable is used
+set -o pipefail  # Fail if any command in a pipeline fails
 
 # Tokenizer
 export TOKENIZER_PATH=meta-llama/Llama-2-70b-chat-hf
