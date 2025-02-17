@@ -26,14 +26,8 @@ from jax.experimental import layout as jax_layout
 from jetstream.engine import engine_api, token_utils
 
 # Configure logging
-log = logging.getLogger(__name__)  # Use __name__ for better module tracking
+log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(
-    logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-)
-log.addHandler(console_handler)
-
 
 DLL = jax_layout.DeviceLocalLayout
 Layout = jax_layout.Layout
@@ -265,17 +259,17 @@ def _initialize_prefill_jit_cache(
 
   log.info("---Prefill engine %d compilation began.---", prefill_idx)
   prefill_param_shapes = jax.tree.map(_to_shape_dtype, prefill_params)
-  padded_tokens = jnp.ones((prefill_engine.max_prefill_length), dtype=jnp.int32)
-  padded_tokens_shape = jax.ShapeDtypeStruct(
-      padded_tokens.shape, padded_tokens.dtype
-  )
-  length_shape = jax.ShapeDtypeStruct((), jnp.int32)
 
   def _compile_prefill(length) -> tuple[int, Executable]:
     if prefill_params_layouts_override:
       in_shardings = (prefill_params_layouts_override, None, None)
     else:
       in_shardings = (Layout(DLL.AUTO), None, None)
+    padded_tokens = jnp.ones((length), dtype=jnp.int32)
+    padded_tokens_shape = jax.ShapeDtypeStruct(
+        padded_tokens.shape, padded_tokens.dtype
+    )
+    length_shape = jax.ShapeDtypeStruct((), jnp.int32)
     prefill_executable = jax.jit(
         prefill_engine.prefill_aot,
         in_shardings=in_shardings,
@@ -436,7 +430,7 @@ def _initialize_insert_generate_jit_cache(
       generate_params: The associated parameters.
       generate_idx: Which generate engine it is.
   """
-
+  log.info("---Generate engine %d compilation began.---", generate_idx)
   decode_state_shapes = jax.eval_shape(generate_engine.init_decode_state)
   generate_param_shapes = jax.tree.map(_to_shape_dtype, generate_params)
   (

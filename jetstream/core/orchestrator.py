@@ -100,16 +100,9 @@ from jetstream.core.utils.return_sample import ReturnSample
 from jetstream.engine import aot_utils
 from jetstream.engine import engine_api, tokenizer_api, token_utils
 
-root = logging.getLogger()
-root.setLevel(logging.WARNING)
-
-handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(logging.WARNING)
-formatter = logging.Formatter(
-    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-handler.setFormatter(formatter)
-root.addHandler(handler)
+# Configure logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.WARNING)
 
 
 @dataclasses.dataclass
@@ -267,13 +260,14 @@ class Driver:
     if shared_params is None:
       shared_params = []
 
-    logging.info(
+    log.warning(
         "Initialising driver with %d prefill engines, %d generate engines, %d interleaved engines",
         len(prefill_engines),
         len(generate_engines),
         len(interleaved_engines),
     )
-    if aot_compilation:
+    self._aot_compilation = aot_compilation
+    if self._aot_compilation:
       (
           self._prefill_engines, self._generate_engines,
           self._prefill_executables, self._generate_executables,
@@ -526,7 +520,7 @@ class Driver:
     prefill_params = self._prefill_params[idx]
     metadata = prefill_engine.get_tokenizer()
     tokenizer = prefill_engine.build_tokenizer(metadata)
-    logging.info("---------Prefill params %d loaded.---------", idx)
+    log.info("---------Prefill params %d loaded.---------", idx)
 
     while self.live:
       my_transfer_backlog = self._transfer_backlogs[idx]
@@ -537,7 +531,7 @@ class Driver:
         break
       request.metadata.prefill_dequeue_time = time.perf_counter()
       is_bos = True
-      logging.info(
+      log.info(
           "Prefilling on prefill engine %d : prefill queue size, %d,"
           " is_bos: %s",
           idx,
@@ -551,12 +545,18 @@ class Driver:
       request.prefill_padded_length = padded_tokens.shape[-1]
 
       # Compute new kv cache for the prefill_content.
-      prefill_executable = self._prefill_executables[idx][request.prefill_padded_length]
-      prefill_result, first_token = prefill_executable(
-          params=prefill_params,
+      if self._aot_compilation:
+        prefill_executable = self._prefill_executables[idx][request.prefill_padded_length]
+        # prefill_executable takes positional args rather than kwargs
+        prefill_result, first_token = prefill_executable(
+            prefill_params, padded_tokens, true_length,
+        )
+      else:
+        prefill_result, first_token = prefill_engine.prefill(
+          prefill_params=prefill_params,
           padded_tokens=padded_tokens,
-          true_length=true_length,
-      )
+          true_length=true_length
+        )
       request.prefill_result = prefill_result
 
       # put first token to detokenize queue
@@ -571,7 +571,7 @@ class Driver:
       # Once prefill is complete, place it on the generation queue and block if
       # full.
       my_transfer_backlog.put(request, block=True)
-      logging.info(
+      log.info(
           "Placed request on transfer queue %d, %d queued requests.",
           idx,
           my_transfer_backlog.qsize(),
@@ -631,7 +631,7 @@ class Driver:
       # Only transfer the KVCache for the disaggregated serving.
       # TODO: Remove the conditional after fixing the compatibility.
       if not self._interleaved_mode:
-        logging.info(
+        log.info(
             "Transferring prefill from prefill engine %d "
             "to generate engine %d.",
             idx,
@@ -642,7 +642,7 @@ class Driver:
       # Place the request on the correct generate backlog and block if full.
       new_request.metadata.generate_enqueue_time = time.perf_counter()
       self._generate_backlogs[target_idx].put(new_request, block=True)
-      logging.info(
+      log.info(
           "Successfully transferred prefill "
           "from prefill engine %d to generate engine %d "
           "(%d requests now in backlog).",
@@ -653,7 +653,7 @@ class Driver:
 
   def _generate_thread(self, idx: int):
     """Step token generation and insert prefills from backlog."""
-    logging.info("---------Spinning up generate thread %d.---------", idx)
+    log.info("---------Spinning up generate thread %d.---------", idx)
     generate_engine = self._generate_engines[idx]
     my_slots = self._generate_slots[idx]
     my_generate_backlog = self._generate_backlogs[idx]
@@ -663,7 +663,7 @@ class Driver:
     generate_timestep = 0
 
     generate_params = self._generate_params[idx]
-    logging.info("---------Generate params %d loaded.---------", idx)
+    log.info("---------Generate params %d loaded.---------", idx)
     time_of_last_generate = time.time()
     time_of_last_print = time.time()
 
@@ -674,7 +674,7 @@ class Driver:
 
     while self.live:
       if (time.time() - time_of_last_print) > 1:
-        logging.info(
+        log.info(
             "Generate thread making a decision with:"
             " prefill_backlog=%d"
             " generate_free_slots=%d",
@@ -751,7 +751,7 @@ class Driver:
         if new_request is None:
           return
 
-        logging.info(
+        log.info(
             "Generate slice %d filling slot %d at step %d.",
             idx,
             slot,
@@ -784,7 +784,7 @@ class Driver:
       # Respond to detokenization backpressure.
       my_detokenize_backlog.put((generate_timestep, sampled_tokens), block=True)
       generate_timestep += 1
-      logging.info(
+      log.info(
           "Generate engine %d step %d - slots free : %d / %d, took %.2fms",
           idx,
           generate_timestep,
@@ -835,7 +835,7 @@ class Driver:
           self._metrics_collector.get_time_to_first_token().observe(
               first_token_return_time - request.metadata.prefill_dequeue_time
           )
-        logging.info(
+        log.info(
             "TTFT duration: %fms",
             (first_token_return_time - request.metadata.prefill_dequeue_time)
             * 1000,
@@ -901,7 +901,7 @@ class Driver:
               my_live_requests[slot] = None
               my_slots.put(slot, block=False)  # This should always have space.
               my_generate_engine.free_resource(slot)
-        logging.info(
+        log.info(
             "Detokenizing generate step %d took %.2fms",
             generate_timestep_added,
             (time.time() - start_detokenize_time) * (10 ** 3),
@@ -1000,7 +1000,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     request_start_time = time.perf_counter()
     ttft = 0
     if context is None:
-      logging.warning(
+      log.warning(
           "LLM orchestrator is being used in offline test mode, and will not"
           " respond to gRPC queries - only direct function calls."
       )
@@ -1036,7 +1036,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
               " handled. You may retry this request."
           ),
       )
-    logging.info(
+    log.info(
         "Placed request on the prefill queue.",
     )
     # When an active request is created a queue is instantiated. New tokens
@@ -1053,7 +1053,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
       if ttft == 0:
         ttft = time.perf_counter() - request_start_time
         if ttft > 2.0:
-          logging.info(
+          log.info(
               datetime.now(),
               f"Slow TTFT: {ttft:.2f}s,"
               f" stats={active_request.metadata.stats()},"
@@ -1085,7 +1085,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
   ) -> jetstream_pb2.HealthCheckResponse:
     """HealthCheck."""
     if context is None:
-      logging.warning(
+      log.warning(
           "LLM orchestrator is being used in offline test mode, and will not"
           " respond to gRPC queries - only direct function calls."
       )
