@@ -258,7 +258,7 @@ def _initialize_prefill_jit_cache(
   # Get a list of prefill buckets
   prefill_buckets = _get_prefill_buckets(prefill_engine)
 
-  log.info("---Prefill engine %d compilation began.---", prefill_idx)
+  log.info("Prefill engine %d compilation began.", prefill_idx)
   prefill_param_shapes = jax.tree.map(_to_shape_dtype, prefill_params)
 
   def _compile_prefill(length) -> tuple[int, Executable]:
@@ -279,7 +279,7 @@ def _initialize_prefill_jit_cache(
         prefill_param_shapes, padded_tokens_shape, length_shape
     ).compile(compiler_options=None)  # TODO(wyzhang): pass in xla flag
     log.info(
-        "---Prefill engine %d compiled for prefill length %d.---",
+        "Prefill engine %d compiled for prefill length %d.",
         prefill_idx, length,
     )
     return (length, prefill_executable)
@@ -289,7 +289,7 @@ def _initialize_prefill_jit_cache(
   ) as executor:
     executables = dict(executor.map(_compile_prefill, prefill_buckets))
     prefill_engine.aot = True
-  log.info("---Prefill engine %d compilation completed.---", prefill_idx)
+  log.info("Prefill engine %d compilation completed.", prefill_idx)
 
   # Relayout params if needed.
   if relayout_params_optimally:
@@ -343,7 +343,7 @@ def _compile_generate_and_get_layouts(
   arg_layouts, _ = executable.input_layouts
   generated_out_layouts, _ = executable.output_layouts
   log.info(
-      "---Generate engine %d compiled for generate.---",
+      "Generate engine %d compiled for generate.",
       generate_idx,
   )
   return (executable, arg_layouts[0], arg_layouts[1], generated_out_layouts)
@@ -431,7 +431,7 @@ def _initialize_insert_generate_jit_cache(
       generate_params: The associated parameters.
       generate_idx: Which generate engine it is.
   """
-  log.info("---Generate engine %d compilation began.---", generate_idx)
+  log.info("Generate engine %d compilation began.", generate_idx)
   decode_state_shapes = jax.eval_shape(generate_engine.init_decode_state)
   generate_param_shapes = jax.tree.map(_to_shape_dtype, generate_params)
   (
@@ -462,31 +462,32 @@ def _initialize_insert_generate_jit_cache(
       return prefix
 
     prefix_shape = jax.eval_shape(_prefill)
-    print(f'-----wyzhangd: prefix_shape-----{prefix_shape}')
-    prefix_dest_sharding = _get_transferred_prefix_destination_sharding(
-        prefill_engine=prefill_engine,
-        generate_engine=generate_engine,
-    )
-    print(f'-----wyzhangd: prefix_dest_sharding-----{prefix_dest_sharding}')
-    def process_elm(x, sharding):
-      if isinstance(x, flax.linen.spmd.LogicallyPartitioned):
-        return jax.ShapeDtypeStruct(  # pylint: disable=g-long-lambda
-            x.value.shape, x.value.dtype, sharding=sharding,
-        )
-      elif isinstance(x, jax.ShapeDtypeStruct):
-        return jax.ShapeDtypeStruct(
-          x.shape, x.dtype, sharding=sharding,
-        )
-      else:
-        raise ValueError(f"Unexpected type {type(x)}")
+    # TODO(wyzhang): Do we need the following?
+    # print(f'-----wyzhangd: prefix_shape-----{prefix_shape}')
+    # prefix_dest_sharding = _get_transferred_prefix_destination_sharding(
+    #     prefill_engine=prefill_engine,
+    #     generate_engine=generate_engine,
+    # )
+    # print(f'-----wyzhangd: prefix_dest_sharding-----{prefix_dest_sharding}')
+    # def process_elm(x, sharding):
+    #   if isinstance(x, flax.linen.spmd.LogicallyPartitioned):
+    #     return jax.ShapeDtypeStruct(  # pylint: disable=g-long-lambda
+    #         x.value.shape, x.value.dtype, sharding=sharding,
+    #     )
+    #   elif isinstance(x, jax.ShapeDtypeStruct):
+    #     return jax.ShapeDtypeStruct(
+    #       x.shape, x.dtype, sharding=sharding,
+    #     )
+    #   else:
+    #     raise ValueError(f"Unexpected type {type(x)}")
         
-    prefix_shape = jax.tree.map(
-      process_elm,
-      prefix_shape,
-      prefix_dest_sharding,
-      is_leaf=lambda x : isinstance(x, (flax.linen.spmd.LogicallyPartitioned, jax.ShapeDtypeStruct)),
-    )
-    print(f'----wyzhang: prefix_shape final-----{prefix_shape}')
+    # prefix_shape = jax.tree.map(
+    #   process_elm,
+    #   prefix_shape,
+    #   prefix_dest_sharding,
+    #   is_leaf=lambda x : isinstance(x, (flax.linen.spmd.LogicallyPartitioned, jax.ShapeDtypeStruct)),
+    # )
+    # print(f'----wyzhang: prefix_shape final-----{prefix_shape}')
     slot_shape = jax.ShapeDtypeStruct((), jnp.int32)
     # TODO(wyzhang): Pass XLA flag
     insert_executable = jax.jit(
@@ -498,7 +499,7 @@ def _initialize_insert_generate_jit_cache(
         prefix_shape, decode_state_shapes, slot_shape
     ).compile(compiler_options=None)
     log.info(
-        "---Generate engine %d compiled for insert length %d.---",
+        "Generate engine %d compiled for insert length %d.",
         generate_idx,
         length,
     )
@@ -520,7 +521,7 @@ def _initialize_insert_generate_jit_cache(
     ).lower(
     ).compile(compiler_options=None)
     log.info(
-        "---Generate engine %d compiled for init decode state.---",
+        "Generate engine %d compiled for init decode state.",
         generate_idx,
     )
     return decode_state_executable

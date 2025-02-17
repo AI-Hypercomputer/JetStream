@@ -102,13 +102,9 @@ from jetstream.engine import warmup_utils, engine_api, aot_utils
 root = logging.getLogger()
 root.setLevel(logging.WARNING)
 
-handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(logging.WARNING)
-formatter = logging.Formatter(
-    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-handler.setFormatter(formatter)
-root.addHandler(handler)
+# Configure logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 
 @dataclasses.dataclass
@@ -269,6 +265,12 @@ class Driver:
         len(prefill_engines),
         len(generate_engines),
     )
+    log.info(
+      f"Initializing driver with {len(prefill_engines)} prefill engines and "
+      f"{len(generate_engines)} generate engines with "
+      f"interleaved_mode={interleaved_mode}"
+    )
+    
     self._prefill_engines = prefill_engines
     self._generate_engines = generate_engines
     self._prefill_executables = prefill_executables
