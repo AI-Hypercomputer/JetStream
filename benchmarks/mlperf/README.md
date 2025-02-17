@@ -2,29 +2,32 @@
 ## Create TPU VM.
 Follow these [instructions](https://cloud.google.com/tpu/docs/v5e-inference#tpu-vm) to create TPU v5e-8 VM and ssh into the VM
 
+## Install python and create an virtual environment
+```
+sudo apt-get install python3-dev python3-venv -y
+sudo apt-get install build-essential -y
+python -m venv ~/venv/jetstream
+source ~/venv/jetstream/bin/activate
+```
+
 ## Install JAX on Cloud TPU VM
 ```
 pip install jax[tpu] -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
 ```
-Verify that JAX can access the TPU and can run basic operations:
 
-Start the Python 3 interpreter:
+Verify that JAX can access the TPU and can run basic operations:
 ```
-$ python3
+$ python
 >>> import jax
 >>> jax.device_count()
 ```
 
-## Clone repo
+##  Download MLPerf Inference Benchmark Suite and install loadgen
 ```
+cd ~
 git clone https://github.com/mlcommons/inference.git
-```
-
-## Install loadgen
-```
-apt-get install python3-dev
-apt-get install build-essential -y
-cd loadgen/ && pip install .
+pushd inference/loadgen
+pip install . 
 ```
 
 ## Install eval dependencies
@@ -39,26 +42,19 @@ sentencepiece==0.1.99 \
 accelerate==0.21.0
 ```
 
-## Download data file
+## Download llama2-70B data file
 ```
-cd /
-export DATA_DISK_DIR=/home/$USER/loadgen_run_data
+export DATA_DISK_DIR=~/loadgen_run_data
 mkdir -p ${DATA_DISK_DIR}
-cd ${DATA_DISK_DIR}
-gsutil cp gs://cloud-tpu-inference-public/mlcommons/inference/language/llama2-70b/data/processed-openorca/open_orca_gpt4_tokenized_llama.calibration_1000.pkl .
-mv open_orca_gpt4_tokenized_llama.calibration_1000.pkl processed-calibration-data.pkl
-
-gsutil cp gs://cloud-tpu-inference-public/mlcommons/inference/language/llama2-70b/data/processed-openorca/open_orca_gpt4_tokenized_llama.sampled_24576.pkl .
-mv open_orca_gpt4_tokenized_llama.sampled_24576.pkl processed-data.pkl
+gsutil cp gs://cloud-tpu-inference-public/mlcommons/inference/language/llama2-70b/data/processed-openorca/open_orca_gpt4_tokenized_llama.calibration_1000.pkl ${DATA_DISK_DIR}/processed-calibration-data.pkl
+gsutil cp gs://cloud-tpu-inference-public/mlcommons/inference/language/llama2-70b/data/processed-openorca/open_orca_gpt4_tokenized_llama.sampled_24576.pkl ${DATA_DISK_DIR}/processed-data.pkl
 ```
 
-## Install Maxtext and Jetstream
+## Download Maxtext and Jetstream
 ```
-cd /
+cd ~
 git clone git@github.com:AI-Hypercomputer/maxtext.git
-cd /
 git clone git@github.com:AI-Hypercomputer/JetStream.git
-cd /
 ```
 
 ## Checkpoint generation
@@ -96,26 +92,30 @@ Your checkpoint is generated at `$SAVE_QUANT_PARAMS_PATH`. This is used to set `
 huggingface-cli login
 ```
 
-## Loadgen settings
-```
-cd /home/$USER/Jetstream/benchmarks/mlperf/scripts
-export API_URL=0.0.0.0:9000
-export DATA_DISK_DIR=/home/$USER/loadgen_run_data
-export DATASET_TYPE=full # for calibration run, DATASET_TYPE=calibration
-
-export MODEL_NAME=llama70b
-export TOTAL_SAMPLE_COUNT=24576 # for calibration run, TOTAL_SAMPLE_COUNT=1000
-export LOG_INTERVAL=1000
-export BATCH_SIZE_EXP=8
-export USER_CONFIG=user.conf
-```
-
 ## Start Jetstream server
-
 Start Jetstream server in a terminal.
 ```
 cd ~/maxtext
-python MaxText/maxengine_server.py MaxText/configs/base.yml tokenizer_path=assets/tokenizer.llama2 load_parameters_path="gs://msingh-bkt/checkpoints/quant_llama2-70b-chat/mlperf_070924/int8_" max_prefill_predict_length=1024   max_target_length=2048 model_name=llama2-70b ici_fsdp_parallelism=1   ici_autoregressive_parallelism=1 ici_tensor_parallelism=-1  scan_layers=false weight_dtype=bfloat16 checkpoint_is_quantized=True quantization=int8 quantize_kvcache=True compute_axis_order=0,2,1,3 ar_cache_axis_order=0,2,1,3 enable_jax_profiler=True per_device_batch_size=60 optimize_mesh_for_tpu_v6e=True
+python MaxText/maxengine_server.py \
+  MaxText/configs/base.yml \
+  tokenizer_path=assets/tokenizer.llama2 \
+  load_parameters_path="gs://msingh-bkt/checkpoints/quant_llama2-70b-chat/mlperf_070924/int8_" \
+  max_prefill_predict_length=1024 \
+  max_target_length=2048 \
+  model_name=llama2-70b \
+  ici_fsdp_parallelism=1 \
+  ici_autoregressive_parallelism=1 \
+  ici_tensor_parallelism=-1 \
+  scan_layers=false \
+  weight_dtype=bfloat16 \
+  checkpoint_is_quantized=True \
+  quantization=int8 \
+  quantize_kvcache=True \
+  compute_axis_order=0,2,1,3 \
+  ar_cache_axis_order=0,2,1,3 \
+  enable_jax_profiler=True \
+  per_device_batch_size=50 \
+  optimize_mesh_for_tpu_v6e=True
 ```
 
 Wait until you see these server logs to indicate server is ready to process requests:
@@ -143,7 +143,7 @@ GC tweaked (allocs, gen1, gen2):  60000 20 30
 
 ## Run server performance
 ```
-cd /home/$USER/Jetstream/benchmarks/mlperf/scripts
+cd ~/JetStream/benchmarks/mlperf/scripts
 bash ./generate_server_performance_run.sh
 ```
 
