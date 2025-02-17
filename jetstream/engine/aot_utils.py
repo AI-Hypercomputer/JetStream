@@ -1,4 +1,4 @@
-# Copyright 2024 Google LLC
+# Copyright 2025 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 import numpy as np
 import concurrent.futures
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -34,16 +34,94 @@ Executable = jax.stages.Compiled
 PrefillExecutables = dict[int, Executable]
 
 GenerateExecutables = tuple[
-  # Decode state init executable.
-  Executable,
+    # Decode state init executable.
+    Executable,
     # Insert executable
-  dict[int, Executable],
+    dict[int, Executable],
     # Generate step executable.
-  Executable,
+    Executable,
 ]
 
 
+def create_aot_engines(
+    prefill_engines: Optional[list[engine_api.JetStreamEngine]] = None,
+    generate_engines: Optional[list[engine_api.JetStreamEngine]] = None,
+    prefill_params: Optional[list[engine_api.Params]] = None,
+    generate_params: Optional[list[engine_api.Params]] = None,
+    relayout_optimally: bool = True,
+) -> tuple[
+    list[engine_api.Params],
+    list[engine_api.Params],
+    list[engine_api.JetStreamEngine],
+    list[engine_api.JetStreamEngine],
+]:
+  (
+      prefill_params,
+      generate_params,
+      prefill_executables,
+      generate_executables,
+  ) = layout_params_and_compile_executables(
+      prefill_engines,
+      generate_engines,
+      prefill_params,
+      generate_params,
+      relayout_optimally,
+  )
+
+  assert len(prefill_executables) == len(prefill_engines)
+  assert len(generate_executables) == len(generate_engines)
+  aot_engines = [
+      AotGenerateEngine(generate_engine, generate_executable)
+      for generate_engine, generate_executable in zip(
+          generate_engines, generate_executables
+      )
+  ]
+  return (
+      prefill_params,
+      generate_params,
+      prefill_engines if prefill_engines else [],
+      aot_engines,
+  )
+
+
+class AotGenerateEngine(engine_api.JetStreamEngine):
+  """A wrapper to JetStreamEngine
+  This provides generate engine optimized based on auto layout.
+  """
+
+  def __init__(
+      self,
+      engine: engine_api.JetStreamEngine,
+      generate_executables: GenerateExecutables,
+  ):
+    super().__init__(engine)
+    self._generate_executables = generate_executables
+
+  def insert(
+      self,
+      prefix: engine_api.Prefix,
+      decode_state: engine_api.DecodeState,
+      slot: int,
+      prefill_length: Optional[int] = None,
+  ) -> engine_api.DecodeState:
+
+    return self._generate_executables[1][prefill_length](
+        prefix,
+        decode_state,
+        slot,
+    )
+
+  def generate(
+      self, params: engine_api.Params, decode_state: engine_api.DecodeState
+  ) -> Tuple[engine_api.DecodeState, engine_api.ResultTokens]:
+    return self._generate_executables[2](params, decode_state)
+
+  def init_decode_state(self, *args, **kwargs) -> engine_api.DecodeState:
+    return self._generate_executables[0](*args, **kwargs)
+
+
 # class GenerateExecutable:
+
 
 # TODO: Refactor to re-use the function in maxtext
 def _identity(x: Any) -> Any:
@@ -63,9 +141,9 @@ def _iterated_layout(
     # Somehow this can be None sometimes.
     dll = l.device_local_layout if isinstance(l, Layout) else l
     f = (
-      jax.jit(_identity, out_shardings=Layout(dll, s))
-      .lower(x)
-      .compile(compiler_options=xla_flags)
+        jax.jit(_identity, out_shardings=Layout(dll, s))
+        .lower(x)
+        .compile(compiler_options=xla_flags)
     )
     y = f(x)
     # Achieves donation of the input argument, but allows for different memory
@@ -84,13 +162,12 @@ def layout_params_and_compile_executables(
     generate_engines: Optional[list[engine_api.JetStreamEngine]] = None,
     prefill_params: Optional[list[engine_api.Params]] = None,
     generate_params: Optional[list[engine_api.Params]] = None,
-    relayout_params_optimally: bool = True,
-    relayout_decode_state_optimally: bool = True,
+    relayout_optimally: bool = True,
 ) -> tuple[
-  list[engine_api.Params],
-  list[engine_api.Params],
-  list[PrefillExecutables],
-  list[GenerateExecutables],
+    list[engine_api.Params],
+    list[engine_api.Params],
+    list[PrefillExecutables],
+    list[GenerateExecutables],
 ]:
   """Organizes the engines and executables.
 
@@ -113,44 +190,42 @@ def layout_params_and_compile_executables(
 
   for i, pe in enumerate(prefill_engines):
     prefill_executables, prefill_params[i] = _initialize_prefill_jit_cache(
-      prefill_engine=pe,
-      prefill_params=prefill_params[i],
-      prefill_idx=i,
-      relayout_params_optimally=relayout_params_optimally,
+        prefill_engine=pe,
+        prefill_params=prefill_params[i],
+        prefill_idx=i,
+        relayout_params_optimally=relayout_optimally,
     )
     any_prefill_engine = pe
     any_prefill_params = prefill_params[i]
     prefill_executables_list.append(prefill_executables)
 
   for i, ge in enumerate(generate_engines):
-    (
-      generate_executables,
-      generate_params[i]
-    ) = _initialize_insert_generate_jit_cache(
-      prefill_engine=any_prefill_engine,
-      generate_engine=ge,
-      prefill_params=any_prefill_params,
-      generate_params=generate_params[i],
-      generate_idx=i,
-      relayout_params_optimally=relayout_params_optimally,
-      relayout_decode_state_optimally=relayout_decode_state_optimally,
+    (generate_executables, generate_params[i]) = (
+        _initialize_insert_generate_jit_cache(
+            prefill_engine=any_prefill_engine,
+            generate_engine=ge,
+            prefill_params=any_prefill_params,
+            generate_params=generate_params[i],
+            generate_idx=i,
+            relayout_optimally=relayout_optimally,
+        )
     )
     generate_executables_list.append(generate_executables)
 
   return (
-    prefill_params,
-    generate_params,
-    prefill_executables_list,
-    generate_executables_list,
+      prefill_params,
+      generate_params,
+      prefill_executables_list,
+      generate_executables_list,
   )
 
 
 def _get_prefill_buckets(prefill_engine: engine_api.JetStreamEngine):
   """Returns the list of prefill buckets including the max prefill length"""
   prefill_buckets = [
-    bucket
-    for bucket in token_utils.DEFAULT_PREFILL_BUCKETS
-    if bucket <= prefill_engine.max_prefill_length
+      bucket
+      for bucket in token_utils.DEFAULT_PREFILL_BUCKETS
+      if bucket <= prefill_engine.max_prefill_length
   ]
   prefill_engine.prefill_buckets = prefill_buckets
   if prefill_engine.max_prefill_length not in prefill_buckets:
@@ -162,7 +237,7 @@ def _get_prefill_buckets(prefill_engine: engine_api.JetStreamEngine):
 def _to_shape_dtype(
     t: Any, sharding: None | Any = None
 ) -> jax.ShapeDtypeStruct:
-  if hasattr(t, 'sharding'):
+  if hasattr(t, "sharding"):
     return jax.ShapeDtypeStruct(t.shape, t.dtype, sharding=t.sharding)
   else:
     return jax.ShapeDtypeStruct(t.shape, t.dtype, sharding=sharding)
@@ -196,21 +271,24 @@ def _initialize_prefill_jit_cache(
   prefill_param_shapes = jax.tree.map(_to_shape_dtype, prefill_params)
   padded_tokens = jnp.ones((prefill_engine.max_prefill_length), dtype=jnp.int32)
   padded_tokens_shape = jax.ShapeDtypeStruct(
-    padded_tokens.shape, padded_tokens.dtype
+      padded_tokens.shape, padded_tokens.dtype
   )
   length_shape = jax.ShapeDtypeStruct((), jnp.int32)
 
   # TODO(wyzhang): Consider if this can be merged into maxtext
   def _compile_prefill(length) -> tuple[int, Executable]:
-    prefill_executable = jax.jit(
-      prefill_engine.prefill_aot,
-      in_shardings=(Layout(DLL.AUTO), None, None)
-    ).lower(
-      prefill_param_shapes, padded_tokens_shape, length_shape
-    ).compile(compiler_options=None)  # TODO(wyzhang): pass in xla flag
+    prefill_executable = (
+        jax.jit(
+            prefill_engine.prefill_aot,
+            in_shardings=(Layout(DLL.AUTO), None, None),
+        )
+        .lower(prefill_param_shapes, padded_tokens_shape, length_shape)
+        .compile(compiler_options=None)
+    )  # TODO(wyzhang): pass in xla flag
     logging.info(
-      "---Prefill engine %d compiled for prefill length %d.---",
-      prefill_idx, length,
+        "---Prefill engine %d compiled for prefill length %d.---",
+        prefill_idx,
+        length,
     )
     return (length, prefill_executable)
 
@@ -235,27 +313,26 @@ def _compile_generate_and_get_layouts(
     generate_params: engine_api.Params,
     generate_idx: int,
     decode_state: Optional[Any] = None,
-    relayout_params_optimally: bool = False,
-    relayout_decode_state_optimally: bool = False,
+    relayout_optimally: bool = False,
 ) -> tuple[Executable, Layout, Layout, Layout]:
-  param_layout = Layout(DLL.AUTO if relayout_params_optimally else None)
-  decode_state_layout = Layout(
-    DLL.AUTO if relayout_decode_state_optimally else None
-  )
+  param_layout = Layout(DLL.AUTO if relayout_optimally else None)
+  decode_state_layout = Layout(DLL.AUTO if relayout_optimally else None)
   # TODO(wyzhang): Pass XLA flags
-  executable = jax.jit(
-    generate_engine.generate_aot,
-    in_shardings=(param_layout, decode_state_layout),
-    out_shardings=(Layout(DLL.AUTO), Layout(DLL.AUTO)),
-    donate_argnums=(1,),
-  ).lower(
-    generate_params, decode_state
-  ).compile(compiler_options=None)
+  executable = (
+      jax.jit(
+          generate_engine.generate_aot,
+          in_shardings=(param_layout, decode_state_layout),
+          out_shardings=(param_layout, decode_state_layout),
+          donate_argnums=(1,),
+      )
+      .lower(generate_params, decode_state)
+      .compile(compiler_options=None)
+  )
   arg_layouts, _ = executable.input_layouts
   generated_out_layouts, _ = executable.output_layouts
   logging.info(
-    "---Generate engine %d compiled for generate.---",
-    generate_idx,
+      "---Generate engine %d compiled for generate.---",
+      generate_idx,
   )
   return (executable, arg_layouts[0], arg_layouts[1], generated_out_layouts)
 
@@ -299,29 +376,6 @@ def replace_devices_in_sharding(
 
   return jax.tree_util.tree_map(replace_sharding_devices, sharding)
 
-def _get_transferred_prefix_destination_sharding(
-    prefill_engine: engine_api.Engine,
-    generate_engine: engine_api.Engine,
-) -> Any:
-  """Returns the sharding of the prefix destination upon transfer."""
-
-  if prefill_engine.mesh.devices.size == generate_engine.mesh.devices.size:
-    shardings = prefill_engine.get_prefix_destination_sharding()
-    print(f'shardings\n {shardings}')
-    return replace_devices_in_sharding(
-        shardings,
-        generate_engine.mesh.devices,
-    )
-  # TODO(b/345685171): Remove this warning once transfer with different number
-  # of devices has a verified fast path.
-  logging.error(
-      'Prefill and generate engines have different number of devices. '
-      'Resharding will be extremely slow. Please use the same number of '
-      'devices for prefill and generate engines unless you are sure about what '
-      'you are doing.'
-  )
-  return generate_engine.get_prefix_destination_sharding()
-
 
 def _initialize_insert_generate_jit_cache(
     *,
@@ -330,8 +384,7 @@ def _initialize_insert_generate_jit_cache(
     prefill_params: Any,
     generate_params: Any,
     generate_idx: int,
-    relayout_params_optimally: bool = False,
-    relayout_decode_state_optimally: bool = False,
+    relayout_optimally: bool = False,
 ) -> tuple[GenerateExecutables, engine_api.Params]:
   """Initialiszes jit cache for insert and generate.
 
@@ -344,19 +397,18 @@ def _initialize_insert_generate_jit_cache(
   decode_state_shapes = jax.eval_shape(generate_engine.init_decode_state)
   generate_param_shapes = jax.tree.map(_to_shape_dtype, generate_params)
   (
-    generate_executable,
-    param_layouts,
-    decode_state_layouts,
-    generated_out_layouts,
+      generate_executable,
+      param_layouts,
+      decode_state_layouts,
+      generated_out_layouts,
   ) = _compile_generate_and_get_layouts(
-    generate_engine,
-    generate_param_shapes,
-    generate_idx,
-    decode_state_shapes,
-    relayout_params_optimally,
-    relayout_decode_state_optimally,
+      generate_engine,
+      generate_param_shapes,
+      generate_idx,
+      decode_state_shapes,
+      relayout_optimally,
   )
-  if relayout_params_optimally:
+  if relayout_optimally:
     input_args, _ = generate_executable.input_layouts
     generate_param_layouts = input_args[0]
     generate_params = _iterated_layout(generate_params, generate_param_layouts)
@@ -365,42 +417,31 @@ def _initialize_insert_generate_jit_cache(
   def _compile_insert(length) -> tuple[int, Executable]:
     def _prefill():
       prefix, _ = prefill_engine._downstream_engine.prefill(
-        # pylint: disable=protected-access
-        params=prefill_params,
-        padded_tokens=jnp.ones((length), dtype=jnp.int32),
-        true_length=length,
+          # pylint: disable=protected-access
+          params=prefill_params,
+          padded_tokens=jnp.ones((length), dtype=jnp.int32),
+          true_length=length,
       )
       return prefix
+
     prefix_shape = jax.eval_shape(_prefill)
-    print(f'prefix_shape {prefix_shape}')
-    # prefix_dest_sharding = _get_transferred_prefix_destination_sharding(
-    #     prefill_engine=prefill_engine,
-    #     generate_engine=generate_engine,
-    # )
-    # print(f'get transfer prefix dest sharding {prefix_dest_sharding}')
-    # prefix_shape = jax.tree.map(
-    #     lambda x, sharding: None if x is None else jax.ShapeDtypeStruct(  # pylint: disable=g-long-lambda
-    #         x.shape, x.dtype, sharding=sharding,
-    #     ),
-    #     prefix_shape,
-    #     prefix_dest_sharding,
-    #     is_leaf=lambda x: x is None,
-    # )
-    # print(f'prefix_shape post {prefix_shape}')
+    print(f"prefix_shape {prefix_shape}")
     slot_shape = jax.ShapeDtypeStruct((), jnp.int32)
     # TODO(wyzhang): Pass XLA flag
-    insert_executable = jax.jit(
-      generate_engine.insert,
-      in_shardings=(None, decode_state_layouts, None),
-      out_shardings=decode_state_layouts,
-      donate_argnums=(1,),
-    ).lower(
-      prefix_shape, decode_state_shapes, slot_shape
-    ).compile(compiler_options=None)
+    insert_executable = (
+        jax.jit(
+            generate_engine.insert,
+            in_shardings=(None, decode_state_layouts, None),
+            out_shardings=decode_state_layouts,
+            donate_argnums=(1,),
+        )
+        .lower(prefix_shape, decode_state_shapes, slot_shape)
+        .compile(compiler_options=None)
+    )
     logging.info(
-      "---Generate engine %d compiled for insert length %d.---",
-      generate_idx,
-      length,
+        "---Generate engine %d compiled for insert length %d.---",
+        generate_idx,
+        length,
     )
     return (length, insert_executable)
 
@@ -413,15 +454,18 @@ def _initialize_insert_generate_jit_cache(
   # Compile init decode state
   def _compile_init_decode_state():
     # TODO(wyzhang): Pass in XLA flag
-    decode_state_executable = jax.jit(
-      generate_engine.init_decode_state,
-      in_shardings=(None),
-      out_shardings=(decode_state_layouts),
-    ).lower(
-    ).compile(compiler_options=None)
+    decode_state_executable = (
+        jax.jit(
+            generate_engine.init_decode_state,
+            in_shardings=(None),
+            out_shardings=(decode_state_layouts),
+        )
+        .lower()
+        .compile(compiler_options=None)
+    )
     logging.info(
-      "---Generate engine %d compiled for init decode state.---",
-      generate_idx,
+        "---Generate engine %d compiled for init decode state.---",
+        generate_idx,
     )
     return decode_state_executable
 
@@ -429,6 +473,6 @@ def _initialize_insert_generate_jit_cache(
 
   generate_engine.aot = True
   return (
-    (init_decode_state_executable, insert_executables, generate_executable),
-    generate_params,
+      (init_decode_state_executable, insert_executables, generate_executable),
+      generate_params,
   )

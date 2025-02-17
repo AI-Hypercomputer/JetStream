@@ -35,7 +35,7 @@ from jetstream.core import config_lib
 from jetstream.core import orchestrator
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 from jetstream.core.proto import jetstream_pb2_grpc
-from jetstream.engine import warmup_utils, engine_api
+from jetstream.engine import aot_utils, warmup_utils, engine_api
 
 from prometheus_client import start_http_server
 
@@ -100,6 +100,7 @@ def create_driver(
     jax_padding: bool = True,
     metrics_collector: JetstreamMetricsCollector | None = None,
     enable_model_warmup: bool = False,
+    enable_auto_layout: bool = False,
 ):
   """Creates a driver with a specified config.
 
@@ -108,7 +109,8 @@ def create_driver(
     devices: Device objects, will be used to get engine with proper slicing.
     jax_padding: The flag to enable JAX padding during tokenization.
     metrics_collector: The JetStream Promethus metric collector.
-    enable_model_warmup: The flag to enable model server warmup.
+    enable_model_warmup: The flag to enable model server warmup. To be deprecated.
+    enable_auto_layout: The flag to enable auto layout. If true, this supersedes enable_model_warmup.
 
   Returns:
     An orchestrator driver.
@@ -141,7 +143,34 @@ def create_driver(
   if generate_params is None:
     generate_params = []
 
-  if enable_model_warmup:
+  if enable_auto_layout:
+
+    prefill_engines = [engine_api.JetStreamEngine(pe) for pe in prefill_engines]
+    generate_engines = [
+        engine_api.JetStreamEngine(ge) for ge in generate_engines
+    ]
+
+    try:
+      (
+          prefill_params,
+          generate_params,
+          prefill_engines,
+          generate_engines,
+      ) = aot_utils.create_aot_engines(
+          prefill_engines,  # pylint: disable=protected-access
+          generate_engines,  # pylint: disable=protected-access
+          prefill_params,  # pylint: disable=protected-access
+          generate_params,  # pylint: disable=protected-access
+          relayout_optimally=enable_auto_layout,
+      )
+
+    except ValueError as e:
+      print(f"Model auto layout encountered an error: {e}")
+      traceback.print_exc()
+      os.kill(os.getpid(), signal.SIGKILL)
+
+  if enable_model_warmup and not enable_auto_layout:
+
     prefill_engines = [engine_api.JetStreamEngine(pe) for pe in prefill_engines]
     generate_engines = [
         engine_api.JetStreamEngine(ge) for ge in generate_engines
@@ -183,6 +212,7 @@ def run(
     enable_jax_profiler: bool = False,
     jax_profiler_port: int = 9999,
     enable_model_warmup: bool = False,
+    enable_auto_layout: bool = False,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
@@ -198,6 +228,7 @@ def run(
     enable_jax_profiler: The flag to enable JAX profiler server.
     jax_profiler_port: The port JAX profiler server (default to 9999).
     enable_model_warmup: The flag to enable model server warmup.
+    enable_auto_layout: The flag to enable model server auto layout.
 
   Returns:
     JetStreamServer that wraps the grpc server and orchestrator driver.
@@ -220,7 +251,12 @@ def run(
     )
 
   driver = create_driver(
-      config, devices, jax_padding, metrics_collector, enable_model_warmup
+      config,
+      devices,
+      jax_padding,
+      metrics_collector,
+      enable_model_warmup,
+      enable_auto_layout,
   )
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.

@@ -44,6 +44,15 @@ class ServerTest(unittest.TestCase):
               ["Ċ", "Ō", "Ɵ", ""],
               [266, 332, 415, None],
               [None, None],
+              False,  # enable_auto_layout
+          ),
+          (
+              config_lib.CPUTestServer,
+              True,
+              ["Ċ", "Ō", "Ɵ", ""],
+              [266, 332, 415, None],
+              [None, None],
+              True,  # enable_auto_layout
           ),
           # Uses the same prefill / generate weights (2).
           (
@@ -52,6 +61,15 @@ class ServerTest(unittest.TestCase):
               ["Ċ", "Ə", "ɖ", ""],
               [266, 399, 598, None],
               [None],
+              False,  # enable_auto_layout
+          ),
+          (
+              config_lib.InterleavedCPUTestServer,
+              True,
+              ["Ċ", "Ə", "ɖ", ""],
+              [266, 399, 598, None],
+              [None],
+              True,  # enable_auto_layout
           ),
           # Disable the metrics server.
           (
@@ -60,6 +78,7 @@ class ServerTest(unittest.TestCase):
               ["Ċ", "Ə", "ɖ", ""],
               [266, 399, 598, None],
               [None],
+              False,  # enable_auto_layout
           ),
       ]
   )
@@ -70,6 +89,7 @@ class ServerTest(unittest.TestCase):
       expected_text: list[str],
       expected_token_ids: list[int | None],
       devices: list[Any],
+      enable_auto_layout: bool,
   ):
     """Sets up a server and requests token responses."""
     ######################### Server side ######################################

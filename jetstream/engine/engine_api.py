@@ -45,6 +45,7 @@ Tokenizer = Any
 
 XLAFlags = dict[str, bool | int | float | str]
 
+
 @struct.dataclass
 class SlotData:
   """Class to store slot data."""
@@ -182,6 +183,7 @@ class Engine(abc.ABC):
       prefix: Prefix,
       decode_state: DecodeState,
       slot: int,
+      prefill_length: Optional[int] = None,
   ) -> DecodeState:
     """Adds `new_request` into `caches` at 'slot'.
 
@@ -278,14 +280,11 @@ class JetStreamEngine(Engine):
     self.aot = False
 
   def prefill_aot(
-      self,
-      params: Params,
-      padded_tokens: jax.Array,
-      true_length: int
-  )-> Tuple[Prefix, ResultTokens]:
+      self, params: Params, padded_tokens: jax.Array, true_length: int
+  ) -> Tuple[Prefix, ResultTokens]:
     """Wrapper for prefill for ahead-of-time compilation."""
     return self._downstream_engine.prefill(
-      params=params, padded_tokens=padded_tokens, true_length=true_length
+        params=params, padded_tokens=padded_tokens, true_length=true_length
     )
 
   def prefill(
@@ -309,6 +308,7 @@ class JetStreamEngine(Engine):
       prefix: Prefix,
       decode_state: DecodeState,
       slot: int,
+      prefill_length: Optional[int] = None,
   ) -> DecodeState:
 
     decode_state = self._downstream_engine.insert(
@@ -323,7 +323,7 @@ class JetStreamEngine(Engine):
   ) -> Tuple[DecodeState, ResultTokens]:
     """Wrapper to generate for ahead of time compilation."""
     return self._downstream_engine.generate(
-      params=params, decode_state=decode_state
+        params=params, decode_state=decode_state
     )
 
   def generate(
