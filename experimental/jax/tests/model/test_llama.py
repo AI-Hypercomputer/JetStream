@@ -29,14 +29,17 @@ from inference import nn
 
 class LlamaModelTest(absltest.TestCase):
 
-  @classmethod
-  def setUpClass(cls):
-    super().setUpClass()
+  def create_device_mesh(self):
+    devices = jax.devices()
+    return parallel.create_device_mesh(
+        devices=devices,
+        shape=len(devices),
+    )
 
   def test_llama(self):
     # TODO: make it as an accuracy test.
+    mesh = self.create_device_mesh()
     model_id = "meta-llama/Llama-2-7b-chat-hf"
-    mesh = parallel.create_device_mesh(jax.devices(), len(jax.devices()))
     model_registry = ModelRegistry()
 
     config, tokenizer = model_registry.load_model_config(
