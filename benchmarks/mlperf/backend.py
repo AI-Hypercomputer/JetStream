@@ -16,38 +16,37 @@
 import array
 import concurrent.futures
 import dataclasses
+import inspect
 import json
 import logging
-from operator import itemgetter  # pylint: disable=g-importing-member
 import time
-from typing import List, Optional, Any
-
-import numpy as np
+from operator import itemgetter  # pylint: disable=g-importing-member
+from typing import List, Optional, Union
 
 import dataset
-
-import mlperf_loadgen as lg
-
 import grpc
+import mlperf_loadgen as lg
+import numpy as np
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
-
 from transformers import AutoTokenizer
-
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("backend.py")
 
-_last_log_time = 0  # Global variable to track last log time
+# Dictionary to store last log time for each line
+_last_log_time = {}
 
 
 def _log_once_n_sec(msg: str, log_interval_sec: int):
   """Logs a message once every specified number of seconds."""
-  global _last_log_time
   current_time = time.time()
-  if current_time - _last_log_time >= log_interval_sec:
+  frame = inspect.currentframe().f_back  # Get caller frame
+  caller_info = f"{frame.f_code.co_filename}:{frame.f_lineno}"  # File:Line
+  last_time = _last_log_time.get(caller_info, 0)
+  if current_time - last_time >= log_interval_sec:
     log.info("(once every %dsec): %s", log_interval_sec, msg)
-    _last_log_time = current_time
+    _last_log_time[caller_info] = current_time
 
 
 @dataclasses.dataclass
@@ -59,6 +58,50 @@ class WarmupSample:
 @dataclasses.dataclass
 class StreamResponse:
   result: str = ""
+
+
+class RateCounter:
+  """A counter that tracks increments and calculates the rate of change
+
+  Example usage:
+    counter = RateCounter()
+    counter.increment(1)
+    rate = counter.rate() # Compute rate (returns None if first call)
+    ...
+    counter.increment(10)
+    rate = counter.rate() # Compute rate since last involation of rate
+  """
+
+  def __init__(self):
+    # The current counter value, updated on each increment.
+    self._value: Optional[Union[int, float]] = 0
+    # Timestamp when the counter was last updated
+    self._time: float = None
+    # The baseline counter value used for the next rate calculation.
+    self._last_value: Optional[Union[int, float]] = 0
+    # The baseline time used for the next rate calculation.
+    self._last_time: float = None
+
+  def get_value(self) -> Union[int, float]:
+    """Returns the current value of the counter """
+    return self._value
+
+  def increment(self, delta: Union[int, float]):
+    """"Increments the counter value by the provided delta"""
+    self._value += delta
+    self._time = time.perf_counter()
+
+  def rate(self) -> Optional[float]:
+    """Returns the rate per second since the last involation of rate"""
+    if self._last_time is None:
+      self._last_time = self._time
+      self._last_value = self._value
+      return None
+    elapsed = self._time - self._last_time
+    rate = (self._value - self._last_value) / elapsed if elapsed > 0 else 0
+    self._last_value = self._value
+    self._last_time = self._time
+    return rate
 
 
 class ThreadedLMClient:
@@ -96,7 +139,9 @@ class ThreadedLMClient:
     self._dataset = dataset_object
     self._futures = []
     self.pred_outputs = {}
-    self._resp_cnt = 0
+    self._resp_cnt = RateCounter()
+    self._req_token_cnt = RateCounter()
+    self._resp_token_cnt = RateCounter()
 
     log.info("Creating grpc channel with api_url {}".format(api_url))
     options = [("grpc.keepalive_timeout_ms", 10000)]
@@ -106,10 +151,24 @@ class ThreadedLMClient:
   def tokenizer(self):
     return self._tokenizer
 
-  def _log_resp_cnt(self):
-    self._resp_cnt += 1
-    if self._resp_cnt % self._log_interval == 0:
-      log.info("Completed %d queries", self._resp_cnt)
+  def _log_resp_cnt(self, req_n_tokens, resp_n_tokens):
+    self._req_token_cnt.increment(req_n_tokens)
+    self._resp_token_cnt.increment(resp_n_tokens)
+    self._resp_cnt.increment(1)
+    if self._resp_cnt.get_value() % self._log_interval == 0:
+      resp_cnt_rate = self._resp_cnt.rate()
+      req_token_cnt_rate = self._req_token_cnt.rate()
+      resp_token_cnt_rate = self._resp_token_cnt.rate()
+      log.info(
+          "Completed %d queries %d req tokens %d resp tokens "
+          f"(Rate: %.2f quries/s %.2f req_token_cnt/s %.2f resp_token_cnt/s)",
+          self._resp_cnt.get_value(),
+          self._req_token_cnt.get_value(),
+          self._resp_token_cnt.get_value(),
+          0 if resp_cnt_rate is None else resp_cnt_rate,
+          0 if req_token_cnt_rate is None else req_token_cnt_rate,
+          0 if resp_token_cnt_rate is None else resp_token_cnt_rate,
+      )
 
   def process_single_sample_async(self, query_sample, warmup):
     """Executes a single query and marks responses complete asynchronously.
@@ -168,22 +227,23 @@ class ThreadedLMClient:
     )
     generated_token_list = self._grpc_request(request, sample, warmup)
     if not warmup:
+      req_n_tokens = len(token_ids)
       response_token_ids = generated_token_list
-      n_tokens = len(response_token_ids)
+      resp_n_tokens = len(response_token_ids)
       response_token_ids = np.array(response_token_ids, dtype=np.int64)
       response_array = array.array("B", response_token_ids.tobytes())
       response_info = response_array.buffer_info()
       response_data = response_info[0]
       response_size = response_info[1] * response_array.itemsize
       query_sample_response = lg.QuerySampleResponse(
-          sample.id, response_data, response_size, n_tokens
+          sample.id, response_data, response_size, resp_n_tokens
       )
       lg.QuerySamplesComplete([query_sample_response])
       _log_once_n_sec("Mark query complete", 30)
 
       pred_output = self._tokenizer.decode(response_token_ids)
       self.pred_outputs[sample.index] = pred_output
-      self._log_resp_cnt()
+      self._log_resp_cnt(req_n_tokens, resp_n_tokens)
 
 
 class SUT:
@@ -285,7 +345,7 @@ class SUT:
     query_samples_with_length = []
     for query_sample in query_samples:
       query_sample_token_length = self.dataset.inputs_with_token_lengths[
-          query_sample.index
+        query_sample.index
       ][1]
       query_samples_with_length.append(
           (query_sample_token_length, query_sample)
