@@ -267,10 +267,11 @@ class Driver:
     if shared_params is None:
       shared_params = []
 
-    logging.warning(
-        "Initialising driver with %d prefill engines and %d generate engines.",
+    logging.info(
+        "Initialising driver with %d prefill engines, %d generate engines, %d interleaved engines",
         len(prefill_engines),
         len(generate_engines),
+        len(interleaved_engines),
     )
     if aot_compilation:
       (
@@ -550,7 +551,8 @@ class Driver:
       request.prefill_padded_length = padded_tokens.shape[-1]
 
       # Compute new kv cache for the prefill_content.
-      prefill_result, first_token = prefill_engine.prefill(
+      prefill_executable = self._prefill_executables[idx][request.prefill_padded_length]
+      prefill_result, first_token = prefill_executable(
           params=prefill_params,
           padded_tokens=padded_tokens,
           true_length=true_length,

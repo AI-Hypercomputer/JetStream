@@ -25,6 +25,16 @@ from jax.experimental import layout as jax_layout
 
 from jetstream.engine import engine_api, token_utils
 
+# Configure logging
+log = logging.getLogger(__name__)  # Use __name__ for better module tracking
+log.setLevel(logging.INFO)
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(
+    logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+)
+log.addHandler(console_handler)
+
+
 DLL = jax_layout.DeviceLocalLayout
 Layout = jax_layout.Layout
 
@@ -95,13 +105,16 @@ def layout_params_and_compile_executables(
   list[engine_api.Params],
   list[engine_api.Params],
 ]:
-  """Compile engine computations to executables and optimize param layouts
+  """Compile engine and optimize param & decode state layouts if needed.
 
   Args:
     prefill_engines: Prefill only engines.
     generate_engines: Generate only engines.
-    prefill_params: Prefill only params.
-    generate_params: Generate only params.
+    interleaved_engines: A list of tuples where the first is an prefill
+      engine and the second is a generate engine.
+    prefill_params: Params for prefill engine.
+    generate_params: Params for generate engine.
+    shared_params: Params shared by generate and prefill engines.
   """
   prefill_engines = prefill_engines if prefill_engines else []
   generate_engines = generate_engines if generate_engines else []
@@ -121,7 +134,10 @@ def layout_params_and_compile_executables(
   any_prefill_params = None
 
   for i, pe in enumerate(prefill_engines):
-    prefill_executables, prefill_params_i = _initialize_prefill_jit_cache(
+    (
+      prefill_executables, 
+      prefill_params_i 
+    ) = _initialize_prefill_jit_cache(
         prefill_engine=pe,
         prefill_params=prefill_params[i],
         prefill_params_layouts_override=None,
@@ -152,9 +168,8 @@ def layout_params_and_compile_executables(
     out_generate_executables.append(generate_executables)
     out_generate_params.append(generate_params_i)
 
-  # For interleaved engines, we lay out the params according to the generate
-  # engine.
   for i, (pe, ge) in enumerate(interleaved_engines):
+    # For interleaved engines, use layout optimized for generate engine.
     (
         generate_executables,
         generate_params_i,
@@ -177,7 +192,8 @@ def layout_params_and_compile_executables(
         prefill_params=prefill_params_i,
         prefill_params_layouts_override=generate_params_layouts_i,
         prefill_idx=i,
-        # No need to relayout for prefill params.
+        # No need to relayout prefill params, since prefill and generate
+        # share the same params.
         relayout_params_optimally=False
     )
     out_prefill_engines.append(pe)
@@ -213,7 +229,7 @@ def _get_prefill_buckets(
 
 
 def _to_shape_dtype(
-    t: Any, sharding: None | Any = None
+    t: jax.Array, sharding: Optional[jax.sharding.Sharding] = None
 ) -> jax.ShapeDtypeStruct:
   if hasattr(t, 'sharding'):
     return jax.ShapeDtypeStruct(t.shape, t.dtype, sharding=t.sharding)
@@ -234,19 +250,20 @@ def _initialize_prefill_jit_cache(
   will take a very long time for that query to come back.
 
   Args:
-      prefill_engine: A prefill engine to be compiled for.
+      prefill_engine: A prefill engine to be compiled.
       prefill_params: The associated prefill parameters.
       prefill_idx: Which prefill engine it is.
       relayout_params_optimally: When set, modify the param layouts and
         re-layout the params to make them optimally laid out for prefill.
   Returns:
     A tuple, whose first element is a dictionary {prefill_length : executable}
-    and second argument is relayed out params when relayout is enabled.
+    and second argument is relayed out params, when relayout is enabled, otherwise
+    the original params.
   """
   # Get a list of prefill buckets
   prefill_buckets = _get_prefill_buckets(prefill_engine)
 
-  logging.info("---Prefill compilation %d began.---", prefill_idx)
+  log.info("---Prefill engine %d compilation began.---", prefill_idx)
   prefill_param_shapes = jax.tree.map(_to_shape_dtype, prefill_params)
   padded_tokens = jnp.ones((prefill_engine.max_prefill_length), dtype=jnp.int32)
   padded_tokens_shape = jax.ShapeDtypeStruct(
@@ -254,7 +271,6 @@ def _initialize_prefill_jit_cache(
   )
   length_shape = jax.ShapeDtypeStruct((), jnp.int32)
 
-  # TODO(wyzhang): Consider if this can be merged into maxtext
   def _compile_prefill(length) -> tuple[int, Executable]:
     if prefill_params_layouts_override:
       in_shardings = (prefill_params_layouts_override, None, None)
@@ -267,7 +283,7 @@ def _initialize_prefill_jit_cache(
     ).lower(
         prefill_param_shapes, padded_tokens_shape, length_shape
     ).compile(compiler_options=None)  # TODO(wyzhang): pass in xla flag
-    logging.info(
+    log.info(
         "---Prefill engine %d compiled for prefill length %d.---",
         prefill_idx, length,
     )
@@ -278,7 +294,7 @@ def _initialize_prefill_jit_cache(
   ) as executor:
     executables = dict(executor.map(_compile_prefill, prefill_buckets))
     prefill_engine.aot = True
-  logging.info("---Prefill compilation %d complete.---", prefill_idx)
+  log.info("---Prefill engine %d compilation completed.---", prefill_idx)
 
   # Relayout params if needed.
   if relayout_params_optimally:
@@ -299,6 +315,23 @@ def _compile_generate_and_get_layouts(
     relayout_params_optimally: bool = False,
     relayout_decode_state_optimally: bool = False,
 ) -> tuple[Executable, Layout, Layout, Layout]:
+  """Precompile generate function.
+
+  Args:
+    generate_engine: A generate engine to be compiled.
+    generate_params: The associated generate parameters.
+    generate_idx: Which generate engine it is.
+    relayout_params_optimally: When set to true, modify the param layouts
+      and re-layout the params to make them optimally laid out.
+    relayout_decode_state_optimally: When set to true, optimize 
+      decode state layout.
+  Returns:
+    A tuple containing 
+      - compiled generate function
+      - layout for generate function input params
+      - layout for generate function input decode state
+      - layout for generate function outpu decode state
+  """  
   param_layout = Layout(DLL.AUTO if relayout_params_optimally else None)
   decode_state_layout = Layout(
       DLL.AUTO if relayout_decode_state_optimally else None
@@ -314,7 +347,7 @@ def _compile_generate_and_get_layouts(
   ).compile(compiler_options=None)
   arg_layouts, _ = executable.input_layouts
   generated_out_layouts, _ = executable.output_layouts
-  logging.info(
+  log.info(
       "---Generate engine %d compiled for generate.---",
       generate_idx,
   )
@@ -377,7 +410,7 @@ def _get_transferred_prefix_destination_sharding(
     )
   # TODO(b/345685171): Remove this warning once transfer with different number
   # of devices has a verified fast path.
-  logging.error(
+  log.error(
       'Prefill and generate engines have different number of devices. '
       'Resharding will be extremely slow. Please use the same number of '
       'devices for prefill and generate engines unless you are sure about what '
@@ -459,7 +492,7 @@ def _initialize_insert_generate_jit_cache(
     ).lower(
         prefix_shape, decode_state_shapes, slot_shape
     ).compile(compiler_options=None)
-    logging.info(
+    log.info(
         "---Generate engine %d compiled for insert length %d.---",
         generate_idx,
         length,
@@ -481,7 +514,7 @@ def _initialize_insert_generate_jit_cache(
         out_shardings=(decode_state_layouts),
     ).lower(
     ).compile(compiler_options=None)
-    logging.info(
+    log.info(
         "---Generate engine %d compiled for init decode state.---",
         generate_idx,
     )
