@@ -36,7 +36,7 @@ export USER_CONFIG=user.conf
 export TOTAL_SAMPLE_COUNT=24576 # for calibration run, TOTAL_SAMPLE_COUNT=1000
 export BATCH_SIZE_EXP=8
 export TOKENIZER_PATH=meta-llama/Llama-2-70b-chat-hf
-export LOG_INTERVAL=1000
+export LOG_INTERVAL=200
 export NUM_CLIENT_THREADS=600
 export RENAME_DATASET_COLS="{\"tok_input_len\": \"tok_input_length\", \"tok_ref_output_len\": \"tok_output_length\"}"
 

@@ -97,6 +97,8 @@ class ThreadedLMClient:
     self._futures = []
     self.pred_outputs = {}
     self._resp_cnt = 0
+    self._req_n_tokens = 0
+    self._resp_n_tokens = 0
 
     log.info("Creating grpc channel with api_url {}".format(api_url))
     options = [("grpc.keepalive_timeout_ms", 10000)]
@@ -106,10 +108,15 @@ class ThreadedLMClient:
   def tokenizer(self):
     return self._tokenizer
 
-  def _log_resp_cnt(self):
+  def _log_resp_cnt(self, req_n_tokens, resp_n_tokens):
+    self._req_n_tokens += req_n_tokens
+    self._resp_n_tokens += resp_n_tokens
     self._resp_cnt += 1
     if self._resp_cnt % self._log_interval == 0:
-      log.info("Completed %d queries", self._resp_cnt)
+      log.info(
+        "Completed %d queries %d req tokens %d resp tokens", 
+        self._resp_cnt, self._req_n_tokens, self._resp_n_tokens
+      )
 
   def process_single_sample_async(self, query_sample, warmup):
     """Executes a single query and marks responses complete asynchronously.
@@ -168,22 +175,23 @@ class ThreadedLMClient:
     )
     generated_token_list = self._grpc_request(request, sample, warmup)
     if not warmup:
+      req_n_tokens = len(token_ids)
       response_token_ids = generated_token_list
-      n_tokens = len(response_token_ids)
+      resp_n_tokens = len(response_token_ids)
       response_token_ids = np.array(response_token_ids, dtype=np.int64)
       response_array = array.array("B", response_token_ids.tobytes())
       response_info = response_array.buffer_info()
       response_data = response_info[0]
       response_size = response_info[1] * response_array.itemsize
       query_sample_response = lg.QuerySampleResponse(
-          sample.id, response_data, response_size, n_tokens
+          sample.id, response_data, response_size, resp_n_tokens
       )
       lg.QuerySamplesComplete([query_sample_response])
       _log_once_n_sec("Mark query complete", 30)
 
       pred_output = self._tokenizer.decode(response_token_ids)
       self.pred_outputs[sample.index] = pred_output
-      self._log_resp_cnt()
+      self._log_resp_cnt(req_n_tokens, resp_n_tokens)
 
 
 class SUT:
@@ -254,13 +262,13 @@ class SUT:
 
     # We need to add some warmup to improve throughput estimation
     log.info("Starting warmup....")
-    # Warm up with exponentially increasing batch sizes up to 32.
-    for batch_size_exp in range(self._batch_size_exp):
-      batch_size = 2**batch_size_exp
-      for warmup_id, warmup_idx in enumerate(range(batch_size)):
-        warmup_sample = WarmupSample(id=warmup_id, index=warmup_idx)
-        self._client.process_single_sample_async(warmup_sample, True)
-      self._client.flush()
+    # # Warm up with exponentially increasing batch sizes up to 32.
+    # for batch_size_exp in range(self._batch_size_exp):
+    #   batch_size = 2**batch_size_exp
+    #   for warmup_id, warmup_idx in enumerate(range(batch_size)):
+    #     warmup_sample = WarmupSample(id=warmup_id, index=warmup_idx)
+    #     self._client.process_single_sample_async(warmup_sample, True)
+    #   self._client.flush()
 
     log.info("Warmup done....")
     time.sleep(30)
