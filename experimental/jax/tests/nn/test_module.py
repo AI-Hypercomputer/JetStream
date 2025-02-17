@@ -22,80 +22,78 @@ from inference.nn import Module, Parameter
 
 class ModuleTest(absltest.TestCase):
 
-  def test_random_code_initialize(self):
-    w0, w1, w2, w3 = (
+  def setUp(self):
+    super().setUp()
+    self.w0, self.w1, self.w2, self.w3 = (
         jnp.ones((1,)),
         jnp.ones((2,)),
         jnp.ones((3,)),
         jnp.ones((4,)),
     )
-    parent_module = Module()
-    parent_module.w0 = Parameter(w0)
+    self.parent_module = Module()
+    self.parent_module.w0 = Parameter(self.w0)
+    self.h1_child_0_module = Module()
+    self.h1_child_0_module.w1 = Parameter(self.w1)
+    self.h1_child_1_module = Module()
+    self.h1_child_1_module.w2 = Parameter(self.w2)
+    self.h2_child_0_module = Module()
+    self.h2_child_0_module.w3 = Parameter(self.w3)
 
-    h1_child_0_module = Module()
-    h1_child_0_module.w1 = Parameter(w1)
+    self.parent_module.child0 = self.h1_child_0_module
+    self.parent_module.child1 = self.h1_child_1_module
+    self.h1_child_0_module.child0 = self.h2_child_0_module
 
-    h1_child_1_module = Module()
-    h1_child_1_module.w2 = Parameter(w2)
+    print(self.parent_module)
 
-    h2_child_0_module = Module()
-    h2_child_0_module.w3 = Parameter(w3)
-
-    parent_module.child0 = h1_child_0_module
-    parent_module.child1 = h1_child_1_module
-    h1_child_0_module.child0 = h2_child_0_module
-
-    parent_module.init_weights()
-
+  def test_random_code_initialize(self):
+    self.parent_module.init_weights()
     np.testing.assert_raises(
         AssertionError,
         np.testing.assert_array_equal,
-        w0,
-        parent_module.w0.value,
+        self.w0,
+        self.parent_module.w0.value,
     )
     np.testing.assert_raises(
         AssertionError,
         np.testing.assert_array_equal,
-        w1,
-        h1_child_0_module.w1.value,
+        self.w1,
+        self.h1_child_0_module.w1.value,
     )
     np.testing.assert_raises(
         AssertionError,
         np.testing.assert_array_equal,
-        w2,
-        h1_child_1_module.w2.value,
+        self.w2,
+        self.h1_child_1_module.w2.value,
     )
     np.testing.assert_raises(
         AssertionError,
         np.testing.assert_array_equal,
-        w3,
-        h2_child_0_module.w3.value,
+        self.w3,
+        self.h2_child_0_module.w3.value,
     )
 
   def test_load_weights_dict(self):
-    w0, w1, w2, w3 = (
-        jnp.ones((1,)),
-        jnp.ones((2,)),
-        jnp.ones((3,)),
-        jnp.ones((4,)),
-    )
-    parent_module = Module()
-    parent_module.w0 = Parameter(w0)
+    parent_weight_dict = {
+        "w0": jnp.ones((1,)),
+        "child0": {
+            "w1": jnp.ones((2,)),
+            "child0": {
+                "w3": jnp.ones((4,)),
+            },
+        },
+        "child1": {
+            "w2": jnp.ones((3,)),
+        },
+    }
 
-    h1_child_0_module = Module()
-    h1_child_0_module.w1 = Parameter(w1)
+    self.parent_module.load_weights_dict(parent_weight_dict)
 
-    h1_child_1_module = Module()
-    h1_child_1_module.w2 = Parameter(w2)
+    np.testing.assert_array_equal(self.parent_module.w0, self.w0)
+    np.testing.assert_array_equal(self.h1_child_0_module.w1, self.w1)
+    np.testing.assert_array_equal(self.h1_child_1_module.w2, self.w2)
+    np.testing.assert_array_equal(self.h2_child_0_module.w3, self.w3)
 
-    h2_child_0_module = Module()
-    h2_child_0_module.w3 = Parameter(w3)
-
-    parent_module.child0 = h1_child_0_module
-    parent_module.child1 = h1_child_1_module
-    h1_child_0_module.child0 = h2_child_0_module
-    print(parent_module)
-
+  def test_load_weights_dict_error(self):
     partial_parent_weight_dict = {
         "w0": jnp.zeros((1,)),
         "child0": {
@@ -105,21 +103,20 @@ class ModuleTest(absltest.TestCase):
             },
         },
     }
-
     child1_weight_dict = {
         "w2": jnp.zeros((2,)),
         "wrong_weight_not_load": jnp.zeros((2,)),
     }
 
-    parent_module.load_weights_dict(partial_parent_weight_dict)
-    h1_child_1_module.load_weights_dict(child1_weight_dict)
+    self.parent_module.load_weights_dict(partial_parent_weight_dict)
+    self.h1_child_1_module.load_weights_dict(child1_weight_dict)
 
-    np.testing.assert_array_equal(parent_module.w0, 0)
-    np.testing.assert_array_equal(h1_child_0_module.w1, 0)
-    np.testing.assert_array_equal(h1_child_1_module.w2, 0)
-    np.testing.assert_array_equal(h2_child_0_module.w3, 0)
+    np.testing.assert_array_equal(self.parent_module.w0, 0)
+    np.testing.assert_array_equal(self.h1_child_0_module.w1, 0)
+    np.testing.assert_array_equal(self.h1_child_1_module.w2, 0)
+    np.testing.assert_array_equal(self.h2_child_0_module.w3, 0)
 
-    assert not h1_child_1_module.wrong_weight_not_load
+    assert not self.h1_child_1_module.wrong_weight_not_load
 
 
 if __name__ == "__main__":

@@ -25,13 +25,16 @@ from inference import nn
 
 class EmbeddingTest(absltest.TestCase):
 
-  def test_embedding(self):
-    mesh = parallel.create_device_mesh(
-        devices=jax.devices(),
-        shape=len(jax.devices()),
+  def create_device_mesh(self):
+    devices = jax.devices()
+    return parallel.create_device_mesh(
+        devices=devices,
+        shape=len(devices),
     )
-    vocal_size = 2048
-    emb_dim = 8192
+
+  def test_embedding(self):
+    mesh = self.create_device_mesh()
+    vocal_size, emb_dim = 2048, 8192
     embedding_layer = nn.Embedding(
         vocal_size,
         emb_dim,

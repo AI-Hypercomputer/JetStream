@@ -29,11 +29,15 @@ from inference import nn
 
 class NormTest(absltest.TestCase):
 
-  def test_rmsnorm_per_device_forward(self):
-    mesh = parallel.create_device_mesh(
-        devices=jax.devices(),
-        shape=len(jax.devices()),
+  def create_device_mesh(self):
+    devices = jax.devices()
+    return parallel.create_device_mesh(
+        devices=devices,
+        shape=len(devices),
     )
+
+  def test_rmsnorm_per_device_forward(self):
+    mesh = self.create_device_mesh()
     hidden_state_size = 128
     eps = 1e-6
     rmsnorm_layer = nn.RMSNorm(
