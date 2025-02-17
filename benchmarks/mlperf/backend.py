@@ -38,6 +38,17 @@ from transformers import AutoTokenizer
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("backend.py")
 
+_last_log_time = 0  # Global variable to track last log time
+
+
+def _log_once_n_sec(msg: str, log_interval_sec: int):
+  """Logs a message once every specified number of seconds."""
+  global _last_log_time
+  current_time = time.time()
+  if current_time - _last_log_time >= log_interval_sec:
+    log.info("(once every %dsec): %s", log_interval_sec, msg)
+    _last_log_time = current_time
+
 
 @dataclasses.dataclass
 class WarmupSample:
@@ -127,7 +138,7 @@ class ThreadedLMClient:
       if not warmup and self._is_stream and ttft == 0:
         # TTFT for online mode
         ttft = time.perf_counter() - start_time
-        log.info("TTFT {}ms".format(ttft * 1000))
+        _log_once_n_sec("TTFRT {}ms".format(ttft * 1000), 30)
         response_token_ids = resp.stream_content.samples[0].token_ids
         assert len(response_token_ids) == 1
         response_token_ids = np.array(response_token_ids, dtype=np.int64)
@@ -137,7 +148,6 @@ class ThreadedLMClient:
             sample.id, response_info[0], response_info[1]
         )
         lg.FirstTokenComplete([first_token_response])
-        log.info("mark first token complete")
       token_list.extend(resp.stream_content.samples[0].token_ids)
     return token_list
 
@@ -169,7 +179,7 @@ class ThreadedLMClient:
           sample.id, response_data, response_size, n_tokens
       )
       lg.QuerySamplesComplete([query_sample_response])
-      log.info("mark query complete")
+      _log_once_n_sec("Mark query complete", 30)
 
       pred_output = self._tokenizer.decode(response_token_ids)
       self.pred_outputs[sample.index] = pred_output
