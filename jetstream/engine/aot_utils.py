@@ -19,6 +19,7 @@ import logging
 from typing import Any, Optional
 
 import jax
+import flax
 import jax.numpy as jnp
 import numpy as np
 from jax.experimental import layout as jax_layout
@@ -395,21 +396,21 @@ def _get_transferred_prefix_destination_sharding(
 ) -> Any:
   """Returns the sharding of the prefix destination upon transfer."""
 
-  if prefill_engine.mesh.devices.size == generate_engine.mesh.devices.size:
-    shardings = prefill_engine.get_prefix_destination_sharding()
-    print(f'shardings\n {shardings}')
-    return replace_devices_in_sharding(
-        shardings,
-        generate_engine.mesh.devices,
-    )
-  # TODO(b/345685171): Remove this warning once transfer with different number
-  # of devices has a verified fast path.
-  log.error(
-      'Prefill and generate engines have different number of devices. '
-      'Resharding will be extremely slow. Please use the same number of '
-      'devices for prefill and generate engines unless you are sure about what '
-      'you are doing.'
-  )
+  # if prefill_engine.mesh.devices.size == generate_engine.mesh.devices.size:
+  #   shardings = prefill_engine.get_prefix_destination_sharding()
+  #   print(f'shardings\n {shardings}')
+  #   return replace_devices_in_sharding(
+  #       shardings,
+  #       generate_engine.mesh.devices,
+  #   )
+  # # TODO(b/345685171): Remove this warning once transfer with different number
+  # # of devices has a verified fast path.
+  # log.error(
+  #     'Prefill and generate engines have different number of devices. '
+  #     'Resharding will be extremely slow. Please use the same number of '
+  #     'devices for prefill and generate engines unless you are sure about what '
+  #     'you are doing.'
+  # )
   return generate_engine.get_prefix_destination_sharding()
 
 
@@ -461,18 +462,31 @@ def _initialize_insert_generate_jit_cache(
       return prefix
 
     prefix_shape = jax.eval_shape(_prefill)
+    print(f'-----wyzhangd: prefix_shape-----{prefix_shape}')
     prefix_dest_sharding = _get_transferred_prefix_destination_sharding(
         prefill_engine=prefill_engine,
         generate_engine=generate_engine,
     )
+    print(f'-----wyzhangd: prefix_dest_sharding-----{prefix_dest_sharding}')
+    def process_elm(x, sharding):
+      if isinstance(x, flax.linen.spmd.LogicallyPartitioned):
+        return jax.ShapeDtypeStruct(  # pylint: disable=g-long-lambda
+            x.value.shape, x.value.dtype, sharding=sharding,
+        )
+      elif isinstance(x, jax.ShapeDtypeStruct):
+        return jax.ShapeDtypeStruct(
+          x.shape, x.dtype, sharding=sharding,
+        )
+      else:
+        raise ValueError(f"Unexpected type {type(x)}")
+        
     prefix_shape = jax.tree.map(
-        lambda x, sharding: None if x is None else jax.ShapeDtypeStruct(  # pylint: disable=g-long-lambda
-            x.shape, x.dtype, sharding=sharding,
-        ),
-        prefix_shape,
-        prefix_dest_sharding,
-        is_leaf=lambda x: x is None,
+      process_elm,
+      prefix_shape,
+      prefix_dest_sharding,
+      is_leaf=lambda x : isinstance(x, (flax.linen.spmd.LogicallyPartitioned, jax.ShapeDtypeStruct)),
     )
+    print(f'----wyzhang: prefix_shape final-----{prefix_shape}')
     slot_shape = jax.ShapeDtypeStruct((), jnp.int32)
     # TODO(wyzhang): Pass XLA flag
     insert_executable = jax.jit(
