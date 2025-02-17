@@ -74,7 +74,6 @@ Either use :orchestrator test, which tests the multi-threading components,
 to debug hangs due to bugs in threads (it is easier to debug with live logs).
 """
 
-from datetime import datetime
 import dataclasses
 import functools
 import itertools
@@ -86,17 +85,20 @@ import sys
 import threading
 import time
 import traceback
+from datetime import datetime
 from typing import Any, AsyncIterator, Optional, Tuple, cast, List
 
 import grpc
 import jax
+import numpy as np
+
+from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.core.utils.return_sample import ReturnSample
+from jetstream.engine import aot_utils
 from jetstream.engine import engine_api, tokenizer_api, token_utils
-from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
-import numpy as np
 
 root = logging.getLogger()
 root.setLevel(logging.WARNING)
@@ -149,6 +151,8 @@ class ActiveRequest:
   # requests.
   complete: Optional[np.ndarray] = None
   prefill_result: Any = None
+  # Length of padded input tokens.
+  prefill_padded_length: int = None
   #################### Information relevant for prefill ########################
   prefill_content: Optional[str | list[int]] = None
   ################## Information relevant for detokenization ###################
@@ -238,31 +242,49 @@ class Driver:
       self,
       prefill_engines: Optional[list[engine_api.Engine]] = None,
       generate_engines: Optional[list[engine_api.Engine]] = None,
+      interleaved_engines: Optional[
+        list[tuple[engine_api.Engine, engine_api.Engine]]
+      ] = None,
       prefill_params: Optional[list[Any]] = None,
       generate_params: Optional[list[Any]] = None,
+      shared_params: Optional[list[Any]] = None,
       interleaved_mode: bool = False,
       jax_padding: bool = True,
       metrics_collector: JetstreamMetricsCollector | None = None,
       is_ray_backend: bool = False,
+      aot_compilation: bool = False,
   ):
     if prefill_engines is None:
       prefill_engines = []
     if generate_engines is None:
       generate_engines = []
+    if interleaved_engines is None:
+      interleaved_engines = []
     if prefill_params is None:
       prefill_params = []
     if generate_params is None:
       generate_params = []
+    if shared_params is None:
+      shared_params = []
 
     logging.warning(
         "Initialising driver with %d prefill engines and %d generate engines.",
         len(prefill_engines),
         len(generate_engines),
     )
-    self._prefill_engines = prefill_engines
-    self._generate_engines = generate_engines
-    self._prefill_params = prefill_params
-    self._generate_params = generate_params
+    if aot_compilation:
+      (
+          self._prefill_engines, self._generate_engines,
+          self._prefill_executables, self._generate_executables,
+          self._prefill_params, self._generate_params,
+      ) = aot_utils.layout_params_and_compile_executables(
+          prefill_engines, generate_engines, interleaved_engines,
+          prefill_params, generate_params, shared_params,
+      )
+    else:
+      # TODO(wyzhang): Allow non-AOT
+      raise NotImplemented("Cannot disable AOT compilation")
+
     self._interleaved_mode = interleaved_mode
     self._metrics_collector = metrics_collector
 
@@ -525,6 +547,7 @@ class Driver:
       padded_tokens, true_length = self._process_prefill_content(
           request, tokenizer, is_bos, prefill_engine.max_prefill_length
       )
+      request.prefill_padded_length = padded_tokens.shape[-1]
 
       # Compute new kv cache for the prefill_content.
       prefill_result, first_token = prefill_engine.prefill(
@@ -636,13 +659,17 @@ class Driver:
 
     # Keep track of what step tokens were generated at.
     generate_timestep = 0
-    # State to store things like running kv cache in.
-    decode_state = generate_engine.init_decode_state()
 
     generate_params = self._generate_params[idx]
     logging.info("---------Generate params %d loaded.---------", idx)
     time_of_last_generate = time.time()
     time_of_last_print = time.time()
+
+    decode_state_executable, insert_executables, generate_executable = (
+        self._generate_executables[idx]
+    )
+    decode_state = decode_state_executable()
+
     while self.live:
       if (time.time() - time_of_last_print) > 1:
         logging.info(
@@ -729,8 +756,10 @@ class Driver:
             generate_timestep,
         )
 
-        decode_state = generate_engine.insert(
-            new_request.prefill_result, decode_state, slot=slot
+        insert_executable = insert_executables[
+          new_request.prefill_padded_length]
+        decode_state = insert_executable(
+            new_request.prefill_result, decode_state, slot
         )
         del new_request.prefill_result
         new_request.generate_timestep_added = generate_timestep
@@ -746,7 +775,7 @@ class Driver:
       ), "At this point we must have some requests inserted into the slots."
 
       # Now we actually take a generate step on requests in the slots.
-      decode_state, sampled_tokens = generate_engine.generate(
+      decode_state, sampled_tokens = generate_executable(
           generate_params, decode_state
       )
       sampled_tokens.copy_to_host_async()
@@ -759,7 +788,7 @@ class Driver:
           generate_timestep,
           my_slots_size,
           max_concurrent_decodes,
-          (time.time() - time_of_last_generate) * 10**3,
+          (time.time() - time_of_last_generate) * (10 ** 3),
       )
       time_of_last_generate = time.time()
 
@@ -873,7 +902,7 @@ class Driver:
         logging.info(
             "Detokenizing generate step %d took %.2fms",
             generate_timestep_added,
-            (time.time() - start_detokenize_time) * 10**3,
+            (time.time() - start_detokenize_time) * (10 ** 3),
         )
       else:
         # We want to update a slot with the new channel.
