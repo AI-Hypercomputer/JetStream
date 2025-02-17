@@ -24,52 +24,91 @@ from jetstream.engine import engine_api, token_utils
 def layout_params_and_compile_executables(
     prefill_engines: Optional[list[engine_api.JetStreamEngine]] = None,
     generate_engines: Optional[list[engine_api.JetStreamEngine]] = None,
+    interleaved_engines: Optional[
+      list[tuple[engine_api.JetStreamEngine, engine_api.JetStreamEngine]]
+    ] = None,
     prefill_params: Optional[list[Any]] = None,
     generate_params: Optional[list[Any]] = None,
-) -> bool:
+    shared_params: Optional[list[Any]] = None,
+) -> tuple[
+  list[engine_api.JetStreamEngine],
+  list[engine_api.JetStreamEngine],
+  list[engine_api.Params],
+  list[engine_api.Params]
+  ]:
   """Organizes the engines and executables.
 
   Args:
       prefill_engines: Prefill only engines.
       generate_engines: Generate only engines.
+      interleaved_engines: Engines to be used for both.
       prefill_params: Prefill only params.
       generate_params: Generate only params.
+      shared_params: Shared params for prefill and generate.
   """
   prefill_engines = prefill_engines if prefill_engines else []
   generate_engines = generate_engines if generate_engines else []
+  interleaved_engines = interleaved_engines if interleaved_engines else []
   prefill_params = prefill_params if prefill_params else []
   generate_params = generate_params if generate_params else []
+  shared_params = shared_params if shared_params else []
+
+  out_prefill_engines = []
+  out_generate_engines = []
+  out_prefill_params = []
+  out_generate_params = []
 
   any_prefill_engine = None
   any_prefill_params = None
 
-  prefills_compiled = []
-  inserts_generate_compiled = []
-
   for i, pe in enumerate(prefill_engines):
+    prefill_params_i = prefill_params[i]
     any_prefill_engine = pe
-    any_prefill_params = prefill_params[i]
-    prefill_compiled = initialize_prefill_jit_cache(
+    any_prefill_params = prefill_params_i
+    _ = initialize_prefill_jit_cache(
         prefill_engine=pe,
-        prefill_params=prefill_params[i],
+        prefill_params=prefill_params_i,
         prefill_idx=i,
     )
-    prefills_compiled.append(prefill_compiled)
+    out_prefill_engines.append(pe)
+    out_prefill_params.append(prefill_params_i)
 
   for i, ge in enumerate(generate_engines):
-    insert_generate_compiled = initialize_insert_generate_jit_cache(
+    generate_params_i = generate_params[i]
+    _ = initialize_insert_generate_jit_cache(
         prefill_engine=any_prefill_engine,
         generate_engine=ge,
         prefill_params=any_prefill_params,
-        generate_params=generate_params[i],
+        generate_params=generate_params_i,
         generate_idx=i,
     )
-    inserts_generate_compiled.append([insert_generate_compiled])
+    out_generate_engines.append(ge)
+    out_generate_params.append(generate_params_i)
 
-  if all(prefills_compiled) and all(inserts_generate_compiled):
-    return True
-  return False
-
+  for i, (pe, ge) in enumerate(interleaved_engines):
+    shared_params_i = shared_params[i]
+    _ = initialize_prefill_jit_cache(
+        prefill_engine=pe,
+        prefill_params=shared_params_i,
+        prefill_idx=i,
+    )
+    _ = initialize_insert_generate_jit_cache(
+        prefill_engine=pe,
+        generate_engine=ge,
+        prefill_params=shared_params_i,
+        generate_params=shared_params_i,
+        generate_idx=i,
+    )
+    out_prefill_engines.append(pe)
+    out_generate_engines.append(ge)
+    out_prefill_params.append(shared_params_i)
+    out_generate_params.append(shared_params_i)
+  return (
+      out_prefill_engines,
+      out_generate_engines,
+      out_prefill_params,
+      out_generate_params,
+  )
 
 def initialize_prefill_jit_cache(
     *,

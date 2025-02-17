@@ -314,13 +314,13 @@ class SUT:
 
     # We need to add some warmup to improve throughput estimation
     log.info("Starting warmup....")
-    # Warm up with exponentially increasing batch sizes up to 32.
-    for batch_size_exp in range(self._batch_size_exp):
-      batch_size = 2**batch_size_exp
-      for warmup_id, warmup_idx in enumerate(range(batch_size)):
-        warmup_sample = WarmupSample(id=warmup_id, index=warmup_idx)
-        self._client.process_single_sample_async(warmup_sample, True)
-      self._client.flush()
+    # # Warm up with exponentially increasing batch sizes up to 32.
+    # for batch_size_exp in range(self._batch_size_exp):
+    #   batch_size = 2**batch_size_exp
+    #   for warmup_id, warmup_idx in enumerate(range(batch_size)):
+    #     warmup_sample = WarmupSample(id=warmup_id, index=warmup_idx)
+    #     self._client.process_single_sample_async(warmup_sample, True)
+    #   self._client.flush()
 
     log.info("Warmup done....")
     time.sleep(30)

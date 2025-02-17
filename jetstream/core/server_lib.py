@@ -28,7 +28,6 @@ import time
 import traceback
 from typing import Any, Type
 
-
 import grpc
 import jax
 from jetstream.core import config_lib
@@ -127,32 +126,42 @@ def create_driver(
       len(config.prefill_slices) + len(config.generate_slices) == 0
   )
 
-  prefill_engines = engines.prefill_engines + engines.interleaved_engines
-  generate_engines = engines.generate_engines + engines.interleaved_engines
-  prefill_params = prefill_params + shared_params
-  generate_params = generate_params + shared_params
+  prefill_engines = engines.prefill_engines
+  generate_engines = engines.generate_engines
+  interleaved_engines = engines.interleaved_engines
 
   if prefill_engines is None:
     prefill_engines = []
   if generate_engines is None:
     generate_engines = []
+  if interleaved_engines is None:
+    interleaved_engines = []
+  else:
+    interleaved_engines = [(ie, ie) for ie in interleaved_engines]
   if prefill_params is None:
     prefill_params = []
   if generate_params is None:
     generate_params = []
 
   if enable_model_warmup:
-    prefill_engines = [engine_api.JetStreamEngine(pe) for pe in prefill_engines]
+    prefill_engines = [
+        engine_api.JetStreamEngine(pe) for pe in prefill_engines
+    ]
     generate_engines = [
         engine_api.JetStreamEngine(ge) for ge in generate_engines
     ]
+    interleaved_engines = [
+        (engine_api.JetStreamEngine(pe), engine_api.JetStreamEngine(ge))
+        for (pe, ge) in interleaved_engines
+    ]
 
     try:
-      _ = warmup_utils.layout_params_and_compile_executables(
-          prefill_engines,  # pylint: disable=protected-access
-          generate_engines,  # pylint: disable=protected-access
-          prefill_params,  # pylint: disable=protected-access
-          generate_params,  # pylint: disable=protected-access
+      (
+          prefill_engines, generate_engines,
+          prefill_params, generate_params,
+      ) = warmup_utils.layout_params_and_compile_executables(
+          prefill_engines, generate_engines, interleaved_engines,
+          prefill_params, generate_params, shared_params,
       )
 
     except ValueError as e:
@@ -256,7 +265,8 @@ def run(
 
   # Start profiling server by default for proxy backend.
   if jax.config.jax_platforms and "proxy" in jax.config.jax_platforms:
-    from jetstream.core.utils import proxy_util  # pylint: disable=import-outside-toplevel
+    from jetstream.core.utils import \
+      proxy_util  # pylint: disable=import-outside-toplevel
 
     thread = threading.Thread(
         target=proxy_util.start_profiling_server, args=(jax_profiler_port,)
