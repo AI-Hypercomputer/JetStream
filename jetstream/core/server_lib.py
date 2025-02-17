@@ -34,9 +34,13 @@ from jetstream.core import config_lib
 from jetstream.core import orchestrator
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 from jetstream.core.proto import jetstream_pb2_grpc
-from jetstream.engine import warmup_utils, engine_api
+from jetstream.engine import warmup_utils, engine_api, aot_utils
 
 from prometheus_client import start_http_server
+
+# Configure logging
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 _HOST = "[::]"
 
@@ -117,7 +121,7 @@ def create_driver(
   prefill_params = [pe.load_params() for pe in engines.prefill_engines]
   generate_params = [ge.load_params() for ge in engines.generate_engines]
   shared_params = [ie.load_params() for ie in engines.interleaved_engines]
-  logging.info("Loaded all weights.")
+  log.info("Loaded all weights.")
   if metrics_collector:
     metrics_collector.get_model_load_time_metric().set(
         time.time() - model_load_start_time
@@ -125,6 +129,7 @@ def create_driver(
   interleaved_mode = (
       len(config.prefill_slices) + len(config.generate_slices) == 0
   )
+  log.info(f"interleaved_mode: {interleaved_mode}")
 
   prefill_engines = engines.prefill_engines
   generate_engines = engines.generate_engines
@@ -154,30 +159,45 @@ def create_driver(
         (engine_api.JetStreamEngine(pe), engine_api.JetStreamEngine(ge))
         for (pe, ge) in interleaved_engines
     ]
-
-    try:
+    # TODO(wyzhang) Add an option for this
+    is_aot = True
+    prefill_executables = None
+    generate_executables = None
+    if is_aot:
       (
           prefill_engines, generate_engines,
+          prefill_executables, generate_executables,
           prefill_params, generate_params,
-      ) = warmup_utils.layout_params_and_compile_executables(
+      ) = aot_utils.layout_params_and_compile_executables(
           prefill_engines, generate_engines, interleaved_engines,
           prefill_params, generate_params, shared_params,
       )
-
-    except ValueError as e:
-      print(f"Model warmup encountered an error: {e}")
-      traceback.print_exc()
-      os.kill(os.getpid(), signal.SIGKILL)
+    else:
+      try:
+        (
+            prefill_engines, generate_engines,
+            prefill_params, generate_params,
+        ) = warmup_utils.layout_params_and_compile_executables(
+            prefill_engines, generate_engines, interleaved_engines,
+            prefill_params, generate_params, shared_params,
+        )
+      except ValueError as e:
+        print(f"Model warmup encountered an error: {e}")
+        traceback.print_exc()
+        os.kill(os.getpid(), signal.SIGKILL)
 
   return orchestrator.Driver(
       prefill_engines=prefill_engines,
       generate_engines=generate_engines,
+      prefill_executables=prefill_executables,
+      generate_executables=generate_executables,
       prefill_params=prefill_params,
       generate_params=generate_params,
       interleaved_mode=interleaved_mode,
       jax_padding=jax_padding,
       metrics_collector=metrics_collector,
       is_ray_backend=config.is_ray_backend,
+      is_aot=is_aot,
   )
 
 

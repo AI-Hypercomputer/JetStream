@@ -97,6 +97,7 @@ from jetstream.core.utils.return_sample import ReturnSample
 from jetstream.engine import engine_api, tokenizer_api, token_utils
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
+from jetstream.engine import warmup_utils, engine_api, aot_utils
 
 root = logging.getLogger()
 root.setLevel(logging.WARNING)
@@ -149,6 +150,8 @@ class ActiveRequest:
   # requests.
   complete: Optional[np.ndarray] = None
   prefill_result: Any = None
+  # Length of padded input tokens.
+  prefill_padded_length: int = None
   #################### Information relevant for prefill ########################
   prefill_content: Optional[str | list[int]] = None
   ################## Information relevant for detokenization ###################
@@ -238,17 +241,24 @@ class Driver:
       self,
       prefill_engines: Optional[list[engine_api.Engine]] = None,
       generate_engines: Optional[list[engine_api.Engine]] = None,
+      prefill_executables: Optional[list[aot_utils.PrefillExecutables]] = None,
+      generate_executables: Optional[list[aot_utils.GenerateExecutables]] = None,
       prefill_params: Optional[list[Any]] = None,
       generate_params: Optional[list[Any]] = None,
       interleaved_mode: bool = False,
       jax_padding: bool = True,
       metrics_collector: JetstreamMetricsCollector | None = None,
       is_ray_backend: bool = False,
+      is_aot: bool = False,
   ):
     if prefill_engines is None:
       prefill_engines = []
     if generate_engines is None:
       generate_engines = []
+    if prefill_executables is None:
+      prefill_executables = []
+    if generate_executables is None:
+      generate_executables = []
     if prefill_params is None:
       prefill_params = []
     if generate_params is None:
@@ -261,6 +271,8 @@ class Driver:
     )
     self._prefill_engines = prefill_engines
     self._generate_engines = generate_engines
+    self._prefill_executables = prefill_executables
+    self._generate_executables = generate_executables
     self._prefill_params = prefill_params
     self._generate_params = generate_params
     self._interleaved_mode = interleaved_mode
@@ -406,6 +418,7 @@ class Driver:
     )
     self.live = True
     self._is_ray_backend = is_ray_backend
+    self._is_aot = is_aot
     # Start all threads
     for t in self._all_threads:
       t.start()
@@ -525,13 +538,21 @@ class Driver:
       padded_tokens, true_length = self._process_prefill_content(
           request, tokenizer, is_bos, prefill_engine.max_prefill_length
       )
+      request.prefill_padded_length = padded_tokens.shape[-1]
 
-      # Compute new kv cache for the prefill_content.
-      prefill_result, first_token = prefill_engine.prefill(
-          params=prefill_params,
-          padded_tokens=padded_tokens,
-          true_length=true_length,
-      )
+      if self._is_aot:
+        prefill_executable = self._prefill_executables[idx][request.prefill_padded_length]
+        # prefill_executable takes positional args rather than kwargs
+        prefill_result, first_token = prefill_executable(
+            prefill_params, padded_tokens, true_length,
+        )
+      else:
+        # Compute new kv cache for the prefill_content.
+        prefill_result, first_token = prefill_engine.prefill(
+            params=prefill_params,
+            padded_tokens=padded_tokens,
+            true_length=true_length,
+        )
       request.prefill_result = prefill_result
 
       # put first token to detokenize queue
@@ -637,7 +658,13 @@ class Driver:
     # Keep track of what step tokens were generated at.
     generate_timestep = 0
     # State to store things like running kv cache in.
-    decode_state = generate_engine.init_decode_state()
+    if self._is_aot:
+      decode_state_executable, insert_executables, generate_executable = (
+          self._generate_executables[idx]
+      )
+      decode_state = decode_state_executable()
+    else:
+      decode_state = generate_engine.init_decode_state()
 
     generate_params = self._generate_params[idx]
     logging.info("---------Generate params %d loaded.---------", idx)
@@ -729,9 +756,15 @@ class Driver:
             generate_timestep,
         )
 
-        decode_state = generate_engine.insert(
-            new_request.prefill_result, decode_state, slot=slot
-        )
+        if self._is_aot:
+          insert_executable = insert_executables[new_request.prefill_padded_length]
+          decode_state = insert_executable(
+              new_request.prefill_result, decode_state, slot
+          )
+        else:
+          decode_state = generate_engine.insert(
+              new_request.prefill_result, decode_state, slot=slot
+          )
         del new_request.prefill_result
         new_request.generate_timestep_added = generate_timestep
         new_request.complete = np.zeros(
@@ -746,9 +779,14 @@ class Driver:
       ), "At this point we must have some requests inserted into the slots."
 
       # Now we actually take a generate step on requests in the slots.
-      decode_state, sampled_tokens = generate_engine.generate(
+      if self._is_aot:
+        decode_state, sampled_tokens = generate_executable(
           generate_params, decode_state
-      )
+        )
+      else:
+        decode_state, sampled_tokens = generate_engine.generate(
+            generate_params, decode_state
+        )
       sampled_tokens.copy_to_host_async()
       # Respond to detokenization backpressure.
       my_detokenize_backlog.put((generate_timestep, sampled_tokens), block=True)

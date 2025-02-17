@@ -21,13 +21,12 @@ could want to call, enabling interleaved (continuous batching) inference.
 import abc
 from typing import Any, Optional, Tuple, Union, Callable
 
-from flax import struct
 import jax
 import numpy as np
+from flax import struct
 
-from jetstream.engine import tokenizer_pb2
 from jetstream.engine import token_utils
-
+from jetstream.engine import tokenizer_pb2
 
 # The model parameters - their partitioning will be unique for different prefill
 # and decode topoologies.
@@ -42,6 +41,8 @@ DeviceTokens = Any
 CpuDevices = Any
 # Tokenkizer used by the engine
 Tokenizer = Any
+
+XLAFlags = dict[str, bool | int | float | str]
 
 
 @struct.dataclass
@@ -115,14 +116,14 @@ class ResultTokens(abc.ABC):
     # Mask out any non valid tokens.
     return SlotData(
         tokens=self.data[
-            start_idx:end_idx, self.tokens_idx[0] : self.tokens_idx[1]
+        start_idx:end_idx, self.tokens_idx[0]: self.tokens_idx[1]
         ],
         valid=self.data[
-            start_idx:end_idx, self.valid_idx[0] : self.valid_idx[1]
+        start_idx:end_idx, self.valid_idx[0]: self.valid_idx[1]
         ],
         # Only get a 1D representation here
         lengths=self.data[
-            start_idx:end_idx, self.length_idx[0] : self.length_idx[1]
+        start_idx:end_idx, self.length_idx[0]: self.length_idx[1]
         ][:, 0],
     )
 
@@ -270,9 +271,10 @@ class JetStreamEngine(Engine):
 
   def __init__(self, downstream_engine: Engine):
     self._downstream_engine = downstream_engine
-
     self.prefill_buckets = None
     self.warm = False
+    # When set to true, engine computations are ahead-of-time compiled.
+    self.aot = False
 
   def prefill(
       self,
@@ -282,7 +284,6 @@ class JetStreamEngine(Engine):
       padded_tokens: jax.Array,
       true_length: int,
   ) -> Tuple[Prefix, ResultTokens]:
-
     prefill_result, first_token = self._downstream_engine.prefill(
         params=params,
         padded_tokens=padded_tokens,
@@ -290,19 +291,37 @@ class JetStreamEngine(Engine):
     )
     return prefill_result, first_token
 
+  def prefill_aot(
+      self,
+      params: Params,
+      padded_tokens: jax.Array,
+      true_length: int
+  ) -> Tuple[Prefix, ResultTokens]:
+    """Wrapper for prefill for ahead-of-time compilation."""
+    return self._downstream_engine.prefill(
+        params=params, padded_tokens=padded_tokens, true_length=true_length
+    )
+
   def insert(
       self,
       prefix: Prefix,
       decode_state: DecodeState,
       slot: int,
   ) -> DecodeState:
-
     decode_state = self._downstream_engine.insert(
         prefix=prefix,
         decode_state=decode_state,
         slot=slot,
     )
     return decode_state
+
+  def generate_aot(
+      self, params: Params, decode_state: DecodeState
+  ) -> Tuple[DecodeState, ResultTokens]:
+    """Wrapper to generate for ahead of time compilation."""
+    return self._downstream_engine.generate(
+        params=params, decode_state=decode_state
+    )
 
   def generate(
       self, params: Params, decode_state: DecodeState
