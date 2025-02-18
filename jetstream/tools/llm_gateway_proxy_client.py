@@ -39,15 +39,8 @@ _ADAPTER_ID = flags.DEFINE_string(
     required=False,
 )
 
-_ADAPTER_CONFIG_PATH = flags.DEFINE_string(
-    "adapter_config_path",
-    None,
-    "Path of the fine-tuned adapter to be loaded from.",
-    required=False,
-)
-
-_ADAPTER_WEIGHTS_PATH = flags.DEFINE_string(
-    "adapter_weights_path",
+_ADAPTER_PATH = flags.DEFINE_string(
+    "adapter_path",
     None,
     "Path of the fine-tuned adapter to be loaded from.",
     required=False,
@@ -75,17 +68,15 @@ def main(argv: Sequence[str]) -> None:
       print(f"Calling the JetStream/MultiAdapterManager/LoadAdapter.")
 
       adapter_id=_ADAPTER_ID.value
-      adapter_config_path=_ADAPTER_CONFIG_PATH.value
-      adapter_weights_path=_ADAPTER_WEIGHTS_PATH.value
+      adapter_path=_ADAPTER_PATH.value
 
-      if adapter_id == None or adapter_weights_path == None or adapter_config_path == None:
-        print(f"For `load_adapter` API call, `adapter_id`, `adapter_config_path` and `adapter_weights_path` must be passed.")
+      if adapter_id == None or adapter_path == None:
+        print(f"For `load_adapter` API call, `adapter_id` and `adapter_path` must be passed.")
         return
 
       request = jetstream_pb2.LoadAdapterRequest(
             adapter_id=adapter_id,
-            adapter_config_path=adapter_config_path,
-            adapter_weights_path=adapter_weights_path
+            adapter_path=adapter_path
       )
 
       response = stub.LoadAdapter(request)
@@ -125,9 +116,9 @@ def main(argv: Sequence[str]) -> None:
       if response.success is True:
         print(f"`ListAdapter` call responded successfully. Here is the list of adapters loaded on server:")
         for adapter_info in response.adapter_infos:
-          print(f"adapter_id={adapter_info.adapter_id}, loading_cost={adapter_info.loading_cost}.")
+          print(f"adapter_id={adapter_info.adapter_id}, loading_cost={adapter_info.loading_cost}, size_hbm={adapter_info.size_hbm} bytes, size_cpu={adapter_info.size_cpu} Bytes, last_accessed={adapter_info.last_accessed}, status={adapter_info.status}")
       else:
-        print(f"`ListAdapter` call failed with error={error_message}")
+        print(f"`ListAdapter` call failed with error={response.error_message}")
     
     elif _TEST_API_NAME.value == None:
       print(f"`test_api_name` flag is not set. So exiting.")

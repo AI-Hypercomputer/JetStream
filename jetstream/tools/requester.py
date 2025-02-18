@@ -42,6 +42,11 @@ _CLIENT_SIDE_TOKENIZATION = flags.DEFINE_bool(
     False,
     "Enable client side tokenization with tokenizer.",
 )
+_ADAPTER_ID = flags.DEFINE_string(
+    "adapter_id",
+    "",
+    "ID of the adapter for this decode request.",
+    required=False)
 
 
 def _GetResponseAsync(
@@ -90,6 +95,7 @@ def main(argv: Sequence[str]) -> None:
               text=_TEXT.value
           ),
           max_tokens=_MAX_TOKENS.value,
+          adapter_id=_ADAPTER_ID.value,
       )
     return _GetResponseAsync(stub, request)
 

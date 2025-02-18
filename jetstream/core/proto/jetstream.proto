@@ -118,12 +118,15 @@ message ListAdaptersResponse {
 message AdapterInfo {
   string adapter_id = 1;
   int64 loading_cost = 2;
+  int64 size_hbm = 3;
+  int64 size_cpu = 4;
+  float last_accessed = 5;
+  string status = 6;
 }
 
 message LoadAdapterRequest {
   string adapter_id = 1;			// Unique ID for the adapter
-  string adapter_config_path = 2;		// Path to the LoRA adapter config
-  string adapter_weights_path = 3;		// Path to the LoRA adapter weights (a directory with weights & config)
+  string adapter_path = 2;		// Path to the LoRA adapter (config & weights)
 }
 
 message LoadAdapterResponse {

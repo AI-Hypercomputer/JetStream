@@ -19,10 +19,10 @@ import logging
 import grpc
 
 from typing import Optional
-
+from jetstream.core import adapter_tensorstore
+from jetstream.core import orchestrator
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.proto import jetstream_pb2
-from jetstream.core import orchestrator
 
 
 def calculate_loading_cost(adapter_path: str):
@@ -36,7 +36,6 @@ class MultiLoraManager(jetstream_pb2_grpc.MultiAdapterManagerServicer):
 
   def __init__(self, driver: orchestrator.Driver):
     self._driver = driver
-    self.loaded_adapters = {} # Dictionary to track loaded adapters
 
   def ListAdapters(
       self,
@@ -46,25 +45,32 @@ class MultiLoraManager(jetstream_pb2_grpc.MultiAdapterManagerServicer):
     """ListAdapters all loaded LoRA adapters."""
 
     try:
-      logging.info("AMANGU LOG: Before making call to mayBeListLoadedAdapters.")
-      self._driver.mayBeListLoadedAdapters()
-      logging.info("AMANGU LOG: After making call to mayBeListLoadedAdapters.")
+      adapters = self._driver.listAdaptersFromTensorstore()
 
       adapter_infos = []
-      for adapter_id, adapter_data in self.loaded_adapters.items():
-        adapter_info = jetstream_pb2.AdapterInfo(
-              adapter_id=adapter_id,
-              loading_cost=adapter_data["loading_cost"]
-        )
-        adapter_infos.append(adapter_info)
+      for adapter_id, adapter_data in adapters.items():
+        if adapter_data.status == "loaded_hbm":
+          loading_cost = 0
+        elif adapter_data.status == "loaded_cpu":
+          loading_cost = 1
+        elif adapter_data.status == "unloaded":
+          loading_cost = 2
+        else:
+          loading_cost = -1
 
-    # logging.info("AMANGU Log (adapter_manager.py): ListAdapters is still under implementation")
-      logging.info("AMANGU LOG: List adapters --> Before returning success.")
-      logging.info(f"AMANGU LOG: List of adapters --> {adapter_infos}.")
+        adapter_info = jetstream_pb2.AdapterInfo(
+            adapter_id=adapter_id,
+            loading_cost=loading_cost,
+            size_hbm=adapter_data.size_hbm,
+            size_cpu=adapter_data.size_cpu,
+            last_accessed=adapter_data.last_accessed,
+            status=adapter_data.status)
+
+        adapter_infos.append(adapter_info)
 
       return jetstream_pb2.ListAdaptersResponse(success=True, adapter_infos=adapter_infos)
     except Exception as e:
-      logging.info("AMANGU LOG: List adapters --> Before returning failure.")
+      logging.info(f"Listing of adapters failed with error: {str(e)}")
       return jetstream_pb2.ListAdaptersResponse(success=False, error_message=str(e))
 
 
@@ -76,21 +82,11 @@ class MultiLoraManager(jetstream_pb2_grpc.MultiAdapterManagerServicer):
     """Load a LoRA adapter as mentioned in the request."""
 
     try:
-      # Load the adapter using MaxEngine in the Driver
-      # Implmentation to load adatper using MaxEnbine and request.adapter_path
-
-      # Store adapter info (e.g. loading cost
-      self._driver.loadAndApplyAdapter(request.adapter_id,
-                                       request.adapter_config_path,
-                                       request.adapter_weights_path)
-
-      self.loaded_adapters[request.adapter_id] = {
-            "adapter_path": request.adapter_weights_path,
-            "loading_cost": calculate_loading_cost(request.adapter_weights_path)
-      }
+      self._driver.loadAdapterToTensorstore(request.adapter_id, request.adapter_path)
 
       return jetstream_pb2.LoadAdapterResponse(success=True)
     except Exception as e:
+      logging.info(f"Loading of adapter_id={request.adapter_id} failed with error: {str(e)}")
       return jetstream_pb2.LoadAdapterResponse(success=False, error_message=str(e))
 
 
@@ -101,16 +97,11 @@ class MultiLoraManager(jetstream_pb2_grpc.MultiAdapterManagerServicer):
   ) -> jetstream_pb2.UnloadAdapterResponse:
     """Unload a LoRA adapter as mentioned in the request."""
     
-    # logging.info("AMANGU Log (adapter_manager.py): UnloadAdapter is still under implementation")
     try:
-      # Unload the adapter
-      # Implementation to unload adapter from MaxEngine
-      self._driver.unloadAdapter(request.adapter_id)
-
-      del self.loaded_adapters[request.adapter_id]
+      self._driver.unloadAdapterFromTensorstore(request.adapter_id)
       return jetstream_pb2.UnloadAdapterResponse(success=True)
     except Exception as e:
-      logging.info(f"AMANGU Log(adapter_manager.py): UnloadAdapter failed with error {str(e)}")
+      logging.info(f"Loading of adapter_id={request.adapter_id} failed with error: {str(e)}")
       return jetstream_pb2.UnloadAdapterResponse(success=False, error_message=str(e))
 
     

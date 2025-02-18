@@ -66,6 +66,8 @@ class JetStreamServer:
         orchestrator.LLMOrchestrator(driver=self._driver), self._grpc_server
     )
 
+    asyncio.run(self._driver.loadAdaptersFromCatalogToTensorStore())
+
     jetstream_pb2_grpc.add_MultiAdapterManagerServicer_to_server(
         adapter_manager.MultiLoraManager(driver=self._driver), self._grpc_server
     )
@@ -123,6 +125,7 @@ def create_driver(
   generate_params = [{"base_params": ge.load_params()} for ge in engines.generate_engines]
   shared_params = [{"base_params": ie.load_params()} for ie in engines.interleaved_engines]
   logging.info("Loaded all weights.")
+
   interleaved_mode = (
       len(config.prefill_slices) + len(config.generate_slices) == 0
   )
