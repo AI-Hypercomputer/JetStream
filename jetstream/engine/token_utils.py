@@ -34,8 +34,8 @@ from jetstream.external_tokenizers.llama3 import llama3_tokenizer
 ResultTokens = Any
 
 DEFAULT_PREFILL_BUCKETS = [
-    16,
-    32,
+    # 16,
+    # 32,
     64,
     128,
     256,
@@ -158,6 +158,7 @@ def pad_tokens(
   return padded_tokens, true_length
 
 
+@jax.named_call
 def process_result_tokens(
     tokenizer: tokenizer_api.Tokenizer,
     slot: int,

@@ -268,7 +268,8 @@ class Driver:
     log.info(
       f"Initializing driver with {len(prefill_engines)} prefill engines and "
       f"{len(generate_engines)} generate engines with "
-      f"interleaved_mode={interleaved_mode}"
+      f"interleaved_mode={interleaved_mode} "
+      f"aot={is_aot}"
     )
     
     self._prefill_engines = prefill_engines
