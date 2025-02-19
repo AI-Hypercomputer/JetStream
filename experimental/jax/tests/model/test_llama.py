@@ -42,11 +42,9 @@ class LlamaModelTest(absltest.TestCase):
     model_id = "meta-llama/Llama-2-7b-chat-hf"
     model_registry = ModelRegistry()
 
-    config, tokenizer = model_registry.load_model_config(
-        model_id
-    ), model_registry.load_tokenizer(model_id)
+    config = model_registry.load_model_config(model_id)
     config.num_hidden_layers = 1
-    num_prefill_tokens = 16
+    tokenizer = model_registry.load_tokenizer(model_id)
     input_ids = tokenizer.encode("I have a dog that is", return_tensors="pt")
     prompt_len = input_ids.shape[1]
     hg_model = AutoModelForCausalLM.from_pretrained(
@@ -56,6 +54,7 @@ class LlamaModelTest(absltest.TestCase):
     outputs = hg_model(input_ids)
     expected_logits = outputs.logits.detach().numpy()[0]
 
+    num_prefill_tokens = 16
     tokens = jnp.asarray(input_ids)[0]
     tokens = jax.lax.dynamic_update_index_in_dim(
         jnp.zeros((num_prefill_tokens), dtype=jnp.int32), tokens, 0, 0
@@ -98,10 +97,10 @@ class LlamaModelTest(absltest.TestCase):
     attn_metadata = jax.device_put(attn_metadata, attention_metadata_sharding)
 
     casual_lm_weight_cpu = model_registry.load_weights_to_host(
-        model_id,
+        model_id=model_id,
         num_devices=np.prod(mesh.devices.shape),
-        dtype=jnp.float32,
         model_config=config,
+        dtype=jnp.float32,
     )
     model = LlamaModel(config, parallel.ModelParallelConfig(mesh=mesh))
 

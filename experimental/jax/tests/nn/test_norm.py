@@ -45,7 +45,7 @@ class NormTest(absltest.TestCase):
         eps=eps,
         parallel_config=parallel.RMSNormParallelConfig(
             mesh=mesh,
-            activation_shared=False,
+            activation_sharded=False,
         ),
     )
     distributed_rmsnorm_layer = nn.RMSNorm(
@@ -53,7 +53,7 @@ class NormTest(absltest.TestCase):
         eps=eps,
         parallel_config=parallel.RMSNormParallelConfig(
             mesh=mesh,
-            activation_shared=True,
+            activation_sharded=True,
         ),
     )
 

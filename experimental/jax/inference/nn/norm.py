@@ -32,10 +32,8 @@ class RMSNorm(Module):
     self.parallel_config = parallel_config
 
     self.weight = Parameter(jnp.zeros((dim,)))
-    self.variance_epsilon = eps
-
     mesh = parallel_config.mesh
-    if parallel_config.activation_shared:
+    if parallel_config.activation_sharded:
       self.weight.sharding = NamedSharding(mesh, P(parallel.tp_axis_names()))
     else:
       self.weight.sharding = NamedSharding(mesh, P(None))
@@ -43,13 +41,14 @@ class RMSNorm(Module):
   def __call__(self, input):
     input_dtype = input.dtype
     input = input.astype(jnp.float32)
-    variance = jnp.mean(jax.lax.square(input), axis=-1, keepdims=True)
+    mean_square = jnp.mean(jax.lax.square(input), axis=-1, keepdims=True)
 
-    if self.parallel_config.activation_shared:
+    if self.parallel_config.activation_sharded:
       axis_names = parallel.tp_axis_names()
-      variance = parallel.ops.all_reduce(
-          variance, axis_names
+      mean_square = parallel.ops.all_reduce(
+          mean_square, axis_names
       ) / parallel.get_num_partitions(axis_names)
 
-    input = input * jax.lax.rsqrt(variance + self.variance_epsilon)
+    mean_square = jax.lax.rsqrt(mean_square + self.eps)
+    input *= mean_square
     return self.weight * input.astype(input_dtype)

@@ -56,14 +56,14 @@ class BatchScheduler:
   def __init__(
       self,
       kv_cache_manager: KVCacheManager,
-      max_num_seqs: int,
+      batch_size: int,
       max_seq_len: int,
       schedule_policy: SchedulePolicy = SchedulePolicy.OFFLINE,
   ):
     self.prefill_queue: queue.Queue[PrefillRequest] = queue.Queue()
     self.generate_queue: queue.Queue[GenerateRequest] = queue.Queue()
     self.kv_manager = kv_cache_manager
-    self.max_num_seqs = max_num_seqs
+    self.batch_size = batch_size
     self.max_seq_len = max_seq_len
     self.schedule_policy = schedule_policy
 
@@ -133,7 +133,7 @@ class BatchScheduler:
           or (
               len(generate_state.active_slot_req_map)
               + self.generate_queue.qsize()
-              > 0.95 * self.max_num_seqs
+              > 0.95 * self.batch_size
           )
       ):
         # Add new generate request to the slots.
@@ -158,7 +158,7 @@ class BatchScheduler:
             and len(alloced_pages) == 0
         ):
           raise NotImplementedError(
-              "Eviction isn't supported yet, please set a lower value for max_num_seqs"
+              "Eviction isn't supported yet, please set a lower value for batch_size"
           )
 
         page_to_use = 0

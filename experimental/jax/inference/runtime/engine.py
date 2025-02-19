@@ -19,6 +19,7 @@ limitations under the License.
 import enum
 import dataclasses
 import datetime
+import math
 import queue
 import threading
 from typing import Any
@@ -31,6 +32,7 @@ import numpy as np
 from inference.model import ModelSource, ModelRegistry, SamplingParams
 from inference import nn
 from inference import parallel
+from inference.model.llama import LlamaForCausalLM
 from inference.runtime.kv_cache import *
 from inference.runtime.request_type import *
 from inference.runtime.kv_cache import KVCacheStorage, KVCacheManager
@@ -41,23 +43,17 @@ from inference.runtime.model_executor import Executor
 @dataclasses.dataclass
 class ModelLoadParams:
   model_id: str
-  tokenizer_path: str | None = None
-  weights_path: str | None = None
-  source: ModelSource = ModelSource.HUGGINGFACE
-  hf_model_config: Any | None = None
-  dummy_weights: bool = False
+  dummy_weights: bool
 
 
 @dataclasses.dataclass
 class InferenceParams:
-  max_num_seqs: int = 320
-  max_seq_length: int = 2048
-  max_input_length: int = 1024
-  prefill_chunk_sizes: list[int] = dataclasses.field(
-      default_factory=lambda: [128, 256, 512, 1024]
-  )
-  page_size: int = 128
-  hbm_utilization: float = 0.8
+  batch_size: int
+  max_seq_length: int
+  max_input_length: int
+  prefill_chunk_sizes: list[int]
+  page_size: int
+  hbm_utilization: float
 
 
 @enum.unique
@@ -79,6 +75,7 @@ class OnlineChannel:
 
 
 class Engine:
+  """Engine is a wrapper of the model for inference"""
 
   def __init__(
       self,
@@ -87,25 +84,18 @@ class Engine:
       inference_params: InferenceParams,
       mode: EngineMode,
       channel: OfflineChannel | OnlineChannel,
-      debug_mode: bool = False,
+      debug_mode: bool,
   ):
-    """Engine is a wrapper of the model for inference"""
     print("Initializing engine")
     self.mesh = mesh
     self.inference_params = inference_params
     model_registry = ModelRegistry()
-    self.tokenizer = model_registry.load_tokenizer(
-        model_id=model_load_params.model_id,
-        path=model_load_params.tokenizer_path,
-    )
-
-    print("Loading model config")
+    self.tokenizer = model_registry.load_tokenizer(model_load_params.model_id)
     model_config = model_registry.load_model_config(model_load_params.model_id)
     if debug_mode:
       model_config.num_hidden_layers = 1
 
-    model_cls = model_registry.model_cls(model_load_params.model_id)
-    self.model: nn.CausalLM = model_cls(
+    self.model: nn.CausalLM = LlamaForCausalLM(
         model_config,
         parallel.ModelParallelConfig(mesh=self.mesh),
         self.tokenizer.eos_token_id,
@@ -113,31 +103,27 @@ class Engine:
     )
 
     if model_load_params.dummy_weights:
-      print("Initializing random params")
       self.weights_dict = self.model.init_weights()
     else:
-      print("Loading model weights")
       weights_on_host = model_registry.load_weights_to_host(
-          model_load_params.model_id,
-          self.mesh.devices.size,
-          model_config,
-          model_load_params.weights_path,
-          model_load_params.source,
+          model_id=model_load_params.model_id,
+          num_devices=self.mesh.devices.size,
+          model_config=model_config,
+          dtype=jnp.bfloat16,
       )
-      print("Loading model weights to devices")
       self.weights_dict = self.model.load_weights_dict(weights_on_host)
 
-    print("Initializing KV Cache storage")
+    print("-" * 40)
+    print("Initializing KV cache storage/manager")
     # init kv cache
     self.kv_storage = KVCacheStorage(
         mesh=self.mesh,
         model_config=model_config,
-        page_size=inference_params.page_size,
-        hbm_utilization=inference_params.hbm_utilization,
+        page_size=self.inference_params.page_size,
+        hbm_utilization=self.inference_params.hbm_utilization,
     )
-    num_hbm_pages = self.kv_storage.num_hbm_pages
     self.kv_manager = KVCacheManager(
-        num_hbm_pages, self.inference_params.page_size
+        self.kv_storage.num_hbm_pages, self.inference_params.page_size
     )
 
     self.mode = mode
@@ -145,38 +131,44 @@ class Engine:
 
     if self.mode == EngineMode.OFFLINE:
       mode = SchedulePolicy.OFFLINE
-    if self.mode == EngineMode.ONLINE:
+    else:
+      assert self.mode == EngineMode.ONLINE
       mode = SchedulePolicy.ONLINE
 
+    print("-" * 40)
+    print("Initializing batch scheduler")
     self.scheduler = BatchScheduler(
         self.kv_manager,
-        self.inference_params.max_num_seqs,
+        self.inference_params.batch_size,
         self.inference_params.max_seq_length,
         mode,
     )
 
+    print("-" * 40)
     print("Initializing GenerateState")
     self.active_prefill_request = None
+    self.num_pages_per_seq = math.ceil(
+        self.inference_params.max_seq_length / self.inference_params.page_size
+    )
     slots = queue.SimpleQueue()
-    for i in range(self.inference_params.max_num_seqs):
+    for i in range(self.inference_params.batch_size):
       slots.put(i)
     self.generate_state = GenerateState(
         token_ids=jnp.zeros(
-            shape=(self.inference_params.max_num_seqs,),
+            shape=(self.inference_params.batch_size,),
             dtype=jnp.int32,
             device=NamedSharding(self.mesh, P(None)),
         ),
         positions=jnp.full(
-            shape=(self.inference_params.max_num_seqs,),
+            shape=(self.inference_params.batch_size,),
             fill_value=-1,
             dtype=jnp.int32,
             device=NamedSharding(self.mesh, P(None)),
         ),
         page_table=jnp.full(
             shape=(
-                self.inference_params.max_num_seqs,
-                self.inference_params.max_seq_length
-                // self.inference_params.page_size,
+                self.inference_params.batch_size,
+                self.num_pages_per_seq,
             ),
             fill_value=self.kv_manager.dummy_page_idx,
             dtype=jnp.int32,
@@ -186,18 +178,15 @@ class Engine:
         active_slot_req_map={},
     )
     self.sample_params = SamplingParams(
-        jax.device_put(
+        temperature=jax.device_put(
             jnp.asarray((1.0), dtype=jnp.float32), NamedSharding(self.mesh, P())
         ),
-        jax.device_put(
+        top_k=jax.device_put(
             jnp.asarray((1), dtype=jnp.int32), NamedSharding(self.mesh, P())
         ),
-        jax.device_put(jax.random.key(0), NamedSharding(self.mesh, P())),
+        rng=jax.device_put(jax.random.key(0), NamedSharding(self.mesh, P())),
     )
 
-    self.num_pages_per_seq = (
-        self.inference_params.max_seq_length // self.inference_params.page_size
-    )
     self.model_executor = Executor(
         self.mesh,
         self.weights_dict,
@@ -206,16 +195,20 @@ class Engine:
         debug_mode=debug_mode,
     )
 
+    print("-" * 40)
+    print("Compiling engine ...")
+    print("-" * 40)
     self.model_executor.compile(
         self.inference_params.prefill_chunk_sizes,
-        self.inference_params.max_num_seqs,
+        self.inference_params.batch_size,
         self.inference_params.max_seq_length,
         self.inference_params.max_input_length,
         self.kv_storage.hbm_kv_caches,
         self.sample_params,
     )
+    print("-" * 40)
+    print("Compiling engine done")
 
-    print("Engine compilation finished")
     # running loop
     self.requests_dict: dict[str, Request] = {}
 
@@ -231,7 +224,7 @@ class Engine:
     # TODO: Assign the max_device_requests_sem number by the
     # device spec and cost model.
     self._max_device_requests_sem = threading.Semaphore(
-        self.inference_params.max_num_seqs * 1.5
+        self.inference_params.batch_size * 3 // 2
     )
     self._preprocess_queue: queue.Queue[Request] = queue.Queue()
     # TODO: Seperate the running loop with the static inference model.
@@ -394,7 +387,7 @@ class Engine:
           self.generate_state,
           self.kv_storage.hbm_kv_caches,
           self.sample_params,
-          self.inference_params.max_num_seqs,
+          self.inference_params.batch_size,
       )
 
       output, self.kv_storage.hbm_kv_caches = self.model_executor.execute(input)

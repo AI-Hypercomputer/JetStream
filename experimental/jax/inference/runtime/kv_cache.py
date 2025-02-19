@@ -22,6 +22,7 @@ from jax import numpy as jnp
 from jax.sharding import Mesh, NamedSharding, PartitionSpec as P
 import queue
 from inference.nn import KVCache
+from transformers import PretrainedConfig
 
 
 class KVCacheStorage:
@@ -29,9 +30,9 @@ class KVCacheStorage:
   def __init__(
       self,
       mesh: Mesh,
-      model_config,
-      page_size: int = 32,
-      hbm_utilization: float = 0.8,
+      model_config: PretrainedConfig,
+      page_size: int,
+      hbm_utilization: float,
   ):
     self.mesh = mesh
     self.num_devices = mesh.devices.size
@@ -44,36 +45,38 @@ class KVCacheStorage:
     )
     self.page_size = page_size
 
-    self.hbm_kv_caches: list[KVCache] = self.init_hbm_storage(hbm_utilization)
+    self.hbm_kv_caches: list[KVCache] = self.__init_hbm_storage(
+        hbm_utilization, jnp.bfloat16
+    )
     self.num_hbm_pages = self.hbm_kv_caches[0].k.shape[1]
 
-  def init_hbm_storage(
+  def __init_hbm_storage(
       self,
-      hbm_utilization: float = 0.8,
-      cache_dtype: jnp.dtype = jnp.bfloat16,
+      hbm_utilization: float,
+      cache_dtype: jnp.dtype,
   ):
     memory_stats = jax.devices()[0].memory_stats()
     if memory_stats:
       print("per device memory_stats: ", memory_stats)
-      available_hbm_bytes = (
+      available_hbm_bytes = int(
           memory_stats["bytes_reservable_limit"] * hbm_utilization
           - memory_stats["bytes_in_use"]
       )
       item_size = jnp.ones((1), dtype=cache_dtype).itemsize
       kv_size_per_page = (
-          item_size
-          * self.num_kv_heads
-          // self.num_devices
-          * self.head_dim
-          * self.page_size
+          self.page_size
           * 2
+          * self.num_kv_heads
+          * self.head_dim
+          * item_size
+          // self.num_devices
       )
-      num_pages_per_layer = int(
-          available_hbm_bytes // kv_size_per_page // self.num_layers
+      num_pages_per_layer = available_hbm_bytes // (
+          kv_size_per_page * self.num_layers
       )
     else:
-      print("memory_stats not available, allocate 128 pages.")
-      num_pages_per_layer = 128
+      print("memory_stats not available, allocate 1000 pages.")
+      num_pages_per_layer = 1000
 
     # TODO: support 2d sharding.
     kv_storage = [
@@ -130,10 +133,7 @@ class KVCacheManager:
 
   def alloc_prefill_hbm_pages(self, prompt_len) -> list[int]:
     num_pages = math.ceil(prompt_len / self.page_size)
-    if num_pages > self.num_available_hbm_pages:
-      return []
-    else:
-      return self.alloc_hbm_pages(num_pages)
+    return self.alloc_hbm_pages(num_pages)
 
   def alloc_hbm_pages(self, num_pages: int) -> list[int]:
     pages_to_use = []
@@ -142,6 +142,7 @@ class KVCacheManager:
 
     for _ in range(num_pages):
       pages_to_use.append(self.available_hbm_pages.get())
+    assert len(pages_to_use) == num_pages
     return pages_to_use
 
   def free_hbm_pages(self, pages: list[int]):
