@@ -21,6 +21,7 @@ from typing import Any, Iterable, List, Optional, Tuple, Union
 import jax
 import jax.numpy as jnp
 import numpy as np
+import math
 from seqio.vocabularies import SentencePieceVocabulary
 from seqio.vocabularies import Vocabulary
 
@@ -34,10 +35,8 @@ from jetstream.external_tokenizers.llama3 import llama3_tokenizer
 ResultTokens = Any
 
 DEFAULT_PREFILL_BUCKETS = [
-    16,
-    32,
-    64,
-    128,
+    # 64,
+    # 128,
     256,
     512,
     1024,
@@ -96,6 +95,65 @@ def tokenize_and_pad(
       jax_padding=jax_padding,
   )
   return padded_tokens, true_length
+
+def chunk_and_pad_tokens(tokens, bos_id: int,
+    pad_id: int,
+    is_bos: bool = True,
+    prefill_lengths: Optional[List[int]] = None,
+    max_prefill_length: Optional[int] = None,
+    chunk_size: Optional[int] = None,
+    jax_padding: bool = True,) -> Tuple[List[Union[jax.Array, np.ndarray]], List[Union[jax.Array, np.ndarray]], List[Union[jax.Array, np.ndarray]]]:
+  """Chunks and pads tokens for chunked prefill
+    if total token size is 520 and chunk size is 256, 
+    the function will return 3 chunks and return tuple is as follows- 
+    [[t0,..t255][t256,..t511][t512,..t519...(padding)]], 
+    [256, 256, 7+padding], 
+    [[0,..255],[256,..511],[512..518..]]
+
+    Args:
+    tokens: Tokens.
+    bos_id: Bos ID.
+    pad_id: Pad ID.
+    is_bos: Add a beginning of sequence token if this is ture.
+    prefill_lengths: Buckets to pad the sequence to for static compilation.
+    max_prefill_length: Maximum bucket to use.
+    chunk_size: maximum size of each chunk
+    jax_padding: convert to JAX padded tokens if True.
+
+  Returns:
+    chunk_padded_tokens: List of chunked and padded tokens.
+    padded_chunk_true_lengths: List of integers - true length of each chunk
+    positions:list of position of each token in the chunk
+  """
+  
+  num_tokens = len(tokens)
+  num_chunks =int(math.ceil(num_tokens/chunk_size))
+  # every entry in chunk_padded_tokens is a padded chunk 
+  chunk_padded_tokens = []
+  
+  # true lengths for each chunk
+  padded_chunk_true_lengths = []
+  
+  # positions of tokens in each chunk
+  positions = []
+  # to be able to slice the tokens
+  tokens = jnp.array(tokens)
+  for chunk_num in range(num_chunks):
+    start = int(chunk_num*chunk_size)
+    end = jnp.minimum((chunk_num+1)*chunk_size, num_tokens)
+    chunk_tokens = jax.lax.slice(tokens, (start,), (end,))
+    if chunk_num == 0:
+      padded_chunk, padded_chunk_true_length = pad_tokens(chunk_tokens, bos_id,pad_id, is_bos, prefill_lengths, max_prefill_length, jax_padding)
+    else:
+      # is_bos should be false in subsequent chunks.
+      padded_chunk, padded_chunk_true_length = pad_tokens(chunk_tokens, bos_id,pad_id, False, prefill_lengths, max_prefill_length, jax_padding)
+    
+    positions_chunk = jnp.expand_dims(jnp.arange(start, start+len(padded_chunk), dtype=jnp.int32), 0)
+    chunk_padded_tokens.append(padded_chunk)
+    padded_chunk_true_lengths.append(padded_chunk_true_length)
+    positions.append(positions_chunk)
+
+  return chunk_padded_tokens, padded_chunk_true_lengths, positions
 
 
 def pad_tokens(
@@ -156,7 +214,6 @@ def pad_tokens(
   if jax_padding:
     padded_tokens = jnp.array(padded_tokens)
   return padded_tokens, true_length
-
 
 def process_result_tokens(
     tokenizer: tokenizer_api.Tokenizer,
