@@ -50,13 +50,12 @@ class ModelLoadParams:
 
 @dataclasses.dataclass
 class InferenceParams:
-  max_num_seqs: int = 160
+  max_num_seqs: int = 320
   max_seq_length: int = 2048
   max_input_length: int = 1024
   prefill_chunk_sizes: list[int] = dataclasses.field(
       default_factory=lambda: [128, 256, 512, 1024]
   )
-  # prefill_chunk_sizes: list[int] = dataclasses.field(default_factory=lambda: [256])
   page_size: int = 128
   hbm_utilization: float = 0.8
 
