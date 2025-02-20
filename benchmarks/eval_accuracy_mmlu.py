@@ -24,11 +24,13 @@ import numpy as np
 
 
 def postprocess_text(preds, targets):
-  choices = ['A', 'B', 'C', 'D', None]
+  choices = ["A", "B", "C", "D", None]
+
   def _parse_answer(output):
     match = re.search(r"\s*\(([A-D])\)\s*\w*", output, re.IGNORECASE)
     predicted_answer = match.group(1).upper() if match else None
     return predicted_answer
+
   preds = [choices.index(_parse_answer(pred.strip())) for pred in preds]
   targets = [choices.index(target.strip().upper()) for target in targets]
   return preds, targets
