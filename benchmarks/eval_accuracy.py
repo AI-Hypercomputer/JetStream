@@ -33,26 +33,41 @@ def postprocess_text(preds, targets):
   return preds, targets
 
 
-def eval_accuracy(request_outputs_dict):
-  metric = evaluate.load("rouge")
-  nltk.download("punkt")
-  preds = []
-  targets = []
-
+def eval_accuracy(request_outputs_dict, match_type):
   for output in request_outputs_dict:
     preds.append(output["generated_text"])
     targets.append(output["original_output"])
   preds, targets = postprocess_text(preds, targets)
-  result = metric.compute(
-      predictions=preds,
-      references=targets,
-      use_stemmer=True,
-      use_aggregator=False,
-  )
-  result = {k: float(round(np.mean(v) * 100, 4)) for k, v in result.items()}
-  prediction_lens = [len(pred) for pred in preds]
-  result["gen_len"] = int(np.sum(prediction_lens))
-  result["gen_num"] = len(preds)
+
+  if match_type == "math":
+    correct_ans = 0
+    wrong_ans = 0
+    for p, t in zip(preds, targets):
+      if p == t:
+        correct_ans += 1
+        continue
+      wrong_ans +=1
+    total_ans = correct_ans + wrong_ans
+    result = {}
+    result['literal'] = correct_ans / total_ans if total_ans > 0 else 0.0
+    result["gen_len"] = total_ans
+    result["gen_num"] = total_ans
+  if match_type == "rouge":
+    metric = evaluate.load("rouge")
+    nltk.download("punkt")
+    preds = []
+    targets = []
+    result = metric.compute(
+        predictions=preds,
+        references=targets,
+        use_stemmer=True,
+        use_aggregator=False,
+    )
+    result = {k: float(round(np.mean(v) * 100, 4)) for k, v in result.items()}
+    prediction_lens = [len(pred) for pred in preds]
+    result["gen_len"] = int(np.sum(prediction_lens))
+    result["gen_num"] = len(preds)
+
   print("\nResults\n")
   print(result)
   return result
@@ -73,6 +88,14 @@ if __name__ == "__main__":
       default="/tmp/request-outputs.json",
       help="File path which has original_output and inference generated_text.",
   )
+  parser.add_argument(
+      "--match_type",
+      type=str,
+      default="rouge",
+      nargs='?',
+      help="Optional, values are 'rouge' or 'math'. The way to measure the accuracy of the results. ",
+  )
+
 
   parsed_args = parser.parse_args()
 
