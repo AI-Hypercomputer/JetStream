@@ -283,7 +283,7 @@ def load_math500_dataset(dataset_path: str) -> list[tuple[Any, Any]]:
   abs_path = os.path.abspath(dataset_path)
   with open(abs_path, "r", encoding="utf-8") as f:
     dataset = json.load(f)
-  return [(data["problem"],  data["answer"]) for data in dataset]
+  return [(data["problem"], data["answer"]) for data in dataset]
 
 
 def tokenize_dataset(
@@ -402,7 +402,9 @@ def sample_requests(
 
   tokenized_dataset = tokenize_dataset(sampled_dataset, tokenizer)
 
-  input_requests = filter_dataset(tokenized_dataset, dataset_type, max_output_length)
+  input_requests = filter_dataset(
+      tokenized_dataset, dataset_type, max_output_length
+  )
 
   # Sample the requests.
   if len(input_requests) > num_requests:
@@ -889,10 +891,12 @@ def main(args: argparse.Namespace):
       )
     elif args.dataset == "math500":
       dataset = load_math500_dataset(
-        args.dataset_path,
+          args.dataset_path,
       )
     else:
-      raise ValueError(f"Fatal Error: Uncognized input parameters: {args.dataset}")
+      raise ValueError(
+          f"Fatal Error: Uncognized input parameters: {args.dataset}"
+      )
 
     # A given args.max_output_length value is the max generation step,
     # when the args.max_output_length is default to None, the sample's golden

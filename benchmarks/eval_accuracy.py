@@ -34,6 +34,8 @@ def postprocess_text(preds, targets):
 
 
 def eval_accuracy(request_outputs_dict, match_type):
+  preds = []
+  targets = []
   for output in request_outputs_dict:
     preds.append(output["generated_text"])
     targets.append(output["original_output"])
@@ -43,13 +45,15 @@ def eval_accuracy(request_outputs_dict, match_type):
     correct_ans = 0
     wrong_ans = 0
     for p, t in zip(preds, targets):
-      if p == t:
+      # We claim success if the generated text contains the correct results at
+      # the end and matches literally.
+      if p.endswith(t):
         correct_ans += 1
         continue
-      wrong_ans +=1
+      wrong_ans += 1
     total_ans = correct_ans + wrong_ans
     result = {}
-    result['literal'] = correct_ans / total_ans if total_ans > 0 else 0.0
+    result["literal"] = correct_ans / total_ans if total_ans > 0 else 0.0
     result["gen_len"] = total_ans
     result["gen_num"] = total_ans
   if match_type == "rouge":
@@ -77,7 +81,7 @@ def main(args):
   with open(args.output_path, "r", encoding="utf-8") as f:
     request_outputs_dict = json.load(f)
 
-  eval_accuracy(request_outputs_dict)
+  eval_accuracy(request_outputs_dict, args.match_type)
 
 
 if __name__ == "__main__":
@@ -92,10 +96,10 @@ if __name__ == "__main__":
       "--match_type",
       type=str,
       default="rouge",
-      nargs='?',
-      help="Optional, values are 'rouge' or 'math'. The way to measure the accuracy of the results. ",
+      nargs="?",
+      help="Optional, values are 'rouge' or 'math'. The way to measure the "
+      "accuracy of the results. ",
   )
-
 
   parsed_args = parser.parse_args()
 
