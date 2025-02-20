@@ -277,6 +277,15 @@ def load_openorca_dataset_pkl(
   return [(prompt, output) for prompt, output in zip(prompts, outputs)]
 
 
+def load_math500_dataset(dataset_path: str) -> list[tuple[Any, Any]]:
+  if not dataset_path:
+    dataset_path = "benchmarks/huggingfaceh4_math500.json"
+  abs_path = os.path.abspath(dataset_path)
+  with open(abs_path, "r", encoding="utf-8") as f:
+    dataset = json.load(f)
+  return [(data["problem"], data["answer"]) for data in dataset]
+
+
 def tokenize_dataset(
     dataset: list[tuple[Any, Any, Any]],
     tokenizer: Any,
@@ -314,6 +323,7 @@ def tokenize_dataset(
 
 def filter_dataset(
     tokenized_dataset: list[tuple[str, Any, str, int, int, int]],
+    dataset_type: str,
     max_output_length: int = 0,
 ) -> list[InputRequest]:
   if max_output_length != 0:
@@ -334,10 +344,11 @@ def filter_dataset(
       output_len,
       sample_idx,
   ) in tokenized_dataset:
-    if prompt_len < 4 or output_len < 4:
+    if prompt_len < 4 or (output_len < 4 and not dataset_type == "math500"):
       # Prune too short sequences.
       # This is because TGI causes errors when the input or output length
       # is too short.
+      # Math results could be really short though.
       continue
     if prompt_len > 1024 or prompt_len + output_len > 2048:
       # Prune too long sequences.
@@ -357,6 +368,7 @@ def sample_requests(
     dataset: list[tuple[Any, Any]],
     tokenizer: Any,
     num_requests: int,
+    dataset_type: str,
     max_output_length: int = 0,
     oversample_multiplier: float = 1.2,
 ) -> list[InputRequest]:
@@ -390,7 +402,9 @@ def sample_requests(
 
   tokenized_dataset = tokenize_dataset(sampled_dataset, tokenizer)
 
-  input_requests = filter_dataset(tokenized_dataset, max_output_length)
+  input_requests = filter_dataset(
+      tokenized_dataset, dataset_type, max_output_length
+  )
 
   # Sample the requests.
   if len(input_requests) > num_requests:
@@ -719,7 +733,7 @@ def parse_args() -> argparse.Namespace:
       "--dataset",
       type=str,
       default="test",
-      choices=["test", "sharegpt", "openorca"],
+      choices=["test", "sharegpt", "openorca", "math500"],
       help="The dataset name.",
   )
   parser.add_argument("--dataset-path", type=str, help="Path to the dataset.")
@@ -875,6 +889,14 @@ def main(args: argparse.Namespace):
           args.dataset_path,
           args.conversation_starter,
       )
+    elif args.dataset == "math500":
+      dataset = load_math500_dataset(
+          args.dataset_path,
+      )
+    else:
+      raise ValueError(
+          f"Fatal Error: Uncognized input parameters: {args.dataset}"
+      )
 
     # A given args.max_output_length value is the max generation step,
     # when the args.max_output_length is default to None, the sample's golden
@@ -883,6 +905,7 @@ def main(args: argparse.Namespace):
         dataset=dataset,
         tokenizer=tokenizer,
         num_requests=args.num_prompts,
+        dataset_type=args.dataset,
         max_output_length=args.max_output_length,
     )
 
@@ -927,7 +950,7 @@ def main(args: argparse.Namespace):
   # Process output
   output = [output.to_dict() for output in request_outputs]
   if args.run_eval:
-    eval_json = eval_accuracy(output)
+    eval_json = eval_accuracy(output, args.dataset_type[:4])
 
   # Save config and results to json
   if args.save_result:
