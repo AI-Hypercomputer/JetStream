@@ -337,7 +337,10 @@ def gen_mmlu_prompt(
   print(f"Loaded {num_rows} data from mmlu dataset")
 
   for subject in prompts_per_subject:
-    header = f"The following are multiple choice questions (with answers) about {subject}.\n"
+    header = (
+        f"The following are multiple choice questions (with answers):"
+        f"about {subject}.\n"
+    )
     shots_data = combined_dataset[combined_dataset["subject"] == subject].head(
         num_shots
     )
