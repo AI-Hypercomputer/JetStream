@@ -48,7 +48,7 @@ cd ../ && python3 main.py \
 	--input-mode tokenized \
 	--output-mode tokenized \
 	--max-output-len 1024 \
-	--mlperf-conf ../mlperf.conf \
+	--mlperf-conf mlperf.conf \
 	--user-conf ${USER_CONFIG} \
 	--audit-conf no-audit \
 	--total-sample-count ${TOTAL_SAMPLE_COUNT} \

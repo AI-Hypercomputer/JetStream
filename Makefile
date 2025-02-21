@@ -33,7 +33,7 @@ check: type-check format-check linter-check
 
 type-check:
 	$(PIP) install pytype
-	pytype --jobs auto --disable=import-error,module-attr jetstream/ benchmarks/
+	pytype --jobs auto --disable=import-error,module-attr jetstream/ benchmarks/ --exclude='benchmarks/.*\.json$\'
 
 format-check:
 	$(PIP) install pyink
