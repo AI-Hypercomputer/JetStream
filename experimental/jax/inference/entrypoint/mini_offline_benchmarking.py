@@ -46,11 +46,15 @@ def _load_openorca_dataset(size: int, shuffle: bool) -> list[str]:
 
 
 def benchmark():
-  size = 10_000
+  size = 24_000
   dataset = _load_openorca_dataset(size=size, shuffle=True)
   assert len(dataset) == size
 
-  inference = offline_inference.OfflineInference()
+  inference = offline_inference.OfflineInference(
+      model_id="meta-llama/Llama-2-7b-chat-hf",
+      num_engines=1,
+      enable_multiprocessing=False,
+  )
 
   start_time = time.perf_counter()
   res_list: list[Response] = inference(dataset)

@@ -201,6 +201,9 @@ def chunked_prefill_attention(
   """TPU chunked prefill attention."""
   chunk_size, num_attn_heads, head_dim = q.shape
   num_kv_heads, _, page_size, _ = k_pages.shape
+
+  assert num_attn_heads % num_kv_heads == 0
+  assert chunk_size % page_size == 0
   attn_group_size = num_attn_heads // num_kv_heads
   page_per_chunk = chunk_size // page_size
 
