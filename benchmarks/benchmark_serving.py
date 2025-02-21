@@ -70,6 +70,7 @@ import time
 from typing import Any, AsyncGenerator, Optional
 
 from benchmarks.eval_accuracy import eval_accuracy
+from benchmarks.eval_accuracy_mmlu import eval_accuracy_mmlu
 from benchmarks.metrics import CounterMetric, EventMetric
 import grpc
 from jetstream.core.proto import jetstream_pb2
@@ -277,6 +278,86 @@ def load_openorca_dataset_pkl(
   return [(prompt, output) for prompt, output in zip(prompts, outputs)]
 
 
+def load_mmlu_dataset_csv(dataset_path: str) -> tuple[Any, dict[str, str]]:
+  assert dataset_path != ""
+  dataset = []
+  prompts_per_subject = dict()
+  for cvs_file in os.listdir(dataset_path):
+    if cvs_file.endswith(".csv"):
+      subject = " ".join(cvs_file.split("_")[:-1])
+      if subject not in prompts_per_subject:
+        prompts_per_subject[subject] = ""
+      filepath = os.path.join(dataset_path, cvs_file)
+      data = pandas.read_csv(filepath, header=None)
+      data["subject"] = subject
+      dataset.append(data)
+
+  combined_dataset = pandas.concat(dataset, ignore_index=True)
+  header_dict = {
+      0: "question",
+      1: "A",
+      2: "B",
+      3: "C",
+      4: "D",
+      5: "answer",
+  }
+  combined_dataset.rename(columns=header_dict, inplace=True)
+  return combined_dataset, prompts_per_subject
+
+
+def gen_mmlu_qa(data: Any, mmlu_method: str = "") -> str:
+
+  output = ""
+  for _, row in data.iterrows():
+    output += (
+        f"Question: {row['question']}\n"
+        f"Choices:\n"
+        f"(A) {row['A']}\n"
+        f"(B) {row['B']}\n"
+        f"(C) {row['C']}\n"
+        f"(D) {row['D']}\n"
+    )
+
+    output += "\nCorrect answer: "
+
+    if mmlu_method == "HELM":
+      output += f"({row['answer']})\n\n"
+    elif mmlu_method == "Harness":
+      content = row[row["answer"].upper()]
+      output += f"({row['answer']}) {content}\n\n"
+
+  return output
+
+
+def gen_mmlu_prompt(
+    dataset_path: str, num_shots: int = 1, mmlu_method: str = "HELM"
+) -> list[tuple[Any, Any]]:
+  combined_dataset, prompts_per_subject = load_mmlu_dataset_csv(dataset_path)
+  num_rows, _ = combined_dataset.shape
+  print(f"Loaded {num_rows} data from mmlu dataset")
+
+  for subject in prompts_per_subject:
+    header = (
+        f"The following are multiple choice questions (with answers):"
+        f"about {subject}.\n"
+    )
+    shots_data = combined_dataset[combined_dataset["subject"] == subject].head(
+        num_shots
+    )
+    prompts_per_subject[subject] = header + gen_mmlu_qa(
+        shots_data, mmlu_method=mmlu_method
+    )
+
+  mmlu_data = []
+  for _, row in combined_dataset.iloc[num_shots:].iterrows():
+    question_prompt = gen_mmlu_qa(pandas.DataFrame([row]))
+    output = row["answer"]
+    prompt = prompts_per_subject[row["subject"]] + question_prompt
+    mmlu_data.append((prompt, output))
+
+  return mmlu_data
+
+
 def load_math500_dataset(dataset_path: str) -> list[tuple[Any, Any]]:
   if not dataset_path:
     dataset_path = "benchmarks/huggingfaceh4_math500.json"
@@ -325,6 +406,7 @@ def filter_dataset(
     tokenized_dataset: list[tuple[str, Any, str, int, int, int]],
     dataset_type: str,
     max_output_length: int = 0,
+    run_mmlu_dataset: bool = False,
 ) -> list[InputRequest]:
   if max_output_length != 0:
     print("In InputRequest, pass in actual output_length for each sample")
@@ -344,7 +426,9 @@ def filter_dataset(
       output_len,
       sample_idx,
   ) in tokenized_dataset:
-    if prompt_len < 4 or (output_len < 4 and not dataset_type == "math500"):
+    if prompt_len < 4 or (
+        not (run_mmlu_dataset or dataset_type == "math500") and output_len < 4
+    ):
       # Prune too short sequences.
       # This is because TGI causes errors when the input or output length
       # is too short.
@@ -371,6 +455,7 @@ def sample_requests(
     dataset_type: str,
     max_output_length: int = 0,
     oversample_multiplier: float = 1.2,
+    run_mmlu_dataset: bool = False,
 ) -> list[InputRequest]:
 
   # Original dataset size
@@ -403,7 +488,7 @@ def sample_requests(
   tokenized_dataset = tokenize_dataset(sampled_dataset, tokenizer)
 
   input_requests = filter_dataset(
-      tokenized_dataset, dataset_type, max_output_length
+      tokenized_dataset, dataset_type, max_output_length, run_mmlu_dataset
   )
 
   # Sample the requests.
@@ -733,7 +818,7 @@ def parse_args() -> argparse.Namespace:
       "--dataset",
       type=str,
       default="test",
-      choices=["test", "sharegpt", "openorca", "math500"],
+      choices=["test", "sharegpt", "openorca", "mmlu", "math500"],
       help="The dataset name.",
   )
   parser.add_argument("--dataset-path", type=str, help="Path to the dataset.")
@@ -858,6 +943,24 @@ def parse_args() -> argparse.Namespace:
       choices=["human", "gpt", "both"],
       help="What entity should be the one starting the conversations.",
   )
+  parser.add_argument(
+      "--num-shots",
+      type=int,
+      default=1,
+      help="Num shorts to give for mmlu data set",
+  )
+  parser.add_argument(
+      "--mmlu-method",
+      type=str,
+      default="HELM",
+      choices=["HELM", "Harness", ""],
+      help="mmlu method/format to generate shots",
+  )
+  parser.add_argument(
+      "--run-mmlu-dataset",
+      action="store_true",
+      help="specify if it's for mmlu dataset",
+  )
   return parser.parse_args()
 
 
@@ -889,6 +992,10 @@ def main(args: argparse.Namespace):
           args.dataset_path,
           args.conversation_starter,
       )
+    elif args.dataset == "mmlu":
+      dataset = gen_mmlu_prompt(
+          args.dataset_path, args.num_shots, args.mmlu_method
+      )
     elif args.dataset == "math500":
       dataset = load_math500_dataset(
           args.dataset_path,
@@ -907,6 +1014,7 @@ def main(args: argparse.Namespace):
         num_requests=args.num_prompts,
         dataset_type=args.dataset,
         max_output_length=args.max_output_length,
+        run_mmlu_dataset=args.run_mmlu_dataset,
     )
 
   warmup_requests = None
@@ -950,7 +1058,10 @@ def main(args: argparse.Namespace):
   # Process output
   output = [output.to_dict() for output in request_outputs]
   if args.run_eval:
-    eval_json = eval_accuracy(output, args.dataset_type[:4])
+    if args.run_mmlu_dataset:
+      eval_json = eval_accuracy_mmlu(output)
+    else:
+      eval_json = eval_accuracy(output, args.dataset_type[:4])
 
   # Save config and results to json
   if args.save_result:
