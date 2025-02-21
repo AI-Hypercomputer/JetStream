@@ -423,7 +423,9 @@ def filter_dataset(
       output_len,
       sample_idx,
   ) in tokenized_dataset:
-    if prompt_len < 4 or (not (run_mmlu_dataset or dataset_type == "math500") and output_len < 4):
+    if prompt_len < 4 or (
+        not (run_mmlu_dataset or dataset_type == "math500") and output_len < 4
+    ):
       # Prune too short sequences.
       # This is because TGI causes errors when the input or output length
       # is too short.
