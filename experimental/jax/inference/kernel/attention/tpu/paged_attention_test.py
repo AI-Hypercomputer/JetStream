@@ -16,8 +16,8 @@ from absl.testing import absltest
 from absl.testing import parameterized
 import jax
 from jax._src import test_util as jtu
-from jax.experimental.pallas.ops.tpu import paged_attention
-from jax.experimental.pallas.ops.tpu.paged_attention import quantization_utils
+from inference.kernel.attention.tpu import paged_attention
+from inference.kernel.attention.tpu import quantization_utils
 import jax.numpy as jnp
 import numpy as np
 
@@ -160,7 +160,7 @@ class PagedAttentionKernelTest(jtu.JaxTestCase):
         dtype,
         are_kv_quantized=are_kv_quantized,
     )
-    o = paged_attention.paged_attention(
+    o = paged_attention(
         q,
         k_pages,
         v_pages,
