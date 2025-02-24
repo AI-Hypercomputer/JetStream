@@ -1061,7 +1061,7 @@ def main(args: argparse.Namespace):
     if args.run_mmlu_dataset:
       eval_json = eval_accuracy_mmlu(output)
     else:
-      eval_json = eval_accuracy(output, args.dataset_type[:4])
+      eval_json = eval_accuracy(output, args.dataset[:4])
 
   # Save config and results to json
   if args.save_result:
