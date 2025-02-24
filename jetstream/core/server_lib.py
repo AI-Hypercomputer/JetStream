@@ -25,6 +25,7 @@ import signal
 import threading
 import time
 import traceback
+import importlib
 from typing import Any, Type
 
 
@@ -32,9 +33,7 @@ import grpc
 import jax
 from jetstream.core import config_lib
 from jetstream.core import orchestrator
-from jetstream.core import adapter_manager
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
-from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine import warmup_utils, engine_api
 
 from prometheus_client import start_http_server
@@ -46,7 +45,12 @@ class JetStreamServer:
   """JetStream grpc server."""
 
   def __init__(
-      self, driver: orchestrator.Driver, threads: int, port, credentials
+      self,
+      driver: orchestrator.Driver,
+      threads: int,
+      port,
+      credentials,
+      enable_llm_inference_pool = False
   ):
     self._executor = futures.ThreadPoolExecutor(max_workers=threads)
 
@@ -62,15 +66,26 @@ class JetStreamServer:
 
     asyncio.run_coroutine_threadsafe(do_init(), loop=self._loop).result()
     self._driver = driver
-    jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
-        orchestrator.LLMOrchestrator(driver=self._driver), self._grpc_server
-    )
 
-    asyncio.run(self._driver.loadAdaptersFromCatalogToTensorStore())
+    if enable_llm_inference_pool:
+      module_name = "jetstream.core.llm_inference_pool_api"
+      llm_inference_pool = importlib.import_module(module_name)
 
-    jetstream_pb2_grpc.add_MultiAdapterManagerServicer_to_server(
-        adapter_manager.MultiLoraManager(driver=self._driver), self._grpc_server
-    )
+      module_name = "jetstream.core.proto.multi_lora_decoding_pb2_grpc"
+      multi_lora_decoding_pb2_grpc = importlib.import_module(module_name)
+
+      asyncio.run(self._driver.loadAdaptersFromCatalogToTensorStore())
+
+      multi_lora_decoding_pb2_grpc.add_v1Servicer_to_server(
+          llm_inference_pool.MultiLoraManager(driver=self._driver), self._grpc_server
+      )
+    else:
+      module_name = "jetstream.core.proto.jetstream_pb2_grpc"
+      jetstream_pb2_grpc = importlib.import_module(module_name)
+
+      jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
+          orchestrator.LLMOrchestrator(driver=self._driver), self._grpc_server
+      )
 
     self._grpc_server.add_secure_port(f"{_HOST}:{port}", credentials)
 
@@ -188,6 +203,7 @@ def run(
     enable_jax_profiler: bool = False,
     jax_profiler_port: int = 9999,
     enable_model_warmup: bool = False,
+    enable_llm_inference_pool: bool = False,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
@@ -228,7 +244,7 @@ def run(
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.
   threads = threads or max(driver.get_total_concurrent_requests(), 64)
-  jetstream_server = JetStreamServer(driver, threads, port, credentials)
+  jetstream_server = JetStreamServer(driver, threads, port, credentials, enable_llm_inference_pool)
   logging.info("Starting server on port %d with %d threads", port, threads)
 
   jetstream_server.start()

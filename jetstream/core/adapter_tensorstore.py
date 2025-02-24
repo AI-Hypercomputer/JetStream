@@ -82,7 +82,7 @@ class AdapterTensorStore:
           raise RuntimeError("Not enough HBM to transfer adapter, and eviction failed.")
 
       # Move from CPU to HBM
-      self.loaded_adapters_hbm[adapter_id] = jnp.array(self.loaded_adapters_cpu[adapter_id]) # Convert to JAX array
+      self.loaded_adapters_hbm[adapter_id] = self._as_jnp_array(self.loaded_adapters_cpu[adapter_id]) # Convert to JAX array
       del self.loaded_adapters_cpu[adapter_id]
 
       self.current_cpu_usage -= metadata.size_cpu
@@ -107,7 +107,7 @@ class AdapterTensorStore:
           raise RuntimeError("Not enough CPU RAM to transfer adapter, and eviction failed.")
 
       # Move from HBM to CPU
-      self.loaded_adapters_cpu[adapter_id] = np.array(self.loaded_adapters_hbm[adapter_id])
+      self.loaded_adapters_cpu[adapter_id] = self._as_np_array(self.loaded_adapters_hbm[adapter_id])
       del self.loaded_adapters_hbm[adapter_id]
 
       self.current_hbm_usage -= metadata.size_hbm
@@ -299,9 +299,9 @@ class AdapterTensorStore:
       if metadata.status != "loaded_hbm" and metadata.status != "loaded_cpu":
         asyncio.run(self.load_adapter(adapter_id, to_hbm))    # Start loading (async)
       elif to_hbm and metadata.status == "loaded_cpu":
-        self._transfer_to_hbm(adapter_id)
+        asyncio.run(self._transfer_to_hbm(adapter_id))
       elif not to_hbm and metadata.status == "loaded_hbm":
-        self._transfer_to_cpu(adapter_id)
+        asyncio.run(self._transfer_to_cpu(adapter_id))
 
     # Wait till all the running requests are completed
     while self.running_requests > 0:
@@ -350,9 +350,9 @@ class AdapterTensorStore:
     if metadata.status != "loaded_hbm" and metadata.status != "loaded_cpu":
       asyncio.run(self.load_adapter(adapter_id, None, to_hbm))    # Start loading (async)
     elif to_hbm and metadata.status == "loaded_cpu":
-      self._transfer_to_hbm(adapter_id)
+      asyncio.run(self._transfer_to_hbm(adapter_id))
     elif not to_hbm and metadata.status == "loaded_hbm":
-      self._transfer_to_cpu(adapter_id)
+      asyncio.run(self._transfer_to_cpu(adapter_id))
 
     # Wait till all the running requests are completed
     while self.running_requests > 0:
