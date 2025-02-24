@@ -25,7 +25,8 @@ import math
 from typing import Sequence
 import jax
 from inference import parallel
-from inference.runtime.engine import Engine, ModelLoadParams, InferenceParams, EngineMode, OfflineChannel
+from inference.config.config import Config
+from inference.runtime.engine import Engine, EngineMode, OfflineChannel
 from inference.runtime.request_type import *
 
 
@@ -61,9 +62,9 @@ class OfflineInference:
       execution = runner(
           target=self.launch_engine,
           args=(
+              model_id,
               self.req_queues[i],
               self.res_queues[i],
-              ModelLoadParams(model_id=model_id, dummy_weights=False),
               self._engine_started_events[i],
               self._engine_completed_events[i],
           ),
@@ -80,9 +81,9 @@ class OfflineInference:
 
   def launch_engine(
       self,
+      model_id,
       req_queue,
       res_queue,
-      model_load_params,
       started_event,
       completion_event,
   ):
@@ -93,15 +94,7 @@ class OfflineInference:
     )
     engine = Engine(
         mesh=mesh,
-        model_load_params=model_load_params,
-        inference_params=InferenceParams(
-            batch_size=320,
-            max_seq_length=2048,
-            max_input_length=1024,
-            prefill_chunk_sizes=[128, 256, 512, 1024],
-            page_size=128,
-            hbm_utilization=0.875,
-        ),
+        inference_params=Config.get(model_id),
         mode=EngineMode.OFFLINE,
         channel=OfflineChannel(
             req_queue=req_queue,

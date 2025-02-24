@@ -14,18 +14,4 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from jax.tree_util import register_pytree_node
-
-
-def register_flat_dataclass_as_pytree(cls):
-  def flatten(obj):
-    children, aux_data = (), None
-    for field in cls.__dataclass_fields__:
-      children += (getattr(obj, field),)
-    return (children, aux_data)
-
-  def unflatten(aux_data, children):
-    return cls(*children)
-
-  register_pytree_node(cls, flatten, unflatten)
-  return cls
+from .config import Config, ModelId

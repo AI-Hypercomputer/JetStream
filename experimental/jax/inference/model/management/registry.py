@@ -34,11 +34,6 @@ from .util import torch_jax_dtype_map
 
 logging.set_verbosity_error()
 
-supported_models = (
-    "meta-llama/Llama-2-7b-chat-hf",
-    "meta-llama/Llama-2-7b-hf",
-)
-
 
 @enum.unique
 class ModelSource(enum.Enum):
@@ -66,7 +61,6 @@ class ModelRegistry:
       dtype: jnp.dtype,
   ) -> Any:
     """Load the ckpt to the host DRAM."""
-    assert model_id in supported_models, f"{model_id} is not supported"
     print("Loading model weights to host")
     print("-" * 60)
     hg_model = AutoModelForCausalLM.from_pretrained(
