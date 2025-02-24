@@ -33,7 +33,7 @@ class NormTest(absltest.TestCase):
     devices = jax.devices()
     return parallel.create_device_mesh(
         devices=devices,
-        shape=len(devices),
+        shape=(len(devices), 1),
     )
 
   def test_rmsnorm_per_device_forward(self):

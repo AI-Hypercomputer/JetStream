@@ -33,7 +33,7 @@ class CollectiveMatmulTest(absltest.TestCase):
     devices = jax.devices()
     return parallel.create_device_mesh(
         devices=devices,
-        shape=len(devices),
+        shape=(len(devices), 1),
     )
 
   def test_all_gather_collective_matmul(self):
