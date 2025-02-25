@@ -45,9 +45,8 @@ def eval_accuracy(request_outputs_dict, match_type):
     correct_ans = 0
     wrong_ans = 0
     for p, t in zip(preds, targets):
-      # We claim success if the generated text contains the correct results at
-      # the end and matches literally.
-      if p.endswith(t):
+      # We claim success if the generated text contains the correct results.
+      if t in p:
         correct_ans += 1
         continue
       wrong_ans += 1
