@@ -750,7 +750,9 @@ async def benchmark(
     print(f"Request throughput: {metrics.request_throughput:.2f} requests/s")
     print(f"Input token throughput: {metrics.input_throughput:.2f} tokens/s")
     print(f"Output token throughput: {metrics.output_throughput:.2f} tokens/s")
-    print(f"Overall token throughput: {metrics.overall_throughput:.2f} tokens/s")
+    print(
+        f"Overall token throughput: {metrics.overall_throughput:.2f} tokens/s"
+    )
 
     print(f"{metrics.ttft.distribution_summary_str()}")
     print(f"{metrics.ttst.distribution_summary_str()}")
