@@ -22,6 +22,33 @@ import json
 import numpy as np
 
 
+def extract_boxed_answers(text):
+  pieces = text.split("boxed{")
+  if len(pieces) == 1:
+    return ""
+  piece = pieces[1]
+  n = 0
+  for i in range(len(piece)):
+    if piece[i] == "{":
+      n += 1
+    elif piece[i] == "}":
+      n -= 1
+      if n < 0:
+        if i + 1 < len(piece) and piece[i + 1] == "%":
+          return piece[: i + 1]
+        else:
+          return piece[:i]
+  return ""
+
+
+def replace_space_answers(text):
+  return text.replace(" ", "")
+
+
+def special_handling(text):
+  return text.replace("\\dfrac", "\\frac")
+
+
 def postprocess_text(preds, targets):
   preds = [pred.strip() for pred in preds]
   targets = [target.strip() for target in targets]
@@ -39,15 +66,19 @@ def eval_accuracy(request_outputs_dict, match_type):
   for output in request_outputs_dict:
     preds.append(output["generated_text"])
     targets.append(output["original_output"])
-  preds, targets = postprocess_text(preds, targets)
+  if match_type != "math":
+    preds, targets = postprocess_text(preds, targets)
 
   if match_type == "math":
+
     correct_ans = 0
     wrong_ans = 0
     for p, t in zip(preds, targets):
-      # We claim success if the generated text contains the correct results at
-      # the end and matches literally.
-      if p.endswith(t):
+      ans = extract_boxed_answers(p)
+      ans = replace_space_answers(ans)
+      ans = special_handling(ans)
+      tt = replace_space_answers(t)
+      if tt == ans:
         correct_ans += 1
         continue
       wrong_ans += 1
