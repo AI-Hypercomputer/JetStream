@@ -364,7 +364,7 @@ def load_math500_dataset(dataset_path: str) -> list[tuple[Any, Any]]:
   abs_path = os.path.abspath(dataset_path)
   with open(abs_path, "r", encoding="utf-8") as f:
     dataset = json.load(f)
-  return [(data["problem"], data["answer"]) for data in dataset]
+  return [(data["problem"], (data["solution"], data["answer"])) for data in dataset]
 
 
 def tokenize_dataset(
@@ -377,26 +377,28 @@ def tokenize_dataset(
   prompts = []
   outputs = []
   indices = []
+  output_lens = []
   prompt_token_ids = []
   outputs_token_ids = []
-  for prompt, output, idx in dataset:
-    prompts.append(prompt)
-    outputs.append(output)
-    indices.append(idx)
-    prompt_token_ids.append(tokenizer.encode(prompt))
-    outputs_token_ids.append(tokenizer.encode(output))
-
   tokenized_dataset = []
-  for i in range(n):
-    prompt_len = len(prompt_token_ids[i])
-    output_len = len(outputs_token_ids[i])
+
+  for prompt, output, idx in dataset:
+    if isinstance(output, tuple):
+      output_len = len(tokenizer.encode(output[0]))
+      output_tokens = output[1]
+    else:
+      output_len = len(tokenizer.encode(output))
+      output_tokens = output
+
+    prompt_tokens = tokenizer.encode(prompt)
+
     tokenized_data = (
-        prompts[i],
-        prompt_token_ids[i],
-        outputs[i],
-        prompt_len,
+        prompt,
+        prompt_tokens,
+        output_tokens,
+        len(prompt_tokens),
         output_len,
-        indices[i],
+        idx,
     )
     tokenized_dataset.append(tokenized_data)
   return tokenized_dataset
@@ -407,9 +409,12 @@ def filter_dataset(
     dataset_type: str,
     max_output_length: int = 0,
     run_mmlu_dataset: bool = False,
+    max_input_length: int = 0,
+    max_target_length: int = 0,
+    max_output_multiplier: int = 0,
 ) -> list[InputRequest]:
   if max_output_length != 0:
-    print("In InputRequest, pass in actual output_length for each sample")
+    print(f"In InputRequest, pass in actual max_output_length: {max_output_length} for each sample")
   else:
     print(
         f"In InputRequest, pass in max_output_length: {max_output_length} for"
@@ -434,11 +439,15 @@ def filter_dataset(
       # is too short.
       # Math results could be really short though.
       continue
-    if prompt_len > 1024 or prompt_len + output_len > 2048:
+    if prompt_len > max_input_length or prompt_len + output_len > max_target_length:
       # Prune too long sequences.
       continue
+    if dataset_type == "math500":
+      max_output_len = max_output_length or output_len * max_output_multiplier 
+    else:
+      max_output_len = max_output_length or output_len
     request = InputRequest(
-        prompt, prompt_len, output, max_output_length or output_len, sample_idx
+        prompt, prompt_len, output, max_output_len , sample_idx
     )
     filtered_dataset.append(request)
 
@@ -456,6 +465,9 @@ def sample_requests(
     max_output_length: int = 0,
     oversample_multiplier: float = 1.2,
     run_mmlu_dataset: bool = False,
+    max_input_length: int = 0,
+    max_target_length: int = 0,
+    max_output_multiplier: int = 0,
 ) -> list[InputRequest]:
 
   # Original dataset size
@@ -488,7 +500,7 @@ def sample_requests(
   tokenized_dataset = tokenize_dataset(sampled_dataset, tokenizer)
 
   input_requests = filter_dataset(
-      tokenized_dataset, dataset_type, max_output_length, run_mmlu_dataset
+      tokenized_dataset, dataset_type, max_output_length, run_mmlu_dataset, max_input_length, max_target_length, max_output_multiplier
   )
 
   # Sample the requests.
@@ -716,6 +728,7 @@ async def benchmark(
   if pbar is not None:
     pbar.close()
 
+  # import pdb; pdb.set_trace()
   # Compute metrics
   output_metrics = {}
   if not is_warmup:
@@ -893,6 +906,35 @@ def parse_args() -> argparse.Namespace:
           "the output length of the golden dataset would be passed."
       ),
   )
+  parser.add_argument(
+      "--max-target-length",
+      type=int,
+      default=2048,
+      help=(
+          "The maximum prompt length plus the output length for reference "
+          " request. It would be used to filter the requests "
+      ),
+  )
+  parser.add_argument(
+      "--max-output-multiplier",
+      type=int,
+      default=2,
+      help=(
+          "The multiplier applied to the reference output length. The generated "
+          " output might be longer than the reference outputs. We apply this "
+          " multiplier for finer grained control. "
+      ),
+  )
+  parser.add_argument(
+      "--max-input-length",
+      type=int,
+      default=1024,
+      help=(
+          "The maximum input length for reference request. It would be used"
+          " to filter the input requests. "
+      ),
+  )
+
   parser.add_argument("--seed", type=int, default=0)
   parser.add_argument(
       "--disable-tqdm",
@@ -1015,6 +1057,9 @@ def main(args: argparse.Namespace):
         dataset_type=args.dataset,
         max_output_length=args.max_output_length,
         run_mmlu_dataset=args.run_mmlu_dataset,
+        max_input_length=args.max_input_length,
+        max_target_length=args.max_target_length,
+        max_output_multiplier=args.max_output_multiplier,
     )
 
   warmup_requests = None
