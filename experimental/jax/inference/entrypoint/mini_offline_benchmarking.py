@@ -19,6 +19,7 @@ import math
 import random
 import time
 import pandas
+from inference.config.config import ModelId
 from inference.runtime.request_type import *
 from inference.runtime import offline_inference
 
@@ -51,7 +52,7 @@ def benchmark():
   assert len(dataset) == size
 
   inference = offline_inference.OfflineInference(
-      model_id="meta-llama/Llama-2-7b-chat-hf",
+      model_id=ModelId.llama_2_7b_chat_hf,
       num_engines=1,
       enable_multiprocessing=False,
   )

@@ -23,6 +23,7 @@ from inference import parallel
 from pydantic import BaseModel
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
+from inference.config import Config, ModelId
 from inference.runtime.engine import *
 from inference.runtime.request_type import *
 
@@ -39,18 +40,7 @@ async def lifespan(app: FastAPI):
   print("starting engine")
   engine = Engine(
       mesh=mesh,
-      model_load_params=ModelLoadParams(
-          model_id="meta-llama/Llama-2-7b-chat-hf",
-          dummy_weights=False,
-      ),
-      inference_params=InferenceParams(
-          batch_size=320,
-          max_seq_length=2048,
-          max_input_length=1024,
-          prefill_chunk_sizes=[128, 256, 512, 1024],
-          page_size=128,
-          hbm_utilization=0.875,
-      ),
+      inference_params=Config.get(ModelId.llama_2_7b_chat_hf),
       mode=EngineMode.ONLINE,
       channel=OnlineChannel(
           req_queue=app.state.req_queue,
