@@ -437,6 +437,9 @@ def filter_dataset(
     if prompt_len > 1024 or prompt_len + output_len > 2048:
       # Prune too long sequences.
       continue
+    # TODO: should pass in the actual solution length instead of hardcode.
+    if dataset_type == "math500":
+       output_len = 1024
     request = InputRequest(
         prompt, prompt_len, output, max_output_length or output_len, sample_idx
     )
