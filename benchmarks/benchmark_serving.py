@@ -728,7 +728,6 @@ async def benchmark(
   if pbar is not None:
     pbar.close()
 
-  # import pdb; pdb.set_trace()
   # Compute metrics
   output_metrics = {}
   if not is_warmup:

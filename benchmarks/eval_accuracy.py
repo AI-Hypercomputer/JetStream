@@ -74,7 +74,6 @@ def eval_accuracy(request_outputs_dict, match_type):
     correct_ans = 0
     wrong_ans = 0
     for p, t in zip(preds, targets):
-      import pdb; pdb.set_trace()
       ans = extract_boxed_answers(p)
       ans = replace_space_answers(ans)
       ans = special_handling(ans)
