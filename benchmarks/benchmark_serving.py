@@ -373,15 +373,6 @@ def tokenize_dataset(
     dataset: list[tuple[Any, Any, Any]],
     tokenizer: Any,
 ) -> list[tuple[str, Any, str, int, int, int]]:
-
-  n = len(dataset)
-
-  prompts = []
-  outputs = []
-  indices = []
-  output_lens = []
-  prompt_token_ids = []
-  outputs_token_ids = []
   tokenized_dataset = []
 
   for prompt, output, idx in dataset:
@@ -415,15 +406,10 @@ def filter_dataset(
     max_target_length: int = 0,
     max_output_multiplier: int = 0,
 ) -> list[InputRequest]:
-  if max_output_length != 0:
-    print(
-        f"In InputRequest, pass in actual max_output_length: {max_output_length} for each sample"
-    )
-  else:
-    print(
-        f"In InputRequest, pass in max_output_length: {max_output_length} for"
-        " each sample"
-    )
+  print(
+      f"In InputRequest, pass in max_output_length: {max_output_length} for"
+      " each sample"
+  )
 
   # Filter out too long sequences.
   filtered_dataset: list[InputRequest] = []
@@ -932,7 +918,7 @@ def parse_args() -> argparse.Namespace:
       type=int,
       default=2,
       help=(
-          "The multiplier applied to the reference output length. The generated "
+          "The multiplier applied to the reference output length. The generated"
           " output might be longer than the reference outputs. We apply this "
           " multiplier for finer grained control. "
       ),
