@@ -23,30 +23,30 @@ import numpy as np
 
 
 def extract_boxed_answers(text):
-    pieces = text.split('boxed{')
-    if len(pieces) == 1:
-        return ''
-    piece = pieces[1]
-    n = 0
-    for i in range(len(piece)):
-        if piece[i] == '{':
-            n += 1
-        elif piece[i] == '}':
-            n -= 1
-            if n < 0:
-                if i + 1 < len(piece) and piece[i + 1] == '%':
-                    return piece[: i + 1]
-                else:
-                    return piece[:i]
-    return ''
+  pieces = text.split("boxed{")
+  if len(pieces) == 1:
+    return ""
+  piece = pieces[1]
+  n = 0
+  for i in range(len(piece)):
+    if piece[i] == "{":
+      n += 1
+    elif piece[i] == "}":
+      n -= 1
+      if n < 0:
+        if i + 1 < len(piece) and piece[i + 1] == "%":
+          return piece[: i + 1]
+        else:
+          return piece[:i]
+  return ""
 
 
 def replace_space_answers(text):
-    return text.replace(" ", "")
+  return text.replace(" ", "")
 
 
 def special_handling(text):
-    return text.replace("\\dfrac", "\\frac")
+  return text.replace("\\dfrac", "\\frac")
 
 
 def postprocess_text(preds, targets):

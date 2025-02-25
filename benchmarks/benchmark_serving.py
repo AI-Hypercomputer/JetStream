@@ -364,7 +364,9 @@ def load_math500_dataset(dataset_path: str) -> list[tuple[Any, Any]]:
   abs_path = os.path.abspath(dataset_path)
   with open(abs_path, "r", encoding="utf-8") as f:
     dataset = json.load(f)
-  return [(data["problem"], (data["solution"], data["answer"])) for data in dataset]
+  return [
+      (data["problem"], (data["solution"], data["answer"])) for data in dataset
+  ]
 
 
 def tokenize_dataset(
@@ -414,7 +416,9 @@ def filter_dataset(
     max_output_multiplier: int = 0,
 ) -> list[InputRequest]:
   if max_output_length != 0:
-    print(f"In InputRequest, pass in actual max_output_length: {max_output_length} for each sample")
+    print(
+        f"In InputRequest, pass in actual max_output_length: {max_output_length} for each sample"
+    )
   else:
     print(
         f"In InputRequest, pass in max_output_length: {max_output_length} for"
@@ -439,15 +443,18 @@ def filter_dataset(
       # is too short.
       # Math results could be really short though.
       continue
-    if prompt_len > max_input_length or prompt_len + output_len > max_target_length:
+    if (
+        prompt_len > max_input_length
+        or prompt_len + output_len > max_target_length
+    ):
       # Prune too long sequences.
       continue
     if dataset_type == "math500":
-      max_output_len = max_output_length or output_len * max_output_multiplier 
+      max_output_len = max_output_length or output_len * max_output_multiplier
     else:
       max_output_len = max_output_length or output_len
     request = InputRequest(
-        prompt, prompt_len, output, max_output_len , sample_idx
+        prompt, prompt_len, output, max_output_len, sample_idx
     )
     filtered_dataset.append(request)
 
@@ -500,7 +507,13 @@ def sample_requests(
   tokenized_dataset = tokenize_dataset(sampled_dataset, tokenizer)
 
   input_requests = filter_dataset(
-      tokenized_dataset, dataset_type, max_output_length, run_mmlu_dataset, max_input_length, max_target_length, max_output_multiplier
+      tokenized_dataset,
+      dataset_type,
+      max_output_length,
+      run_mmlu_dataset,
+      max_input_length,
+      max_target_length,
+      max_output_multiplier,
   )
 
   # Sample the requests.
