@@ -152,6 +152,7 @@ class BenchmarkMetrics:
   request_throughput: float
   input_throughput: float
   output_throughput: float
+  overall_throughput: float
 
   ttft: EventMetric  # Time-to-first-token
   ttst: EventMetric  # Time-to-second-token
@@ -338,8 +339,8 @@ def gen_mmlu_prompt(
 
   for subject in prompts_per_subject:
     header = (
-        f"The following are multiple choice questions (with answers):"
-        f"about {subject}.\n"
+        f"The following are multiple choice questions (with answers) "
+        f"about {subject}:\n"
     )
     shots_data = combined_dataset[combined_dataset["subject"] == subject].head(
         num_shots
@@ -402,6 +403,7 @@ def filter_dataset(
     dataset_type: str,
     max_output_length: int = 0,
     run_mmlu_dataset: bool = False,
+    min_input_length: int = 4,
     max_input_length: int = 0,
     max_target_length: int = 0,
     max_output_multiplier: int = 0,
@@ -421,7 +423,7 @@ def filter_dataset(
       output_len,
       sample_idx,
   ) in tokenized_dataset:
-    if prompt_len < 4 or (
+    if prompt_len < min_input_length or (
         not (run_mmlu_dataset or dataset_type == "math500") and output_len < 4
     ):
       # Prune too short sequences.
@@ -458,6 +460,7 @@ def sample_requests(
     max_output_length: int = 0,
     oversample_multiplier: float = 1.2,
     run_mmlu_dataset: bool = False,
+    min_input_length: int = 4,
     max_input_length: int = 0,
     max_target_length: int = 0,
     max_output_multiplier: int = 0,
@@ -497,6 +500,7 @@ def sample_requests(
       dataset_type,
       max_output_length,
       run_mmlu_dataset,
+      min_input_length,
       max_input_length,
       max_target_length,
       max_output_multiplier,
@@ -571,6 +575,7 @@ def calculate_metrics(
       request_throughput=completed / dur_s,
       input_throughput=total_input / dur_s,
       output_throughput=total_output / dur_s,
+      overall_throughput=(total_input + total_output) / dur_s,
       ttft=ttft,
       ttst=ttst,
       tpot=per_out_token_lat,
@@ -745,6 +750,9 @@ async def benchmark(
     print(f"Request throughput: {metrics.request_throughput:.2f} requests/s")
     print(f"Input token throughput: {metrics.input_throughput:.2f} tokens/s")
     print(f"Output token throughput: {metrics.output_throughput:.2f} tokens/s")
+    print(
+        f"Overall token throughput: {metrics.overall_throughput:.2f} tokens/s"
+    )
 
     print(f"{metrics.ttft.distribution_summary_str()}")
     print(f"{metrics.ttst.distribution_summary_str()}")
@@ -924,6 +932,15 @@ def parse_args() -> argparse.Namespace:
       ),
   )
   parser.add_argument(
+      "--min-input-length",
+      type=int,
+      default=4,
+      help=(
+          "The minium input length for reference request. It would be used"
+          " to filter the input requests. "
+      ),
+  )
+  parser.add_argument(
       "--max-input-length",
       type=int,
       default=1024,
@@ -1055,6 +1072,7 @@ def main(args: argparse.Namespace):
         dataset_type=args.dataset,
         max_output_length=args.max_output_length,
         run_mmlu_dataset=args.run_mmlu_dataset,
+        min_input_length=args.min_input_length,
         max_input_length=args.max_input_length,
         max_target_length=args.max_target_length,
         max_output_multiplier=args.max_output_multiplier,
