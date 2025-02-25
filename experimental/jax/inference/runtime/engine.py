@@ -29,31 +29,16 @@ import jax.profiler
 from jax import numpy as jnp
 from jax.sharding import Mesh, NamedSharding, PartitionSpec as P
 import numpy as np
-from inference.model import ModelSource, ModelRegistry, SamplingParams
 from inference import nn
 from inference import parallel
+from inference.config.config import InferenceParams
+from inference.model import ModelRegistry, SamplingParams
 from inference.model.llama import LlamaForCausalLM
 from inference.runtime.kv_cache import *
 from inference.runtime.request_type import *
 from inference.runtime.kv_cache import KVCacheStorage, KVCacheManager
 from inference.runtime.batch_scheduler import BatchScheduler, SchedulePolicy
 from inference.runtime.model_executor import Executor
-
-
-@dataclasses.dataclass
-class ModelLoadParams:
-  model_id: str
-  dummy_weights: bool
-
-
-@dataclasses.dataclass
-class InferenceParams:
-  batch_size: int
-  max_seq_length: int
-  max_input_length: int
-  prefill_chunk_sizes: list[int]
-  page_size: int
-  hbm_utilization: float
 
 
 @enum.unique
@@ -80,7 +65,6 @@ class Engine:
   def __init__(
       self,
       mesh: Mesh,
-      model_load_params: ModelLoadParams,
       inference_params: InferenceParams,
       mode: EngineMode,
       channel: OfflineChannel | OnlineChannel,
@@ -90,8 +74,8 @@ class Engine:
     self.mesh = mesh
     self.inference_params = inference_params
     model_registry = ModelRegistry()
-    self.tokenizer = model_registry.load_tokenizer(model_load_params.model_id)
-    model_config = model_registry.load_model_config(model_load_params.model_id)
+    self.tokenizer = model_registry.load_tokenizer(inference_params.model_id)
+    model_config = model_registry.load_model_config(inference_params.model_id)
     if debug_mode:
       model_config.num_hidden_layers = 1
 
@@ -102,11 +86,11 @@ class Engine:
         self.inference_params.max_seq_length,
     )
 
-    if model_load_params.dummy_weights:
+    if debug_mode:
       self.weights_dict = self.model.init_weights()
     else:
       weights_on_host = model_registry.load_weights_to_host(
-          model_id=model_load_params.model_id,
+          model_id=inference_params.model_id,
           num_devices=self.mesh.devices.size,
           model_config=model_config,
           dtype=jnp.bfloat16,

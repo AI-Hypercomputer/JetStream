@@ -22,6 +22,7 @@ from jax import numpy as jnp
 from jax.sharding import NamedSharding, PartitionSpec as P
 import torch
 from transformers import AutoModelForCausalLM
+from inference.config.config import ModelId
 from inference.model import LlamaModel, ModelRegistry
 from inference import parallel
 from inference import nn
@@ -39,7 +40,7 @@ class LlamaModelTest(absltest.TestCase):
   def test_llama(self):
     # TODO: make it as an accuracy test.
     mesh = self._create_device_mesh()
-    model_id = "meta-llama/Llama-2-7b-chat-hf"
+    model_id = (ModelId.llama_2_7b_chat_hf,)
     model_registry = ModelRegistry()
 
     config = model_registry.load_model_config(model_id)
