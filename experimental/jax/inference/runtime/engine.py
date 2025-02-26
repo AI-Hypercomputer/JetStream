@@ -37,7 +37,7 @@ from inference.model.llama import LlamaForCausalLM
 from inference.runtime.kv_cache import *
 from inference.runtime.request_type import *
 from inference.runtime.kv_cache import KVCacheStorage, KVCacheManager
-from inference.runtime.batch_scheduler import BatchScheduler, SchedulePolicy
+from inference.runtime.batch_scheduler import BatchScheduler, Schedule, SchedulePolicy
 from inference.runtime.model_executor import Executor
 
 
@@ -146,7 +146,7 @@ class Engine:
     )
     slots = queue.SimpleQueue()
     for i in range(self.inference_params.batch_size):
-      slots.put(i)
+      slots.put(i, block=True)
     self.generate_state = GenerateState(
         token_ids=jnp.zeros(
             shape=(self.inference_params.batch_size,),
@@ -262,11 +262,11 @@ class Engine:
   def stop(self):
     jax.profiler.stop_server()
     # Stop listen to the queue when item is None.
-    self.channel.req_queue.put(None)
-    self._preprocess_queue.put(None)
+    self.channel.req_queue.put(None, block=True)
+    self._preprocess_queue.put(None, block=True)
     self.scheduler.enqueue_prefill_req(None)
     self.scheduler.enqueue_generate_req(None)
-    self._postprocess_queue.put(None)
+    self._postprocess_queue.put(None, block=True)
 
     if self.mode == EngineMode.OFFLINE:
       self._dequeue_offline_req_thread.join()
@@ -284,108 +284,95 @@ class Engine:
     print(f"Engine total run time: {duration:.2f} seconds")
 
   def _dequeue_online_request(self):
+    """ "Dequeues online requests and put them in the preprocess queue."""
     while True:
-      online_req: OnlineRequest = self.channel.req_queue.get()
-      if not online_req:
+      r = self.channel.req_queue.get(block=True)
+      if r is None:
         return
-
+      assert isinstance(r, OnlineRequest)
       req = Request(
-          id=uuid.uuid4().hex,
-          prompt=online_req.prompt,
-          aio_response_queue=online_req.res_queue,
+          id=uuid.uuid4().hex, prompt=r.prompt, aio_response_queue=r.res_queue
       )
-
-      self._preprocess_queue.put(req)
+      self._preprocess_queue.put(req, block=True)
       self.requests_dict[req.id] = req
 
   def _dequeue_offline_request(self):
+    """ "Dequeues offline requests and put them in the preprocess queue."""
     while True:
-      offline_req: OfflineRequest = self.channel.req_queue.get()
-      if not offline_req:
+      r = self.channel.req_queue.get(block=True)
+      if r is None:
         return
-
-      req = Request(
-          id=uuid.uuid4().hex,
-          prompt=offline_req.prompt,
-      )
-
-      self._preprocess_queue.put(req)
+      assert isinstance(r, OfflineRequest)
+      req = Request(id=uuid.uuid4().hex, prompt=r.prompt)
+      self._preprocess_queue.put(req, block=True)
       self.requests_dict[req.id] = req
 
+  def _encode(self, req: Request) -> tuple[np.ndarray, int]:
+    """Encodes the request prompt and trims/pads it to the max input length."""
+    token_id_list = self.tokenizer.encode(req.prompt)
+    req.prompt_token_ids = token_id_list
+    tokens = np.asarray(token_id_list)
+    token_len, bound = tokens.size, self.inference_params.max_input_length
+    if token_len == bound:
+      return tokens, token_len
+    elif token_len < bound:
+      return np.pad(tokens, (0, bound - token_len)), token_len
+    else:
+      assert token_len > bound
+      req.prompt_token_ids = token_id_list[-bound:]
+      return tokens[-bound:], bound
+
+  def _select_chunk_size(self, token_len: int) -> int:
+    """Selects a prefill chunk size that is big enough."""
+    for size in self.inference_params.prefill_chunk_sizes:
+      if token_len <= size:
+        return size
+    return self.inference_params.prefill_chunk_sizes[-1]
+
+  def _build_prefill_request(self, req: Request) -> PrefillRequest:
+    """Builds a prefill request from the original prompt request."""
+    padded_tokens, token_len = self._encode(req)
+    chunk_size = self._select_chunk_size(token_len)
+    pi = self.kv_manager.dummy_page_idx
+    dummy_page_indices = [pi] * self.num_pages_per_seq
+    device_tokens = jax.device_put(
+        padded_tokens, NamedSharding(self.mesh, P(None))
+    )
+    positions = np.arange(0, device_tokens.shape[0])
+    device_positions = jax.device_put(
+        positions, NamedSharding(self.mesh, P(None))
+    )
+    return PrefillRequest(
+        id=req.id,
+        unpadded_token_ids=req.prompt_token_ids,
+        chunk_idx=0,
+        chunk_size=chunk_size,
+        page_indices=dummy_page_indices,
+        device_token_ids=device_tokens,
+        device_positions=device_positions,
+    )
+
   def _preprocess(self) -> jax.Array:
+    """Converts prompts to prefill requests and give them to the scheduler."""
     while True:
-      req: Request | None = self._preprocess_queue.get()
-      if not req:
+      req = self._preprocess_queue.get(block=True)
+      if req is None:
         return
-
-      token_id_list = self.tokenizer.encode(req.prompt)
-      req.prompt_token_ids = token_id_list
-
+      assert isinstance(req, Request)
       # Don't put too many pending requests to the HBM.
       self._max_device_requests_sem.acquire()
-
-      tokens = np.asarray(token_id_list)
-      token_len = tokens.size
-      num_paddings = self.inference_params.max_input_length - token_len
-      if num_paddings < 0:
-        padded_tokens = tokens[-self.inference_params.max_input_length :]
-        req.prompt_token_ids = token_id_list[
-            -self.inference_params.max_input_length :
-        ]
-      else:
-        padded_tokens = np.pad(
-            tokens, (0, self.inference_params.max_input_length - token_len)
-        )
-      padded_tokens = jax.device_put(
-          padded_tokens, NamedSharding(self.mesh, P(None))
-      )
-
-      positions = jax.device_put(
-          np.arange(0, padded_tokens.shape[0]),
-          NamedSharding(self.mesh, P(None)),
-      )
-
-      dummy_page_indices = [
-          self.kv_manager.dummy_page_idx for _ in range(self.num_pages_per_seq)
-      ]
-
-      # Select chunk size.
-      # TODO: move it to a function.
-      chunk_size_idx = 0
-      chunk_sizes = self.inference_params.prefill_chunk_sizes
-      while (
-          chunk_size_idx < len(chunk_sizes)
-          and token_len > chunk_sizes[chunk_size_idx]
-      ):
-        chunk_size_idx += 1
-      chunk_size_idx = (
-          chunk_size_idx - 1
-          if chunk_size_idx == len(chunk_sizes)
-          else chunk_size_idx
-      )
-
-      self.scheduler.enqueue_prefill_req(
-          PrefillRequest(
-              id=req.id,
-              unpadded_token_ids=req.prompt_token_ids,
-              page_indices=dummy_page_indices,
-              chunk_idx=0,
-              chunk_size=self.inference_params.prefill_chunk_sizes[
-                  chunk_size_idx
-              ],
-              device_token_ids=padded_tokens,
-              device_positions=positions,
-          )
-      )
+      pr = self._build_prefill_request(req)
+      self.scheduler.enqueue_prefill_req(pr)
 
   def _inference(self) -> jax.Array:
     while True:
       schedule = self.scheduler.schedule(
           self.active_prefill_request, self.generate_state
       )
-      if not schedule:
+      if schedule is None:
         return
 
+      assert isinstance(schedule, Schedule)
       input = self.model_executor.prepare_input_and_update_generate_state(
           schedule,
           self.generate_state,
@@ -441,14 +428,15 @@ class Engine:
             post_req.generate_active_slots.append(slot)
             post_req.generate_active_request_ids.append(processed_gr.id)
 
-      self._postprocess_queue.put(post_req)
+      self._postprocess_queue.put(post_req, block=True)
 
   def _postprocess(self) -> str:
     while True:
-      p_req = self._postprocess_queue.get()
-      if not p_req:
+      p_req = self._postprocess_queue.get(block=True)
+      if p_req is None:
         return
 
+      assert isinstance(p_req, PostProcessRequest)
       p_req.prefill_token_id = np.asarray(p_req.prefill_token_id).item()
       p_req.prefill_done = np.asarray(p_req.prefill_done).item()
       p_req.generate_token_ids = np.asarray(p_req.generate_token_ids).tolist()
@@ -460,7 +448,7 @@ class Engine:
           slot_to_del = []
           for slot in self.generate_state.active_slot_req_map.keys():
             if p_req.generate_done[slot]:
-              self.generate_state.available_slots.put(slot)
+              self.generate_state.available_slots.put(slot, block=True)
               pages_to_free = self.generate_state.active_slot_req_map[
                   slot
               ].page_indices
@@ -544,6 +532,3 @@ class Engine:
 
           self._max_device_requests_sem.release()
           del self.requests_dict[req_id]
-
-  def handle_request(self, request: OfflineRequest | OnlineRequest):
-    self.channel.req_queue.put(request)
