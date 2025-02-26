@@ -145,7 +145,6 @@ class Executor:
       options = None
       if compiler_options and key in compiler_options:
         options = compiler_options[key]
-      print(f"Compiling for {key}")
       self.compile_once(key, input, options)
 
     # Generate only compile.
@@ -186,7 +185,6 @@ class Executor:
     options = None
     if compiler_options and key in compiler_options:
       options = compiler_options[key]
-    print(f"Compiling for {key}")
     self.compile_once(key, input, options)
 
     # Mixed compile.
@@ -241,7 +239,6 @@ class Executor:
       options = None
       if compiler_options and key in compiler_options:
         options = compiler_options[key]
-      print(f"Compiling for {key}")
       self.compile_once(key, input, options)
 
   def compile_once(
@@ -250,9 +247,11 @@ class Executor:
       input: ModelForwardInput,
       options: jax.stages.CompilerOptions,
   ):
+    print(f"Compiling for ({key}) ...", end="")
     start_time = datetime.datetime.now()
-    jitted_func = self.jitted_model_forward_func(input)
-
+    jitted_func = jax.jit(
+        self.shard_mapped_model_forward_func(input), donate_argnums=(3,)
+    )
     self.executables_dict[key] = jitted_func.lower(
         self.weights_dict,
         input.input_ids,
@@ -261,11 +260,9 @@ class Executor:
         input.attn_metadata,
         input.sampling_params,
     ).compile(options)
-
     end_time = datetime.datetime.now()
-    print(
-        f"Compilation for {key} completed, take {(end_time-start_time).total_seconds()} seconds"
-    )
+    duration = (end_time - start_time).total_seconds()
+    print(f" took {duration:.2f} seconds")
 
   def execute(
       self, input: ModelForwardInput

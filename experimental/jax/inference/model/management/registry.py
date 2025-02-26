@@ -44,13 +44,9 @@ class ModelSource(enum.Enum):
 class ModelRegistry:
 
   def load_tokenizer(self, model_id: str) -> PreTrainedTokenizer:
-    print("Loading tokenizer")
-    print("-" * 60)
     return AutoTokenizer.from_pretrained(model_id)
 
   def load_model_config(self, model_id: str) -> PretrainedConfig:
-    print("Loading model config")
-    print("-" * 60)
     return AutoConfig.from_pretrained(model_id)
 
   def load_weights_to_host(
@@ -61,8 +57,6 @@ class ModelRegistry:
       dtype: jnp.dtype,
   ) -> Any:
     """Load the ckpt to the host DRAM."""
-    print("Loading model weights to host")
-    print("-" * 60)
     hg_model = AutoModelForCausalLM.from_pretrained(
         model_id,
         torch_dtype=torch_jax_dtype_map[dtype],
