@@ -139,6 +139,17 @@ class AdapterTensorStore:
     return jax.tree_util.tree_map(convert_if_np, params)
 
 
+  async def get_hbm_loaded_adapters(self):
+    hbm_loaded_adapters = []
+
+    async with self.lock:
+      for adapter_id, metadata in self.adapter_registry.items():
+        if metadata.status == "loaded_hbm":
+          hbm_loaded_adapters.append(adapter_id)
+
+    return ", ".join(hbm_loaded_adapters)
+
+
   async def load_adapter(self, adapter_id: str, adapter_weights = None, to_hbm: bool = True):
     """Loads a LoRA adapter's weights, managing HBM and CPU memory."""
     if adapter_id not in self.adapter_registry:

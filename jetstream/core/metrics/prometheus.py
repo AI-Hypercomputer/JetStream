@@ -214,6 +214,31 @@ class JetstreamMetricsCollector:
       ],
   )
 
+  _num_requests_waiting = Gauge(
+      name="num_requests_waiting",
+      documentation="Number of requests waiting to be processed for inference.",
+      labelnames=["id"],
+      multiprocess_mode="sum",
+  )
+
+  _kv_cache_utilization = Gauge(
+      name="kv_cache_utilization_perc",
+      documentation="Percentage of kv-cache utilized by the requests under processing.",
+      labelnames=["id"],
+      multiprocess_mode="sum",
+  )
+
+  _lora_request_info = Gauge(
+      name="lora_request_info",
+      documentation="Information about LoRA adapters loaded into TPU Memory for serving current requests.",
+      labelnames=[
+        "id",
+        "max_lora",
+        "running_lora_adapters",
+      ],
+      multiprocess_mode="livemostrecent",
+  )
+
   def get_prefill_backlog_metric(self):
     return self._prefill_backlog.labels(id=self._id)
 
@@ -255,3 +280,12 @@ class JetstreamMetricsCollector:
 
   def get_request_success_count_metric(self):
     return self._request_success_count.labels(id=self._id)
+
+  def get_num_requests_waiting_metric(self):
+    return self._num_requests_waiting.labels(id=self._id)
+
+  def get_kv_cache_utilization_metric(self):
+    return self._kv_cache_utilization.labels(id=self._id)
+
+  def get_lora_request_info_metric(self, max_lora: int, loaded_adapters: str):
+    return self._lora_request_info.labels(id=self._id, max_lora=max_lora, running_lora_adapters=loaded_adapters)

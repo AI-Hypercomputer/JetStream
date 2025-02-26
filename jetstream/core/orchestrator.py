@@ -314,6 +314,7 @@ class Driver:
         self._metrics_collector.get_generate_backlog_metric(idx).set_function(
             functools.partial(float, backlog.qsize())
         )
+
     # Stage 4
     # After prefill and generation, ActiveRequests are placed on the
     # detokenization backlog for tokens to be sent into each ActiveRequest's
@@ -433,6 +434,12 @@ class Driver:
     self.live = True
     self._is_ray_backend = is_ray_backend
 
+    if self._metrics_collector:
+      self._metrics_collector.get_num_requests_waiting_metric().set_function(
+          self._get_total_requests_waiting_decode)
+      self._metrics_collector.get_kv_cache_utilization_metric().set_function(
+          self._get_kv_cache_utilization)
+
     # Start all threads
     for t in self._all_threads:
       t.start()
@@ -480,6 +487,28 @@ class Driver:
     # Wait for all threads to stop.
     for t in self._all_threads:
       t.join()
+
+  def _get_kv_cache_utilization(self):
+    """Calculated the kv_cache utilization in percentage based on requests being decoded."""
+    total_slots = 0
+    empty_slots = 0
+    for idx, engine in enumerate(self._generate_engines):
+      total_slots += engine.max_concurrent_decodes
+      empty_slots += self._generate_slots[idx].qsize()
+
+    return ((total_slots - empty_slots) * 100 / total_slots)
+
+  def _get_total_requests_waiting_decode(self):
+    """Calculate the total size of all relevant queues."""
+    total_size = self._prefill_backlog.qsize()
+
+    for transfer_queue in self._transfer_backlogs:
+      total_size += transfer_queue.qsize()
+
+    for gen_queue in self._generate_backlogs.values():
+      total_size += gen_queue.qsize()
+
+    return float(total_size)
 
   def get_total_concurrent_requests(self) -> int:
     """Gets the total number of concurrent requests the driver can handle."""
@@ -818,6 +847,14 @@ class Driver:
       adapter_id = "base_params"
 
       start_time = time.perf_counter()
+
+      if self._metrics_collector:
+        adapters_list_str = asyncio.run(self._adapter_tensorstore.get_hbm_loaded_adapters())
+
+        max_loras = max_concurrent_decodes
+
+        self._metrics_collector.get_lora_request_info_metric(max_loras,
+            adapters_list_str).set_to_current_time()
 
       # Now we actually take a generate step on requests in the slots.
       decode_state, sampled_tokens = generate_engine.generate(
