@@ -34,81 +34,81 @@ class KVCacheStorage:
       page_size: int,
       hbm_utilization: float,
   ):
-    self.mesh = mesh
-    self.num_devices = mesh.devices.size
-    self.num_layers = model_config.num_hidden_layers
-    self.num_kv_heads = model_config.num_key_value_heads
-    self.head_dim = getattr(
-        model_config,
-        "head_dim",
-        model_config.hidden_size // model_config.num_attention_heads,
-    )
-    self.page_size = page_size
+    """Initializes the KVCacheStorage."""
+    self.__mesh = mesh
+    self.__num_layers = model_config.num_hidden_layers
+    self.__num_kv_heads = model_config.num_key_value_heads
+    self.__head_dim = model_config.head_dim
+    self.__page_size = page_size
+    self.hbm_kv_caches = self.__init_hbm_storage(jnp.bfloat16, hbm_utilization)
+    self.__num_hbm_pages_per_layer = self.hbm_kv_caches[0].k.shape[1]
 
-    self.hbm_kv_caches: list[KVCache] = self.__init_hbm_storage(
-        hbm_utilization, jnp.bfloat16
+  @property
+  def num_hbm_pages_per_layer(self):
+    """Returns the number of HBM pages per layer."""
+    return self.__num_hbm_pages_per_layer
+
+  def __all_devices_hbm_bytes(self, hbm_utilization: float) -> int:
+    """Returns the total usable HBM bytes across all devices."""
+    assert 0.0 < hbm_utilization < 1.0
+    try:
+      per_device_memory_stats = jax.devices()[0].memory_stats()
+      limit = per_device_memory_stats["bytes_reservable_limit"]
+      used = per_device_memory_stats["bytes_in_use"]
+      usable = int(limit * hbm_utilization)
+      GB = 1024**3
+      print(
+          f"per device memory stats: limit={limit//GB}GB, used={used//GB}GB, usable={usable//GB}GB"
+      )
+      return (usable - used) * self.__mesh.devices.size
+    except:
+      print(f"per device memory stats: not available")
+      return 0
+
+  def __kv_bytes_per_page(self, dtype: jnp.dtype) -> int:
+    """Returns the number of bytes per key _and_ value page."""
+    item_size = jnp.ones((1,), dtype).itemsize
+    per_kv_bytes = self.__num_kv_heads * self.__head_dim * item_size * 2
+    return self.__page_size * per_kv_bytes
+
+  def __shape(self) -> tuple[int, int, int, int]:
+    """Returns the shape of the kv cache."""
+    return (
+        self.__num_kv_heads,
+        self.num_pages_per_layer,
+        self.__page_size,
+        self.__head_dim,
     )
-    self.num_hbm_pages = self.hbm_kv_caches[0].k.shape[1]
+
+  def __sharding(self) -> NamedSharding:
+    """Returns the sharding of the kv cache."""
+    return NamedSharding(
+        self.__mesh, P(self.__mesh.axis_names, None, None, None)
+    )
+
+  def __gen_kv_cache(self, dtype: jnp.dtype) -> KVCache:
+    """Generates one per-token kv cache item."""
+    # TODO: support 2d sharding
+    return KVCache(
+        k=jnp.ones(shape=self.__shape(), device=self.__sharding(), dtype=dtype),
+        v=jnp.ones(shape=self.__shape(), device=self.__sharding(), dtype=dtype),
+    )
 
   def __init_hbm_storage(
       self,
+      dtype: jnp.dtype,
       hbm_utilization: float,
-      cache_dtype: jnp.dtype,
-  ):
-    memory_stats = jax.devices()[0].memory_stats()
-    if memory_stats:
-      print("per device memory_stats: ", memory_stats)
-      available_hbm_bytes = int(
-          memory_stats["bytes_reservable_limit"] * hbm_utilization
-          - memory_stats["bytes_in_use"]
-      )
-      item_size = jnp.ones((1), dtype=cache_dtype).itemsize
-      kv_size_per_page = (
-          self.page_size
-          * 2
-          * self.num_kv_heads
-          * self.head_dim
-          * item_size
-          // self.num_devices
-      )
-      num_pages_per_layer = available_hbm_bytes // (
-          kv_size_per_page * self.num_layers
-      )
+  ) -> list[KVCache]:
+    """Initializes the kv cache storage across all devices."""
+    all_devices_hbm_bytes = self.__all_devices_hbm_bytes(hbm_utilization)
+    if all_devices_hbm_bytes > 0:
+      kv_bytes_per_page = self.__kv_bytes_per_page(dtype)
+      per_layer_hbm_bytes = all_devices_hbm_bytes // self.__num_layers
+      self.num_pages_per_layer = per_layer_hbm_bytes // kv_bytes_per_page
     else:
-      print("memory_stats not available, allocate 1000 pages.")
-      num_pages_per_layer = 1000
+      self.num_pages_per_layer = 1000
 
-    # TODO: support 2d sharding.
-    kv_storage = [
-        KVCache(
-            k=jnp.ones(
-                shape=(
-                    self.num_kv_heads,
-                    num_pages_per_layer,
-                    self.page_size,
-                    self.head_dim,
-                ),
-                device=NamedSharding(
-                    self.mesh, P(self.mesh.axis_names, None, None, None)
-                ),
-                dtype=cache_dtype,
-            ),
-            v=jnp.ones(
-                shape=(
-                    self.num_kv_heads,
-                    num_pages_per_layer,
-                    self.page_size,
-                    self.head_dim,
-                ),
-                device=NamedSharding(
-                    self.mesh, P(self.mesh.axis_names, None, None, None)
-                ),
-                dtype=cache_dtype,
-            ),
-        )
-        for _ in range(self.num_layers)
-    ]
-
+    kv_storage = [self.__gen_kv_cache(dtype) for _ in range(self.__num_layers)]
     return kv_storage
 
 
@@ -120,32 +120,37 @@ class KVCacheManager:
       num_hbm_pages,
       page_size,
   ):
-    self.available_hbm_pages = queue.SimpleQueue()
-    self.page_size = page_size
-    self.dummy_page_idx = 0
-
-    for i in range(1, num_hbm_pages):
-      self.available_hbm_pages.put_nowait(i)
+    """Initializes the KVCacheManager."""
+    self.__page_size = page_size
+    self.__dummy_page_idx = 0
+    self.__available_hbm_pages = queue.SimpleQueue()
+    for p in range(1, num_hbm_pages):
+      self.__available_hbm_pages.put_nowait(p)
 
   @property
-  def num_available_hbm_pages(self):
-    return self.available_hbm_pages.qsize()
+  def page_size(self):
+    """Returns the page size in the number of per-token kv cache items."""
+    return self.__page_size
+
+  @property
+  def dummy_page_idx(self):
+    """Returns the dummy page index (0)."""
+    return self.__dummy_page_idx
 
   def alloc_prefill_hbm_pages(self, prompt_len) -> list[int]:
-    num_pages = math.ceil(prompt_len / self.page_size)
-    return self.alloc_hbm_pages(num_pages)
+    """Allocates HBM pages for prompt prefill."""
+    n = math.ceil(prompt_len / self.__page_size)
+    return self.alloc_hbm_pages(n)
 
-  def alloc_hbm_pages(self, num_pages: int) -> list[int]:
-    pages_to_use = []
-    if num_pages > self.num_available_hbm_pages:
-      return pages_to_use
-
-    for _ in range(num_pages):
-      pages_to_use.append(self.available_hbm_pages.get())
-    assert len(pages_to_use) == num_pages
-    return pages_to_use
+  def alloc_hbm_pages(self, n: int) -> list[int]:
+    """Allocates `n` HBM pages."""
+    if 0 < n <= self.__available_hbm_pages.qsize():
+      return [self.__available_hbm_pages.get(block=True) for _ in range(n)]
+    else:
+      return []
 
   def free_hbm_pages(self, pages: list[int]):
+    """Frees the given HBM pages."""
     for p in pages:
-      if p != self.dummy_page_idx:
-        self.available_hbm_pages.put_nowait(p)
+      if p != self.__dummy_page_idx:
+        self.__available_hbm_pages.put_nowait(p)
