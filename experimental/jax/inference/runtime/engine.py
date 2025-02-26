@@ -74,7 +74,13 @@ class Engine:
     self.mesh = mesh
     self.inference_params = inference_params
     model_registry = ModelRegistry()
+
+    print("-" * 40)
+    print("Loading tokenizer")
     self.tokenizer = model_registry.load_tokenizer(inference_params.model_id)
+
+    print("-" * 40)
+    print("Loading model config")
     model_config = model_registry.load_model_config(inference_params.model_id)
     if debug_mode:
       model_config.num_hidden_layers = 1
@@ -86,15 +92,19 @@ class Engine:
         self.inference_params.max_seq_length,
     )
 
+    print("-" * 40)
     if debug_mode:
+      print("Initializing random model weights to devices")
       self.weights_dict = self.model.init_weights()
     else:
+      print("Loading model weights to host")
       weights_on_host = model_registry.load_weights_to_host(
           model_id=inference_params.model_id,
           num_devices=self.mesh.devices.size,
           model_config=model_config,
           dtype=jnp.bfloat16,
       )
+      print("Loading model weights to devices")
       self.weights_dict = self.model.load_weights_dict(weights_on_host)
 
     print("-" * 40)
@@ -180,8 +190,7 @@ class Engine:
     )
 
     print("-" * 40)
-    print("Compiling engine ...")
-    print("-" * 40)
+    print("Compiling engine")
     self.model_executor.compile(
         self.inference_params.prefill_chunk_sizes,
         self.inference_params.batch_size,
@@ -190,17 +199,19 @@ class Engine:
         self.kv_storage.hbm_kv_caches,
         self.sample_params,
     )
-    print("-" * 40)
-    print("Compiling engine done")
 
     # running loop
     self.requests_dict: dict[str, Request] = {}
 
+    print("-" * 40)
+    print("Starting threads:", end="")
     if self.mode == EngineMode.OFFLINE:
+      print(" offline dequeue,", end="")
       self._dequeue_offline_req_thread = threading.Thread(
           name="dequeue_offline_request", target=self._dequeue_offline_request
       )
     else:
+      print(" online dequeue,", end="")
       self._dequeue_online_req_thread = threading.Thread(
           name="_dequeue_online_request", target=self._dequeue_online_request
       )
@@ -210,6 +221,7 @@ class Engine:
     self._max_device_requests_sem = threading.Semaphore(
         self.inference_params.batch_size * 3 // 2
     )
+    print(" preprocess,", end="")
     self._preprocess_queue: queue.Queue[Request] = queue.Queue()
     # TODO: Seperate the running loop with the static inference model.
     self._preprocess_thread = threading.Thread(
@@ -217,16 +229,19 @@ class Engine:
     )
     # Add backpressure to prevent that the inference thread never releases
     # the GIL and keeps dispatching the device program.
+    print(" postprocess,", end="")
     self._postprocess_queue: queue.Queue[PostProcessRequest] = queue.Queue(8)
     self._postprocess_thread = threading.Thread(
         name="postprocess", target=self._postprocess
     )
 
+    print(" inference")
     self._inference_thread = threading.Thread(
         name="inference", target=self._inference
     )
     self.total_reqs = 0
     self.complete_reqs = 0
+    self.start_time = None
 
   def start(self):
     jax.profiler.start_server(9999)
@@ -240,7 +255,9 @@ class Engine:
     self._postprocess_thread.start()
     self._inference_thread.start()
 
-    print("Engine starts: ", datetime.datetime.now())
+    self.start_time = datetime.datetime.now()
+    print("-" * 40)
+    print("Engine starts: ", self.start_time)
 
   def stop(self):
     jax.profiler.stop_server()
@@ -260,7 +277,11 @@ class Engine:
     self._inference_thread.join()
     self._postprocess_thread.join()
 
-    print("Engine stops: ", datetime.datetime.now())
+    stop_time = datetime.datetime.now()
+    duration = (stop_time - self.start_time).total_seconds()
+    print(f"Engine stops: {stop_time}")
+    print("-" * 40)
+    print(f"Engine total run time: {duration:.2f} seconds")
 
   def _dequeue_online_request(self):
     while True:
@@ -300,8 +321,7 @@ class Engine:
       token_id_list = self.tokenizer.encode(req.prompt)
       req.prompt_token_ids = token_id_list
 
-      # Don't put too many pending requests
-      # to the HBM.
+      # Don't put too many pending requests to the HBM.
       self._max_device_requests_sem.acquire()
 
       tokens = np.asarray(token_id_list)

@@ -52,7 +52,6 @@ class Module:
     return None
 
   def init_weights(self):
-    print("Initializing random model weights to devices ...")
     res = {}
     rng = jax.random.key(0)
     for k, param in self._parameters.items():
@@ -65,7 +64,6 @@ class Module:
     return res
 
   def load_weights_dict(self, weights_dict):
-    print("Loading model weights to devices: " + str(len(weights_dict)))
     res = {}
     for k, v in weights_dict.items():
       attr = getattr(self, k)
