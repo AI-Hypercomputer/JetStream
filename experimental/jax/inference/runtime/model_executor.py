@@ -26,7 +26,7 @@ from inference.nn import AttentionMetadata, KVCache
 from inference.model import ModelOutput, SamplingParams
 from inference import parallel
 from inference.runtime.batch_scheduler import Schedule, PrefillPagesUpdate
-from inference.runtime.request_type import GenerateState, PrefillRequest, GenerateRequest
+from inference.runtime.request_type import GenerateState, PrefillRequest
 
 ModelForwardFunc = Callable[
     [
@@ -119,9 +119,9 @@ class Executor:
           prefill_request=PrefillRequest(
               id="0",
               unpadded_token_ids=[1],
-              page_indices=dummy_page_indices,
               chunk_idx=0,
               chunk_size=size,
+              page_indices=dummy_page_indices,
               device_token_ids=dummy_padded_tensor,
               device_positions=dummy_padded_tensor,
           ),
@@ -207,9 +207,9 @@ class Executor:
           prefill_request=PrefillRequest(
               id="0",
               unpadded_token_ids=[1],
-              page_indices=dummy_prefill_page_indices,
               chunk_idx=0,
               chunk_size=prefill_chunk_size,
+              page_indices=dummy_prefill_page_indices,
               device_token_ids=dummy_padded_prompt_tensor,
               device_positions=dummy_padded_prompt_tensor,
           ),
