@@ -15,5 +15,8 @@ parameterized
 shortuuid
 fastapi
 uvicorn
+nltk
+evaluate
+transformers
 # For profiling
 tensorboard-plugin-profile

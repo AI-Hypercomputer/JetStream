@@ -160,7 +160,7 @@ def pad_tokens(
 
 def process_result_tokens(
     tokenizer: tokenizer_api.Tokenizer,
-    slot: int,
+    slots: int | tuple[int],
     slot_max_length: int,
     result_tokens: ResultTokens,
     complete: np.ndarray,
@@ -184,7 +184,10 @@ def process_result_tokens(
     complete: Updated complete.
   """
   # tokens: [samples, speculations]
-  slot_data = result_tokens.get_result_at_slot(slot)
+  if isinstance(slots, int):
+    slot_data = result_tokens.get_result_at_slot(slots)
+  else:
+    slot_data = result_tokens.get_result_at_slots(slots)
   slot_tokens = slot_data.tokens
   slot_valid = slot_data.valid
   slot_lengths = slot_data.lengths
