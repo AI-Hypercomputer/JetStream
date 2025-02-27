@@ -560,6 +560,7 @@ class Driver:
       )
 
       # Compute new kv cache for the prefill_content.
+      print(padded_tokens.shape)
       prefill_result, first_token = prefill_engine.prefill(
           params=prefill_params,
           padded_tokens=padded_tokens,
