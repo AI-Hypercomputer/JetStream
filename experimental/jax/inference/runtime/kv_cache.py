@@ -61,18 +61,18 @@ class KVCacheStorage:
   def _all_devices_hbm_bytes(self, hbm_utilization: float) -> int:
     """Returns the total usable HBM bytes across all devices."""
     assert 0.0 < hbm_utilization < 1.0
+    print("per device memory stats:", end="")
     try:
       per_device_memory_stats = jax.devices()[0].memory_stats()
       limit = per_device_memory_stats["bytes_reservable_limit"]
       used = per_device_memory_stats["bytes_in_use"]
       usable = int(limit * hbm_utilization)
       GB = 1024**3
-      print(
-          f"per device memory stats: limit={limit//GB}GB, used={used//GB}GB, usable={usable//GB}GB"
-      )
+      limit_GB, used_GB, usable_GB = limit // GB, used // GB, usable // GB
+      print(f" limit={limit_GB}GB, used={used_GB}GB, usable={usable_GB}GB")
       return (usable - used) * self._mesh.devices.size
     except:
-      print(f"per device memory stats: not available")
+      print(" not available")
       return 0
 
   def _kv_bytes_per_page(self, dtype: jnp.dtype) -> int:

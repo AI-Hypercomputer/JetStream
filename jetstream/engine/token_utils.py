@@ -45,6 +45,7 @@ DEFAULT_PREFILL_BUCKETS = [
     4096,
     8192,
     16384,
+    20480
     32768,
 ]
 
