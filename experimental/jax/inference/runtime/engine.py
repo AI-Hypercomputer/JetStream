@@ -117,7 +117,7 @@ class Engine:
         hbm_utilization=self.inference_params.hbm_utilization,
     )
     self.kv_manager = KVCacheManager(
-        self.kv_storage.num_hbm_pages, self.inference_params.page_size
+        self.kv_storage.num_hbm_pages_per_layer, self.inference_params.page_size
     )
 
     self.mode = mode
