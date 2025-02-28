@@ -86,6 +86,7 @@ import sys
 import threading
 import time
 import traceback
+import uuid
 from typing import Any, AsyncIterator, Optional, Tuple, cast, List
 
 import grpc
@@ -147,6 +148,8 @@ class ActiveRequest:
   """Current state of the driver."""
 
   #################### Information relevant for generation #####################
+  # The unique id for the activeRequest, used for tracking the request's status
+  request_id: uuid.UUID
   max_tokens: int
   # We keep prefill and decode information together in the same object so that
   # there is less indirection about where this return channel is.
@@ -564,6 +567,7 @@ class Driver:
           params=prefill_params,
           padded_tokens=padded_tokens,
           true_length=true_length,
+          request_id=request.request_id,
       )
       request.prefill_result = prefill_result
 
@@ -769,7 +773,10 @@ class Driver:
             break
 
         decode_state = generate_engine.insert(
-            new_request.prefill_result, decode_state, slot=slot
+            new_request.prefill_result,
+            decode_state,
+            slot=slot,
+            request_id=new_request.request_id,
         )
         ThreadDebugLog(
             thread_name,
@@ -1048,6 +1055,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     )
     # Wrap request as an ActiveRequest.
     active_request = ActiveRequest(
+        request_id=uuid.uuid4(),
         max_tokens=request.max_tokens,
         prefill_content=prefill_content,
         is_client_side_tokenization=is_client_side_tokenization,

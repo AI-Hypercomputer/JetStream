@@ -24,6 +24,7 @@ from typing import Any, Optional, Tuple, Union, Callable
 from flax import struct
 import jax
 import numpy as np
+import uuid
 
 from jetstream.engine import tokenizer_pb2
 from jetstream.engine import token_utils
@@ -143,6 +144,7 @@ class Engine(abc.ABC):
       padded_tokens: jax.Array,
       true_length: int,
       sampler: Optional[Callable[[Any], Any]] = None,
+      request_id: Optional[uuid.UUID] = None,
   ) -> Tuple[Prefix, ResultTokens]:
     """Computes a kv-cache for a set of tokens conditional on existing cache.
 
@@ -181,6 +183,7 @@ class Engine(abc.ABC):
       prefix: Prefix,
       decode_state: DecodeState,
       slot: int,
+      request_id: Optional[uuid.UUID] = None,
   ) -> DecodeState:
     """Adds `new_request` into `caches` at 'slot'.
 
