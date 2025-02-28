@@ -40,12 +40,12 @@ class LlamaModelTest(absltest.TestCase):
   def test_llama(self):
     # TODO: make it as an accuracy test.
     mesh = self._create_device_mesh()
-    model_id = (ModelId.llama_2_7b_chat_hf,)
     model_registry = ModelRegistry()
-
+    model_id = ModelId.llama_2_7b_chat_hf
     config = model_registry.load_model_config(model_id)
     config.num_hidden_layers = 1
     tokenizer = model_registry.load_tokenizer(model_id)
+
     input_ids = tokenizer.encode("I have a dog that is", return_tensors="pt")
     prompt_len = input_ids.shape[1]
     hg_model = AutoModelForCausalLM.from_pretrained(
