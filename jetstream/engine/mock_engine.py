@@ -36,6 +36,7 @@ from typing import Any, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
+import uuid
 from flax import struct
 from jax.experimental import mesh_utils
 
@@ -101,7 +102,11 @@ class TestEngine(engine_api.Engine):
     # An integer, used to multiply inputs.
     return jnp.array([self.weight], dtype=jnp.float32)
 
-  @functools.partial(jax.jit, static_argnums=(0,))
+  @functools.partial(
+      jax.jit,
+      static_argnums=(0,),
+      static_argnames=("request_id",),
+  )
   def prefill(
       self,
       *,
@@ -109,6 +114,7 @@ class TestEngine(engine_api.Engine):
       existing_prefix: Optional[jax.Array] = None,
       padded_tokens: jax.Array,
       true_length: int,
+      request_id: Optional[uuid.UUID] = None,
   ) -> Tuple[Prefix, engine_api.ResultTokens]:
     """Computes a kv-cache for a new generate request.
 
@@ -249,12 +255,18 @@ class TestEngine(engine_api.Engine):
         samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
     )
 
-  @functools.partial(jax.jit, static_argnums=(0,), donate_argnums=(2,))
+  @functools.partial(
+      jax.jit,
+      static_argnums=(0,),
+      donate_argnums=(2,),
+      static_argnames=("request_id",),
+  )
   def insert(
       self,
       prefix: Prefix,
       decode_state: DecodeState,
       slot: int,
+      request_id: Optional[uuid.UUID] = None,
   ) -> DecodeState:
     """Adds `prefix` into `decode_state` at `slot`."""
     prefill_cache = prefix.cache
