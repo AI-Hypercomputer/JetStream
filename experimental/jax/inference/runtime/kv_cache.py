@@ -17,12 +17,15 @@ limitations under the License.
 """kv cache module"""
 
 import math
+import numpy as np
 import jax
 from jax import numpy as jnp
 from jax.sharding import Mesh, NamedSharding, PartitionSpec as P
 import queue
 from inference.nn import KVCache
 from transformers import PretrainedConfig
+
+_GB = 1024**3
 
 
 class KVCacheStorage:
@@ -66,18 +69,17 @@ class KVCacheStorage:
       per_device_memory_stats = jax.devices()[0].memory_stats()
       limit = per_device_memory_stats["bytes_reservable_limit"]
       used = per_device_memory_stats["bytes_in_use"]
-      usable = int(limit * hbm_utilization)
-      GB = 1024**3
-      limit_GB, used_GB, usable_GB = limit // GB, used // GB, usable // GB
+      usable = int(limit * hbm_utilization) - used
+      limit_GB, used_GB, usable_GB = limit // _GB, used // _GB, usable // _GB
       print(f" limit={limit_GB}GB, used={used_GB}GB, usable={usable_GB}GB")
-      return (usable - used) * self._mesh.devices.size
+      return usable * self._mesh.devices.size
     except:
       print(" not available")
       return 0
 
   def _kv_bytes_per_page(self, dtype: jnp.dtype) -> int:
     """Returns the number of bytes per key _and_ value page."""
-    item_size = jnp.ones((1,), dtype).itemsize
+    item_size = np.dtype(dtype).itemsize
     per_kv_bytes = self._num_kv_heads * self._head_dim * item_size * 2
     return self._page_size * per_kv_bytes
 
@@ -109,12 +111,12 @@ class KVCacheStorage:
   ) -> list[KVCache]:
     """Initializes the kv cache storage across all devices."""
     all_devices_hbm_bytes = self._all_devices_hbm_bytes(hbm_utilization)
-    if all_devices_hbm_bytes > 0:
-      kv_bytes_per_page = self._kv_bytes_per_page(dtype)
-      per_layer_hbm_bytes = all_devices_hbm_bytes // self._num_layers
-      self.num_pages_per_layer = per_layer_hbm_bytes // kv_bytes_per_page
-    else:
-      self.num_pages_per_layer = 1000
+    if not all_devices_hbm_bytes >= 1 * _GB:
+      raise ValueError("Insufficient HBM memory")
+
+    kv_bytes_per_page = self._kv_bytes_per_page(dtype)
+    per_layer_hbm_bytes = all_devices_hbm_bytes // self._num_layers
+    self.num_pages_per_layer = per_layer_hbm_bytes // kv_bytes_per_page
 
     kv_storage = [self._gen_kv_cache(dtype) for _ in range(self._num_layers)]
     return kv_storage
