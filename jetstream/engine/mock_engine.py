@@ -32,7 +32,7 @@ I.e. ['Ċ', 'Ə', 'ɖ'] when converted back with chr()
 
 import functools
 from dataclasses import asdict
-from typing import Any, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -127,6 +127,62 @@ class TestEngine(engine_api.Engine):
       true_length: The real length of the tokens, pre-pad.
     Returns:
       kv_cache: For the resulting text.
+    """
+    if existing_prefix is not None:
+      raise NotImplementedError
+    assert padded_tokens.ndim == 1
+
+    # Generate dummy prefill cache content
+    prefill_cache = padded_tokens[None, :] * params
+
+    # Create a dummy first generated token.
+    first_generated_token = (prefill_cache.sum(axis=-1).astype(jnp.int32))[
+        :, jnp.newaxis
+    ]
+
+    prefix = Prefix(
+        logits=jax.random.normal(self._prng_key, (1, self.vocab_size)),
+        cache=prefill_cache,
+        next_pos=jnp.full((1, 1), true_length, dtype=jnp.int32),
+        num_generated_tokens=jnp.zeros((1, 1), dtype=jnp.int32),
+        first_token=first_generated_token,
+    )
+
+    speculations = first_generated_token.shape[1]
+    result_tokens = engine_api.ResultTokens(
+        data=jnp.concatenate(
+            (
+                first_generated_token,
+                jnp.ones_like(first_generated_token),
+                jnp.ones_like(first_generated_token),
+            ),
+            axis=-1,
+        ),
+        tokens_idx=(0, speculations),
+        # Validity occupies the same amount of space, but next in line.
+        valid_idx=(speculations, 2 * speculations),
+        # And lengths is rank 1.
+        length_idx=(2 * speculations, 2 * speculations + 1),
+        samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
+    )
+    return (prefix, result_tokens)
+
+  @functools.partial(jax.jit, static_argnums=(0,))
+  def prefill_multisampling(
+      self,
+      *,
+      params: Params,
+      existing_prefix: Optional[jax.Array] = None,
+      padded_tokens: jax.Array,
+      true_length: int,
+      sampler: Optional[Callable[[Any], Any]] = None,  # pylint: disable=unused-argument
+      rng: Optional[engine_api.PRNGKeyType] = None,
+      num_samples: int = 1,
+  ) -> Tuple[Prefix, engine_api.ResultTokens]:
+    """Computes a kv-cache for a new generate request.
+
+    With multi-sampling, the engine will generate multiple first tokens in the
+    prefilling stage. The number of tokens is specified by num_samples.
     """
     if existing_prefix is not None:
       raise NotImplementedError
@@ -292,6 +348,50 @@ class TestEngine(engine_api.Engine):
         slot * samples_per_slot,
         axis=0,
     )
+    return decode_state.replace(
+        prefill_cache=prefill_cache,
+        generate_cache=generate_cache,
+        generate_lengths=generate_lengths,
+        generate_tokens=generate_tokens,
+    )
+
+  @functools.partial(jax.jit, static_argnums=(0,), donate_argnums=(2,))
+  def bulk_insert(
+      self,
+      prefix: Prefix,
+      decode_state: DecodeState,
+      slots: list[int],
+  ) -> DecodeState:
+    """Insert a single computed prefill cache into multiple slots in
+    KV cache.
+    """
+    prefill_cache = prefix.cache
+    generate_cache = decode_state.generate_cache
+    generate_lengths = decode_state.generate_lengths
+    generate_tokens = decode_state.generate_tokens
+    for slot in slots:
+      prefill_cache = jax.lax.dynamic_update_slice_in_dim(
+          decode_state.prefill_cache, prefill_cache, slot, axis=0
+      )
+      generate_cache = jax.lax.dynamic_update_slice_in_dim(
+          generate_cache,
+          jnp.zeros((1, self.cache_length)),
+          slot,
+          axis=0,
+      )
+      samples_per_slot = self.generate_cache_batch // self.prefill_cache_batch
+      generate_lengths = jax.lax.dynamic_update_slice_in_dim(
+          generate_lengths,
+          jnp.ones((samples_per_slot), dtype=jnp.int32),
+          slot * samples_per_slot,
+          axis=0,
+      )
+      generate_tokens = jax.lax.dynamic_update_slice_in_dim(
+          generate_tokens,
+          prefix.first_token,
+          slot * samples_per_slot,
+          axis=0,
+      )
     return decode_state.replace(
         prefill_cache=prefill_cache,
         generate_cache=generate_cache,

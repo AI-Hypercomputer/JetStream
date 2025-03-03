@@ -100,6 +100,7 @@ def create_driver(
     jax_padding: bool = True,
     metrics_collector: JetstreamMetricsCollector | None = None,
     enable_model_warmup: bool = False,
+    multi_sampling: bool = False,
 ):
   """Creates a driver with a specified config.
 
@@ -109,6 +110,7 @@ def create_driver(
     jax_padding: The flag to enable JAX padding during tokenization.
     metrics_collector: The JetStream Promethus metric collector.
     enable_model_warmup: The flag to enable model server warmup.
+    multi_sampling: The flag to enable multi-sampling.
 
   Returns:
     An orchestrator driver.
@@ -169,6 +171,7 @@ def create_driver(
       jax_padding=jax_padding,
       metrics_collector=metrics_collector,
       is_ray_backend=config.is_ray_backend,
+      multi_sampling=multi_sampling,
   )
 
 
@@ -183,6 +186,7 @@ def run(
     enable_jax_profiler: bool = False,
     jax_profiler_port: int = 9999,
     enable_model_warmup: bool = False,
+    multi_sampling: bool = False,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
@@ -198,6 +202,7 @@ def run(
     enable_jax_profiler: The flag to enable JAX profiler server.
     jax_profiler_port: The port JAX profiler server (default to 9999).
     enable_model_warmup: The flag to enable model server warmup.
+    multi_sampling: The flag to enable multi-sampling.
 
   Returns:
     JetStreamServer that wraps the grpc server and orchestrator driver.
@@ -220,7 +225,12 @@ def run(
     )
 
   driver = create_driver(
-      config, devices, jax_padding, metrics_collector, enable_model_warmup
+      config,
+      devices,
+      jax_padding,
+      metrics_collector,
+      enable_model_warmup,
+      multi_sampling,
   )
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.
