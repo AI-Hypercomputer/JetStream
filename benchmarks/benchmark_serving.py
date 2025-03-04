@@ -173,7 +173,7 @@ class RequestFuncOutput:
   """Data class to store the response of a request."""
 
   input_request: Optional[InputRequest] = None
-  generated_token_list: list[int] = field(default_factory=list)
+  generated_token_list: list[list[int]] = field(default_factory=list)
   generated_text: str = ""
   success: bool = False
   latency_sec: float = 0
@@ -546,11 +546,7 @@ def calculate_metrics(
   for i in range(len(outputs)):
     if outputs[i].success:
       completed += 1
-      output_len = len(
-          outputs[i].generated_token_list
-          if tokenizer != "test"
-          else ["Ċ", "Ō", "Ɵ"]
-      )
+      output_len = sum(len(sublist) for sublist in outputs[i].generated_token_list)
       output_sizes.append(output_len)
       total_output += output_len
       total_input += input_requests[i].prompt_len
@@ -562,7 +558,8 @@ def calculate_metrics(
         continue
       ttft.record(outputs[i].ttft_sec * 1000)
       ttst.record(outputs[i].ttst_sec * 1000)
-      per_out_token_lat.record(outputs[i].latency_sec / output_len * 1000)
+      for token_list in outputs[i].generated_token_list:
+        per_out_token_lat.record(outputs[i].latency_sec / len(token_list) * 1000)
 
   print("Mean output size:", float(np.mean(output_sizes)))
   print("Median output size:", float(np.median(output_sizes)))
@@ -597,7 +594,7 @@ async def grpc_async_request(
     stub = jetstream_pb2_grpc.OrchestratorStub(channel)
     request_start_time = time.perf_counter()
     response = stub.Decode(request)
-    token_list = []
+    token_list = [[] for _ in range(request.num_samples)]
     ttft = 0
     ttst = 0
     stream_resp_cnt = 0
@@ -610,9 +607,10 @@ async def grpc_async_request(
           print(datetime.now(), f"slow TTFT {ttft:.2f}", prefill_quota.value())
       elif stream_resp_cnt == 2:
         ttst = time.perf_counter() - request_start_time
-      resp_tokens = resp.stream_content.samples[0].token_ids
-      token_list.extend(resp_tokens)
-      out_token_cnt.increment(len(resp_tokens))
+      for i, sample in enumerate(resp.stream_content.samples):
+        resp_tokens = sample.token_ids
+        token_list[i].extend(resp_tokens)
+        out_token_cnt.increment(len(resp_tokens))
     await active_req_quota.inc()
     req_latency = time.perf_counter() - request_start_time
     return token_list, ttft, ttst, req_latency
@@ -626,6 +624,7 @@ async def send_request(
     active_req_quota: AsyncCounter,
     req_complete_cnt: CounterMetric,
     out_token_cnt: CounterMetric,
+    num_samples: int,
     pbar: tqdm,
 ) -> RequestFuncOutput:
   """Send the request to JetStream server."""
@@ -641,6 +640,7 @@ async def send_request(
       metadata=jetstream_pb2.DecodeRequest.Metadata(
           start_time=time.perf_counter()
       ),
+      num_samples=num_samples,
   )
   out_tokens, ttft_sec, ttst_sec, latency_sec = await grpc_async_request(
       api_url,
@@ -660,7 +660,10 @@ async def send_request(
   output.latency_sec = latency_sec
   output.generated_token_list = out_tokens
   # generated_token_list is a list of token ids, decode it to generated_text.
-  output.generated_text = tokenizer.decode(out_tokens)
+  out_token_list = []
+  for out_token in out_tokens:
+    out_token_list.extend(out_token)
+  output.generated_text = tokenizer.decode(out_token_list)
   output.success = True
   if pbar:
     pbar.postfix = (
@@ -682,6 +685,7 @@ async def benchmark(
     prefill_quota: AsyncCounter,
     active_req_quota: AsyncCounter,
     is_warmup: bool = False,
+    num_samples: int = 1,
 ) -> tuple[dict[str, float | int], list[RequestFuncOutput]]:
   """Benchmark the online serving performance.
 
@@ -724,6 +728,7 @@ async def benchmark(
                 active_req_quota=active_req_quota,
                 req_complete_cnt=req_complete_cnt,
                 out_token_cnt=out_token_cnt,
+                num_samples=num_samples,
                 pbar=pbar,
             )
         )
@@ -1018,6 +1023,12 @@ def parse_args() -> argparse.Namespace:
       action="store_true",
       help="specify if it's for mmlu dataset",
   )
+  parser.add_argument(
+      "--num_samples",
+      type=int,
+      default="1",
+      help="What entity should be the one starting the conversations.",
+  )
   return parser.parse_args()
 
 
@@ -1029,6 +1040,7 @@ def main(args: argparse.Namespace):
   model_id = args.model
   tokenizer_id = args.tokenizer
   use_hf_tokenizer = args.use_hf_tokenizer
+  num_samples = args.num_samples
 
   prefill_quota = AsyncCounter(init_value=3)
   active_req_quota = AsyncCounter(init_value=450)
@@ -1096,6 +1108,7 @@ def main(args: argparse.Namespace):
             prefill_quota=prefill_quota,
             active_req_quota=active_req_quota,
             is_warmup=True,
+            num_samples=num_samples,
         )
     )
     print(f"Warmup (mode: {args.warmup_mode}) has completed.")
@@ -1113,6 +1126,7 @@ def main(args: argparse.Namespace):
           disable_tqdm=args.disable_tqdm,
           prefill_quota=prefill_quota,
           active_req_quota=active_req_quota,
+          num_samples=num_samples,
       )
   )
 
