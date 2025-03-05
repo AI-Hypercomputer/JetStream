@@ -192,7 +192,9 @@ class TestEngine(engine_api.Engine):
     )
     return (prefix, result_tokens)
 
-  @functools.partial(jax.jit, static_argnums=(0,))
+  @functools.partial(
+      jax.jit, static_argnums=(0,), static_argnames=("num_samples",)
+  )
   def prefill_multisampling(
       self,
       *,
@@ -216,26 +218,30 @@ class TestEngine(engine_api.Engine):
     # Generate dummy prefill cache content
     prefill_cache = padded_tokens[None, :] * params
 
-    # Create a dummy first generated token.
-    first_generated_token = (prefill_cache.sum(axis=-1).astype(jnp.int32))[
-        :, jnp.newaxis
-    ]
+    # Create dummy first generated tokens.
+    first_generated_tokens = []
+    for _ in range(num_samples):
+      first_generated_token = (prefill_cache.sum(axis=-1).astype(jnp.int32))[
+          :, jnp.newaxis
+      ]
+      first_generated_tokens.append(first_generated_token)
+    first_generated_tokens = jnp.concatenate(first_generated_tokens, axis=0)
 
     prefix = Prefix(
         logits=jax.random.normal(self._prng_key, (1, self.vocab_size)),
         cache=prefill_cache,
         next_pos=jnp.full((1, 1), true_length, dtype=jnp.int32),
-        num_generated_tokens=jnp.zeros((1, 1), dtype=jnp.int32),
-        first_token=first_generated_token,
+        num_generated_tokens=jnp.zeros((num_samples, 1), dtype=jnp.int32),
+        first_token=first_generated_tokens,
     )
 
     speculations = first_generated_token.shape[1]
     result_tokens = engine_api.ResultTokens(
         data=jnp.concatenate(
             (
-                first_generated_token,
-                jnp.ones_like(first_generated_token),
-                jnp.ones_like(first_generated_token),
+                first_generated_tokens,
+                jnp.ones_like(first_generated_tokens),
+                jnp.ones_like(first_generated_tokens),
             ),
             axis=-1,
         ),
@@ -244,7 +250,7 @@ class TestEngine(engine_api.Engine):
         valid_idx=(speculations, 2 * speculations),
         # And lengths is rank 1.
         length_idx=(2 * speculations, 2 * speculations + 1),
-        samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
+        samples_per_slot=num_samples,
     )
     return (prefix, result_tokens)
 
@@ -398,13 +404,13 @@ class TestEngine(engine_api.Engine):
     """Insert a single computed prefill cache into multiple slots in
     KV cache.
     """
-    prefill_cache = prefix.cache
+    prefill_cache = decode_state.prefill_cache
     generate_cache = decode_state.generate_cache
     generate_lengths = decode_state.generate_lengths
     generate_tokens = decode_state.generate_tokens
     for slot in slots:
       prefill_cache = jax.lax.dynamic_update_slice_in_dim(
-          decode_state.prefill_cache, prefill_cache, slot, axis=0
+          prefill_cache, prefix.cache, slot, axis=0
       )
       generate_cache = jax.lax.dynamic_update_slice_in_dim(
           generate_cache,
@@ -412,7 +418,7 @@ class TestEngine(engine_api.Engine):
           slot,
           axis=0,
       )
-      samples_per_slot = self.generate_cache_batch // self.prefill_cache_batch
+      samples_per_slot = 1
       generate_lengths = jax.lax.dynamic_update_slice_in_dim(
           generate_lengths,
           jnp.ones((samples_per_slot), dtype=jnp.int32),

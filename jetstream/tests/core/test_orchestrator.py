@@ -51,7 +51,9 @@ from jetstream.engine import mock_engine
 
 class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
 
-  def _setup_driver(self, interleaved_mode: bool = True):
+  def _setup_driver(
+      self, interleaved_mode: bool = True, multi_sampling: bool = False
+  ):
     prefill_engine = mock_engine.TestEngine(
         batch_size=32, cache_length=256, weight=2.0
     )
@@ -66,6 +68,7 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
         prefill_params=[prefill_engine.load_params()],
         generate_params=[generate_engine.load_params()],
         interleaved_mode=interleaved_mode,
+        multi_sampling=multi_sampling,
     )
     return driver
 
@@ -146,6 +149,38 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
       print(f"actual output: {output_text=} {output_token_id=}")
       assert output_text == expected_text[counter]
       assert output_token_id == expected_token_ids[counter]
+      counter += 1
+    driver.stop()
+    print("Orchestrator driver stopped.")
+
+  @parameterized.expand([1, 2, 3, 4])
+  async def test_orchestrator_multi_sampling(self, num_samples: int):
+    """Test the multithreaded orchestration."""
+    driver = self._setup_driver(interleaved_mode=True, multi_sampling=True)
+    client = orchestrator.LLMOrchestrator(driver=driver)
+
+    # The string representation of np.array([[65, 66]]), [2] will be prepend
+    # as BOS.
+    text = "AB"
+
+    request = jetstream_pb2.DecodeRequest(
+        text_content=jetstream_pb2.DecodeRequest.TextContent(text=text),
+        max_tokens=3,
+        num_samples=num_samples,
+    )
+    iterator = client.Decode(request)
+    # chr of [266, 332, 415].
+    expected_text = ["Ċ", "Ō", "Ɵ", ""]
+    expected_token_ids = [266, 332, 415, None]
+    counter = 0
+    async for resp in iterator:
+      for sample in resp.stream_content.samples:
+        output_text = sample.text
+        token_ids = sample.token_ids
+        output_token_id = token_ids[0] if len(token_ids) > 0 else None
+        print(f"actual output: {output_text=} {output_token_id=}")
+        assert output_text == expected_text[counter]
+        assert output_token_id == expected_token_ids[counter]
       counter += 1
     driver.stop()
     print("Orchestrator driver stopped.")
