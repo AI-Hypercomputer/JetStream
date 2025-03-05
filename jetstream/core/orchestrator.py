@@ -1041,9 +1041,6 @@ class Driver:
       if decode_state is None:
         break
 
-      # Signal to kill the engine
-      if decode_state is None:
-        break
       # At this point, we know that we have at least some slots filled.
       assert (
           my_slots.qsize() < max_concurrent_decodes

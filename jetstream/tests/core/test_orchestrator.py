@@ -51,7 +51,9 @@ from jetstream.engine import mock_engine
 
 class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
 
-  def _setup_driver(self, interleaved_mode: bool = True, multi_sampling: bool = False):
+  def _setup_driver(
+      self, interleaved_mode: bool = True, multi_sampling: bool = False
+  ):
     prefill_engine = mock_engine.TestEngine(
         batch_size=32, cache_length=256, weight=2.0
     )

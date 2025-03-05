@@ -192,7 +192,9 @@ class TestEngine(engine_api.Engine):
     )
     return (prefix, result_tokens)
 
-  @functools.partial(jax.jit, static_argnums=(0,), static_argnames=("num_samples",))
+  @functools.partial(
+      jax.jit, static_argnums=(0,), static_argnames=("num_samples",)
+  )
   def prefill_multisampling(
       self,
       *,
