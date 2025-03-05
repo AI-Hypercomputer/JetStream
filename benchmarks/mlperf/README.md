@@ -2,32 +2,17 @@
 ## Create TPU VM.
 Follow these [instructions](https://cloud.google.com/tpu/docs/v5e-inference#tpu-vm) to create TPU v5e-8 VM and ssh into the VM
 
-## Install python and create an virtual environment
-```
-sudo apt-get install python3-dev python3-venv -y
-sudo apt-get install build-essential -y
-python -m venv ~/venv/jetstream
-source ~/venv/jetstream/bin/activate
-```
 
-## Install JAX on Cloud TPU VM
+## Clone repo
 ```
-pip install jax[tpu] -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
-```
-
-Verify that JAX can access the TPU and can run basic operations:
-```
-$ python
->>> import jax
->>> jax.device_count()
-```
-
-##  Download MLPerf Inference Benchmark Suite and install loadgen
-```
-cd ~
 git clone https://github.com/mlcommons/inference.git
-pushd inference/loadgen
-pip install . 
+```
+
+## Install loadgen
+```
+apt-get install python3-dev
+apt-get install build-essential -y
+cd loadgen/ && pip install .
 ```
 
 ## Install eval dependencies
@@ -42,19 +27,27 @@ sentencepiece==0.1.99 \
 accelerate==0.21.0
 ```
 
-## Download llama2-70B data file
+## Download data file
 ```
-export DATA_DISK_DIR=~/loadgen_run_data
+cd /
+export DATA_DISK_DIR=/loadgen_run_data
 mkdir -p ${DATA_DISK_DIR}
-gsutil cp gs://cloud-tpu-inference-public/mlcommons/inference/language/llama2-70b/data/processed-openorca/open_orca_gpt4_tokenized_llama.calibration_1000.pkl ${DATA_DISK_DIR}/processed-calibration-data.pkl
-gsutil cp gs://cloud-tpu-inference-public/mlcommons/inference/language/llama2-70b/data/processed-openorca/open_orca_gpt4_tokenized_llama.sampled_24576.pkl ${DATA_DISK_DIR}/processed-data.pkl
+cd ${DATA_DISK_DIR}
+gsutil cp gs://cloud-tpu-inference-public/mlcommons/inference/language/llama2-70b/data/processed-openorca/open_orca_gpt4_tokenized_llama.calibration_1000.pkl .
+mv open_orca_gpt4_tokenized_llama.calibration_1000.pkl processed-calibration-data.pkl
+
+gsutil cp gs://cloud-tpu-inference-public/mlcommons/inference/language/llama2-70b/data/processed-openorca/open_orca_gpt4_tokenized_llama.sampled_24576.pkl .
+mv open_orca_gpt4_tokenized_llama.sampled_24576.pkl processed-data.pkl
+cd /inference_mlperf4.1
 ```
 
-## Download Maxtext and Jetstream
+## Install Maxtext 
 ```
-cd ~
-git clone git@github.com:AI-Hypercomputer/maxtext.git
-git clone git@github.com:AI-Hypercomputer/JetStream.git
+cd /
+git clone git@github.com:google/maxtext.git
+cd maxtext
+git checkout offline_inf
+cd maxtext/MaxText
 ```
 
 ## Checkpoint generation
@@ -92,58 +85,60 @@ Your checkpoint is generated at `$SAVE_QUANT_PARAMS_PATH`. This is used to set `
 huggingface-cli login
 ```
 
-## Start Jetstream server
-Start Jetstream server in a terminal.
+## Loadgen settings
 ```
-cd ~/maxtext
-python MaxText/maxengine_server.py \
-  MaxText/configs/base.yml \
-  tokenizer_path=assets/tokenizer.llama2 \
-  load_parameters_path="gs://msingh-bkt/checkpoints/quant_llama2-70b-chat/mlperf_070924/int8_" \
-  max_prefill_predict_length=1024 \
-  max_target_length=2048 \
-  model_name=llama2-70b \
-  ici_fsdp_parallelism=1 \
-  ici_autoregressive_parallelism=1 \
-  ici_tensor_parallelism=-1 \
-  scan_layers=false \
-  weight_dtype=bfloat16 \
-  checkpoint_is_quantized=True \
-  quantization=int8 \
-  quantize_kvcache=True \
-  compute_axis_order=0,2,1,3 \
-  ar_cache_axis_order=0,2,1,3 \
-  enable_jax_profiler=True \
-  per_device_batch_size=50 \
-  optimize_mesh_for_tpu_v6e=True
+cd Google/code/llama2-70b/tpu_v5e_8_jetstream_maxtext/scripts/
+export API_URL=0.0.0.0:9000
+export DATA_DISK_DIR=/loadgen_run_data
+export DATASET_TYPE=full # for calibration run, DATASET_TYPE=calibration
+
+export MODEL_NAME=llama70b
+export TOTAL_SAMPLE_COUNT=24576 # for calibration run, TOTAL_SAMPLE_COUNT=1000
+export LOG_INTERVAL=1000
+export BATCH_SIZE_EXP=8
+export USER_CONFIG=user.conf
 ```
 
-Wait until you see these server logs to indicate server is ready to process requests:
+## Offline Setup
 ```
-Memstats: After load_params:
-        Using (GB) 8.1 / 31.25 (25.920000%) on TPU_0(process=0,(0,0,0,0))
-        Using (GB) 8.1 / 31.25 (25.920000%) on TPU_1(process=0,(1,0,0,0))
-        Using (GB) 8.1 / 31.25 (25.920000%) on TPU_2(process=0,(0,1,0,0))
-        Using (GB) 8.1 / 31.25 (25.920000%) on TPU_3(process=0,(1,1,0,0))
-        Using (GB) 8.1 / 31.25 (25.920000%) on TPU_4(process=0,(0,2,0,0))
-        Using (GB) 8.1 / 31.25 (25.920000%) on TPU_5(process=0,(1,2,0,0))
-        Using (GB) 8.1 / 31.25 (25.920000%) on TPU_6(process=0,(0,3,0,0))
-        Using (GB) 8.1 / 31.25 (25.920000%) on TPU_7(process=0,(1,3,0,0))
-WARNING:root:Initialising driver with 1 prefill engines and 1 generate engines.
-2025-02-10 22:10:34,122 - root - WARNING - Initialising driver with 1 prefill engines and 1 generate engines.
-WARNING:absl:T5 library uses PAD_ID=0, which is different from the sentencepiece vocabulary, which defines pad_id=-1
-2025-02-10 22:10:34,152 - absl - WARNING - T5 library uses PAD_ID=0, which is different from the sentencepiece vocabulary, which defines pad_id=-1
-WARNING:absl:T5 library uses PAD_ID=0, which is different from the sentencepiece vocabulary, which defines pad_id=-1
-2025-02-10 22:10:34,260 - absl - WARNING - T5 library uses PAD_ID=0, which is different from the sentencepiece vocabulary, which defines pad_id=-1
-WARNING:absl:T5 library uses PAD_ID=0, which is different from the sentencepiece vocabulary, which defines pad_id=-1
-2025-02-10 22:10:34,326 - absl - WARNING - T5 library uses PAD_ID=0, which is different from the sentencepiece vocabulary, which defines pad_id=-1
-GC tweaked (allocs, gen1, gen2):  60000 20 30
-2025-02-10 22:10:36.360296: I external/xla/xla/tsl/profiler/rpc/profiler_server.cc:46] Profiler server listening on [::]:9999 selected port:9999
+cd /
+git clone git@github.com:google/maxtext.git
+cd maxtext
+git checkout offline_inf
+cd maxtext/MaxText
+
+# For v5e use
+export BATCH_AND_PREFILL_LEN=“256,80|512,40|1024,20”
+
+# For v6e use
+export BATCH_AND_PREFILL_LEN=“256,216|512,108|1024,54”
+export TOKENIZER_PATH=maxtext/assets/tokenizer.llama2
+
+export MAXENGINE_ARGS="model_name=llama2-70b tokenizer_path=${TOKENIZER_PATH}  quantization=int8 quantize_kvcache=True load_parameters_path=${SAVE_QUANT_PARAMS_PATH} checkpoint_is_quantized=True compute_axis_order=0,1,2,3 ar_cache_axis_order=0,1,2,3"
+```
+
+## Run offline performance
+
+```
+cd /maxtext/MaxText
+bash ./llama_offline_performance_run.sh
+```
+
+## Run offline accuracy
+```
+cd /maxtext/MaxText
+bash ./llama_offline_accuracy_run.sh
+```
+
+## Run offline audit
+```
+cd /maxtext/MaxText
+bash ./llama_offline_audit_run.sh
 ```
 
 ## Run server performance
 ```
-cd ~/JetStream/benchmarks/mlperf/scripts
+cd Google/code/llama2-70b/tpu_v5e_8_jetstream_maxtext/scripts/
 bash ./generate_server_performance_run.sh
 ```
 

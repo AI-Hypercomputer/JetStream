@@ -22,7 +22,6 @@ from jax import numpy as jnp
 from jax.sharding import NamedSharding, PartitionSpec as P
 import torch
 from transformers import AutoModelForCausalLM
-from inference.config.config import ModelId
 from inference.model import LlamaModel, ModelRegistry
 from inference import parallel
 from inference import nn
@@ -30,22 +29,21 @@ from inference import nn
 
 class LlamaModelTest(absltest.TestCase):
 
-  def _create_device_mesh(self):
-    devices = jax.devices()
-    return parallel.create_device_mesh(
-        devices=devices,
-        shape=(len(devices), 1),
-    )
+  @classmethod
+  def setUpClass(cls):
+    super().setUpClass()
 
   def test_llama(self):
     # TODO: make it as an accuracy test.
-    mesh = self._create_device_mesh()
+    model_id = "meta-llama/Llama-2-7b-chat-hf"
+    mesh = parallel.create_device_mesh(jax.devices(), len(jax.devices()))
     model_registry = ModelRegistry()
-    model_id = ModelId.llama_2_7b_chat_hf
-    config = model_registry.load_model_config(model_id)
-    config.num_hidden_layers = 1
-    tokenizer = model_registry.load_tokenizer(model_id)
 
+    config, tokenizer = model_registry.load_model_config(
+        model_id
+    ), model_registry.load_tokenizer(model_id)
+    config.num_hidden_layers = 1
+    num_prefill_tokens = 16
     input_ids = tokenizer.encode("I have a dog that is", return_tensors="pt")
     prompt_len = input_ids.shape[1]
     hg_model = AutoModelForCausalLM.from_pretrained(
@@ -55,7 +53,6 @@ class LlamaModelTest(absltest.TestCase):
     outputs = hg_model(input_ids)
     expected_logits = outputs.logits.detach().numpy()[0]
 
-    num_prefill_tokens = 16
     tokens = jnp.asarray(input_ids)[0]
     tokens = jax.lax.dynamic_update_index_in_dim(
         jnp.zeros((num_prefill_tokens), dtype=jnp.int32), tokens, 0, 0
@@ -98,10 +95,10 @@ class LlamaModelTest(absltest.TestCase):
     attn_metadata = jax.device_put(attn_metadata, attention_metadata_sharding)
 
     casual_lm_weight_cpu = model_registry.load_weights_to_host(
-        model_id=model_id,
+        model_id,
         num_devices=np.prod(mesh.devices.shape),
-        model_config=config,
         dtype=jnp.float32,
+        model_config=config,
     )
     model = LlamaModel(config, parallel.ModelParallelConfig(mesh=mesh))
 

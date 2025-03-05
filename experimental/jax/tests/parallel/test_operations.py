@@ -30,12 +30,11 @@ from inference import parallel
 class CollectiveOperationsTest(absltest.TestCase):
 
   def _build_mesh(self):
-    devices = jax.devices()
-    device_mesh = jax.experimental.mesh_utils.create_device_mesh(
-        (len(devices),), devices
-    )
     axis = "x"
-    mesh = jax.sharding.Mesh(device_mesh, (axis,))
+    device_mesh = jax.experimental.mesh_utils.create_device_mesh(
+        len(jax.devices()), jax.devices()
+    )
+    mesh = jax.sharding.Mesh(device_mesh, ("x"))
     return mesh, axis
 
   def test_reduce_scatter(self):

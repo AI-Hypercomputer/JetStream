@@ -1,6 +1,4 @@
 nltk
 evaluate
 rouge-score
-transformers
 tqdm
-scikit-learn

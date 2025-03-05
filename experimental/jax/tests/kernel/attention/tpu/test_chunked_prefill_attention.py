@@ -36,11 +36,12 @@ class ChunkedPrefillTest(absltest.TestCase):
     rng = jax.random.key(0)
 
     attn_layer = nn.AttentionOps(num_attn_heads, num_kv_heads, head_dim)
-
-    kv_cache = nn.KVCache(
-        k=jnp.zeros((num_kv_heads, total_page_num, page_size, head_dim)),
-        v=jnp.zeros((num_kv_heads, total_page_num, page_size, head_dim)),
+    k_hbm, v_hbm = (
+        jnp.zeros((num_kv_heads, total_page_num, page_size, head_dim)),
+        jnp.zeros((num_kv_heads, total_page_num, page_size, head_dim)),
     )
+
+    kv_cache = nn.KVCache(k=k_hbm, v=v_hbm)
 
     prefill_len = 6 * page_size
     prefill_non_padding_len = 4 * page_size + 3

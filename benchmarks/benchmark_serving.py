@@ -64,22 +64,23 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import gc
 import json
-import os
 import random
 import time
 from typing import Any, AsyncGenerator, Optional
+import os
 
-from benchmarks.eval_accuracy import eval_accuracy
-from benchmarks.eval_accuracy_mmlu import eval_accuracy_mmlu
-from benchmarks.metrics import CounterMetric, EventMetric
+
 import grpc
+from benchmarks.metrics import EventMetric, CounterMetric
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine.token_utils import load_vocab
 from jetstream.external_tokenizers.llama3 import llama3_tokenizer
 import numpy as np
-import pandas
 from tqdm.asyncio import tqdm  # pytype: disable=pyi-error
+import pandas
+
+from eval_accuracy import eval_accuracy
 from transformers import AutoTokenizer
 
 
@@ -152,7 +153,6 @@ class BenchmarkMetrics:
   request_throughput: float
   input_throughput: float
   output_throughput: float
-  overall_throughput: float
 
   ttft: EventMetric  # Time-to-first-token
   ttst: EventMetric  # Time-to-second-token
@@ -279,120 +279,36 @@ def load_openorca_dataset_pkl(
   return [(prompt, output) for prompt, output in zip(prompts, outputs)]
 
 
-def load_mmlu_dataset_csv(dataset_path: str) -> tuple[Any, dict[str, str]]:
-  assert dataset_path != ""
-  dataset = []
-  prompts_per_subject = dict()
-  for cvs_file in os.listdir(dataset_path):
-    if cvs_file.endswith(".csv"):
-      subject = " ".join(cvs_file.split("_")[:-1])
-      if subject not in prompts_per_subject:
-        prompts_per_subject[subject] = ""
-      filepath = os.path.join(dataset_path, cvs_file)
-      data = pandas.read_csv(filepath, header=None)
-      data["subject"] = subject
-      dataset.append(data)
-
-  combined_dataset = pandas.concat(dataset, ignore_index=True)
-  header_dict = {
-      0: "question",
-      1: "A",
-      2: "B",
-      3: "C",
-      4: "D",
-      5: "answer",
-  }
-  combined_dataset.rename(columns=header_dict, inplace=True)
-  return combined_dataset, prompts_per_subject
-
-
-def gen_mmlu_qa(data: Any, mmlu_method: str = "") -> str:
-
-  output = ""
-  for _, row in data.iterrows():
-    output += (
-        f"Question: {row['question']}\n"
-        f"Choices:\n"
-        f"(A) {row['A']}\n"
-        f"(B) {row['B']}\n"
-        f"(C) {row['C']}\n"
-        f"(D) {row['D']}\n"
-    )
-
-    output += "\nCorrect answer: "
-
-    if mmlu_method == "HELM":
-      output += f"({row['answer']})\n\n"
-    elif mmlu_method == "Harness":
-      content = row[row["answer"].upper()]
-      output += f"({row['answer']}) {content}\n\n"
-
-  return output
-
-
-def gen_mmlu_prompt(
-    dataset_path: str, num_shots: int = 1, mmlu_method: str = "HELM"
-) -> list[tuple[Any, Any]]:
-  combined_dataset, prompts_per_subject = load_mmlu_dataset_csv(dataset_path)
-  num_rows, _ = combined_dataset.shape
-  print(f"Loaded {num_rows} data from mmlu dataset")
-
-  for subject in prompts_per_subject:
-    header = (
-        f"The following are multiple choice questions (with answers) "
-        f"about {subject}:\n"
-    )
-    shots_data = combined_dataset[combined_dataset["subject"] == subject].head(
-        num_shots
-    )
-    prompts_per_subject[subject] = header + gen_mmlu_qa(
-        shots_data, mmlu_method=mmlu_method
-    )
-
-  mmlu_data = []
-  for _, row in combined_dataset.iloc[num_shots:].iterrows():
-    question_prompt = gen_mmlu_qa(pandas.DataFrame([row]))
-    output = row["answer"]
-    prompt = prompts_per_subject[row["subject"]] + question_prompt
-    mmlu_data.append((prompt, output))
-
-  return mmlu_data
-
-
-def load_math500_dataset(dataset_path: str) -> list[tuple[Any, Any]]:
-  if not dataset_path:
-    dataset_path = "benchmarks/huggingfaceh4_math500.json"
-  abs_path = os.path.abspath(dataset_path)
-  with open(abs_path, "r", encoding="utf-8") as f:
-    dataset = json.load(f)
-  return [
-      (data["problem"], (data["solution"], data["answer"])) for data in dataset
-  ]
-
-
 def tokenize_dataset(
     dataset: list[tuple[Any, Any, Any]],
     tokenizer: Any,
 ) -> list[tuple[str, Any, str, int, int, int]]:
-  tokenized_dataset = []
 
+  n = len(dataset)
+
+  prompts = []
+  outputs = []
+  indices = []
+  prompt_token_ids = []
+  outputs_token_ids = []
   for prompt, output, idx in dataset:
-    if isinstance(output, tuple):
-      output_len = len(tokenizer.encode(output[0]))
-      output_tokens = output[1]
-    else:
-      output_len = len(tokenizer.encode(output))
-      output_tokens = output
+    prompts.append(prompt)
+    outputs.append(output)
+    indices.append(idx)
+    prompt_token_ids.append(tokenizer.encode(prompt))
+    outputs_token_ids.append(tokenizer.encode(output))
 
-    prompt_tokens = tokenizer.encode(prompt)
-
+  tokenized_dataset = []
+  for i in range(n):
+    prompt_len = len(prompt_token_ids[i])
+    output_len = len(outputs_token_ids[i])
     tokenized_data = (
-        prompt,
-        prompt_tokens,
-        output_tokens,
-        len(prompt_tokens),
+        prompts[i],
+        prompt_token_ids[i],
+        outputs[i],
+        prompt_len,
         output_len,
-        idx,
+        indices[i],
     )
     tokenized_dataset.append(tokenized_data)
   return tokenized_dataset
@@ -400,18 +316,15 @@ def tokenize_dataset(
 
 def filter_dataset(
     tokenized_dataset: list[tuple[str, Any, str, int, int, int]],
-    dataset_type: str,
     max_output_length: int = 0,
-    run_mmlu_dataset: bool = False,
-    min_input_length: int = 4,
-    max_input_length: int = 0,
-    max_target_length: int = 0,
-    max_output_multiplier: int = 0,
 ) -> list[InputRequest]:
-  print(
-      f"In InputRequest, pass in max_output_length: {max_output_length} for"
-      " each sample"
-  )
+  if max_output_length != 0:
+    print("In InputRequest, pass in actual output_length for each sample")
+  else:
+    print(
+        f"In InputRequest, pass in max_output_length: {max_output_length} for"
+        " each sample"
+    )
 
   # Filter out too long sequences.
   filtered_dataset: list[InputRequest] = []
@@ -423,26 +336,16 @@ def filter_dataset(
       output_len,
       sample_idx,
   ) in tokenized_dataset:
-    if prompt_len < min_input_length or (
-        not (run_mmlu_dataset or dataset_type == "math500") and output_len < 4
-    ):
+    if prompt_len < 4 or output_len < 4:
       # Prune too short sequences.
       # This is because TGI causes errors when the input or output length
       # is too short.
-      # Math results could be really short though.
       continue
-    if (
-        prompt_len > max_input_length
-        or prompt_len + output_len > max_target_length
-    ):
+    if prompt_len > 1024 or prompt_len + output_len > 2048:
       # Prune too long sequences.
       continue
-    if dataset_type == "math500":
-      max_output_len = max_output_length or output_len * max_output_multiplier
-    else:
-      max_output_len = max_output_length or output_len
     request = InputRequest(
-        prompt, prompt_len, output, max_output_len, sample_idx
+        prompt, prompt_len, output, max_output_length or output_len, sample_idx
     )
     filtered_dataset.append(request)
 
@@ -456,14 +359,8 @@ def sample_requests(
     dataset: list[tuple[Any, Any]],
     tokenizer: Any,
     num_requests: int,
-    dataset_type: str,
     max_output_length: int = 0,
     oversample_multiplier: float = 1.2,
-    run_mmlu_dataset: bool = False,
-    min_input_length: int = 4,
-    max_input_length: int = 0,
-    max_target_length: int = 0,
-    max_output_multiplier: int = 0,
 ) -> list[InputRequest]:
 
   # Original dataset size
@@ -495,16 +392,7 @@ def sample_requests(
 
   tokenized_dataset = tokenize_dataset(sampled_dataset, tokenizer)
 
-  input_requests = filter_dataset(
-      tokenized_dataset,
-      dataset_type,
-      max_output_length,
-      run_mmlu_dataset,
-      min_input_length,
-      max_input_length,
-      max_target_length,
-      max_output_multiplier,
-  )
+  input_requests = filter_dataset(tokenized_dataset, max_output_length)
 
   # Sample the requests.
   if len(input_requests) > num_requests:
@@ -575,7 +463,6 @@ def calculate_metrics(
       request_throughput=completed / dur_s,
       input_throughput=total_input / dur_s,
       output_throughput=total_output / dur_s,
-      overall_throughput=(total_input + total_output) / dur_s,
       ttft=ttft,
       ttst=ttst,
       tpot=per_out_token_lat,
@@ -750,9 +637,6 @@ async def benchmark(
     print(f"Request throughput: {metrics.request_throughput:.2f} requests/s")
     print(f"Input token throughput: {metrics.input_throughput:.2f} tokens/s")
     print(f"Output token throughput: {metrics.output_throughput:.2f} tokens/s")
-    print(
-        f"Overall token throughput: {metrics.overall_throughput:.2f} tokens/s"
-    )
 
     print(f"{metrics.ttft.distribution_summary_str()}")
     print(f"{metrics.ttst.distribution_summary_str()}")
@@ -837,7 +721,7 @@ def parse_args() -> argparse.Namespace:
       "--dataset",
       type=str,
       default="test",
-      choices=["test", "sharegpt", "openorca", "mmlu", "math500"],
+      choices=["test", "sharegpt", "openorca"],
       help="The dataset name.",
   )
   parser.add_argument("--dataset-path", type=str, help="Path to the dataset.")
@@ -912,44 +796,6 @@ def parse_args() -> argparse.Namespace:
           "the output length of the golden dataset would be passed."
       ),
   )
-  parser.add_argument(
-      "--max-target-length",
-      type=int,
-      default=2048,
-      help=(
-          "The maximum prompt length plus the output length for reference "
-          " request. It would be used to filter the requests "
-      ),
-  )
-  parser.add_argument(
-      "--max-output-multiplier",
-      type=int,
-      default=2,
-      help=(
-          "The multiplier applied to the reference output length. The generated"
-          " output might be longer than the reference outputs. We apply this "
-          " multiplier for finer grained control. "
-      ),
-  )
-  parser.add_argument(
-      "--min-input-length",
-      type=int,
-      default=4,
-      help=(
-          "The minium input length for reference request. It would be used"
-          " to filter the input requests. "
-      ),
-  )
-  parser.add_argument(
-      "--max-input-length",
-      type=int,
-      default=1024,
-      help=(
-          "The maximum input length for reference request. It would be used"
-          " to filter the input requests. "
-      ),
-  )
-
   parser.add_argument("--seed", type=int, default=0)
   parser.add_argument(
       "--disable-tqdm",
@@ -1000,24 +846,6 @@ def parse_args() -> argparse.Namespace:
       choices=["human", "gpt", "both"],
       help="What entity should be the one starting the conversations.",
   )
-  parser.add_argument(
-      "--num-shots",
-      type=int,
-      default=1,
-      help="Num shorts to give for mmlu data set",
-  )
-  parser.add_argument(
-      "--mmlu-method",
-      type=str,
-      default="HELM",
-      choices=["HELM", "Harness", ""],
-      help="mmlu method/format to generate shots",
-  )
-  parser.add_argument(
-      "--run-mmlu-dataset",
-      action="store_true",
-      help="specify if it's for mmlu dataset",
-  )
   return parser.parse_args()
 
 
@@ -1049,18 +877,6 @@ def main(args: argparse.Namespace):
           args.dataset_path,
           args.conversation_starter,
       )
-    elif args.dataset == "mmlu":
-      dataset = gen_mmlu_prompt(
-          args.dataset_path, args.num_shots, args.mmlu_method
-      )
-    elif args.dataset == "math500":
-      dataset = load_math500_dataset(
-          args.dataset_path,
-      )
-    else:
-      raise ValueError(
-          f"Fatal Error: Uncognized input parameters: {args.dataset}"
-      )
 
     # A given args.max_output_length value is the max generation step,
     # when the args.max_output_length is default to None, the sample's golden
@@ -1069,13 +885,7 @@ def main(args: argparse.Namespace):
         dataset=dataset,
         tokenizer=tokenizer,
         num_requests=args.num_prompts,
-        dataset_type=args.dataset,
         max_output_length=args.max_output_length,
-        run_mmlu_dataset=args.run_mmlu_dataset,
-        min_input_length=args.min_input_length,
-        max_input_length=args.max_input_length,
-        max_target_length=args.max_target_length,
-        max_output_multiplier=args.max_output_multiplier,
     )
 
   warmup_requests = None
@@ -1119,10 +929,7 @@ def main(args: argparse.Namespace):
   # Process output
   output = [output.to_dict() for output in request_outputs]
   if args.run_eval:
-    if args.run_mmlu_dataset:
-      eval_json = eval_accuracy_mmlu(output)
-    else:
-      eval_json = eval_accuracy(output, args.dataset[:4])
+    eval_json = eval_accuracy(output)
 
   # Save config and results to json
   if args.save_result:

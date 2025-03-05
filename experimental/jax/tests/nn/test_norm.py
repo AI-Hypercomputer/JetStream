@@ -29,15 +29,11 @@ from inference import nn
 
 class NormTest(absltest.TestCase):
 
-  def _create_device_mesh(self):
-    devices = jax.devices()
-    return parallel.create_device_mesh(
-        devices=devices,
-        shape=(len(devices), 1),
-    )
-
   def test_rmsnorm_per_device_forward(self):
-    mesh = self._create_device_mesh()
+    mesh = parallel.create_device_mesh(
+        devices=jax.devices(),
+        shape=len(jax.devices()),
+    )
     hidden_state_size = 128
     eps = 1e-6
     rmsnorm_layer = nn.RMSNorm(
@@ -45,7 +41,7 @@ class NormTest(absltest.TestCase):
         eps=eps,
         parallel_config=parallel.RMSNormParallelConfig(
             mesh=mesh,
-            activation_sharded=False,
+            activation_shared=False,
         ),
     )
     distributed_rmsnorm_layer = nn.RMSNorm(
@@ -53,7 +49,7 @@ class NormTest(absltest.TestCase):
         eps=eps,
         parallel_config=parallel.RMSNormParallelConfig(
             mesh=mesh,
-            activation_sharded=True,
+            activation_shared=True,
         ),
     )
 

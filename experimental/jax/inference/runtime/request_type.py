@@ -63,9 +63,10 @@ class PrefillRequest:
 
   id: str
   unpadded_token_ids: list[int]
+  page_indices: list[int]
   chunk_idx: int
   chunk_size: int
-  page_indices: list[int]
+
   device_token_ids: jax.Array
   device_positions: jax.Array
 
@@ -85,9 +86,9 @@ class GenerateRequest:
 class GenerateState:
   """generate phase state"""
 
-  token_ids: jax.Array  # batch_size
-  positions: jax.Array  # batch_size
-  page_table: jax.Array  # batch_size, num_pages_per_seq
+  token_ids: jax.Array  # num_max_seq
+  positions: jax.Array  # num_max_seq
+  page_table: jax.Array  # num_max_seq, num_pages_per_seq
   available_slots: queue.SimpleQueue
   active_slot_req_map: dict[int, GenerateRequest]
   map_mutex: threading.Lock = threading.Lock()

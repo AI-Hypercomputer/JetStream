@@ -15,7 +15,7 @@
 
 # Tokenizer
 # export TOKENIZER_PATH=meta-llama/Llama-2-70b-chat-hf
-export DATASET_PREFIX="mixtral-"
+export DATASET_PREFIX=mixtral
 export TOKENIZER_PATH=mistralai/Mixtral-8x7B-Instruct-v0.1
 export NUM_CLIENT_THREADS=${NUM_CLIENT_THREADS:=600}
 
@@ -25,7 +25,7 @@ export LOADGEN_RUN_TIMESTAMP=$(TZ=America/Los_Angeles date +%Y%m%d%H%M%S%Z)
 get_dataset_name() {
   dataset_type=$1
 	if [ ${dataset_type} = "full" ]
-		then echo "${DATASET_PREFIX}processed-data"
+		then echo "${DATASET_PREFIX}-processed-data"
 	elif [ ${dataset_type} = "calibration" ]
 		then echo "${DATASET_PREFIX}-processed-calibration-data"
 	fi

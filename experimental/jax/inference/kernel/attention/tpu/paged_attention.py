@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""PagedAttention TPU kernel."""
+"""PagedAttention TPU kernel for decode phase (ported from jax 0.4.33 for quick experiment)"""
 
 from collections.abc import Sequence
 import functools
@@ -645,9 +645,8 @@ def paged_attention(
           grid=grid,
           scratch_shapes=scratch_shapes,
       ),
-      compiler_params=pltpu.TPUCompilerParams(
-          dimension_semantics=dimension_semantics
-      ),
+      # compiler_params=pltpu.TPUCompilerParams(
+      #     dimension_semantics=dimension_semantics),
       out_shape=[
           jax.ShapeDtypeStruct(q.shape, q_dtype_for_kernel_launch),
           jax.ShapeDtypeStruct((*q.shape[:-1], 1), jnp.float32),
