@@ -31,19 +31,35 @@ I.e. ['Ċ', 'Ə', 'ɖ'] when converted back with chr()
 """
 
 import functools
-from typing import Any, Optional, Tuple
+from dataclasses import asdict
+from typing import Any, Callable, Optional, Tuple
 
-from flax import struct
 import jax
-from jax.experimental import mesh_utils
 import jax.numpy as jnp
+import uuid
+from flax import struct
+from jax.experimental import mesh_utils
 
 from jetstream.engine import engine_api
 from jetstream.engine import tokenizer_pb2
 
-
 Params = jax.Array  # [1,].
-Prefix = jax.Array  # [batch,] of strings with different lengths.
+
+
+@struct.dataclass
+class Prefix:
+  """Result of the prefill step.
+
+  This structure currently matches the prefix structure returned
+  by the MaxText prefill operation, but it is flexible and can vary
+  depending on the engine implementation.
+  """
+
+  logits: Optional[jax.Array] = None
+  cache: Optional[jax.Array] = None
+  next_pos: Optional[int] = None
+  num_generated_tokens: Optional[int] = None
+  first_token: Optional[int] = None
 
 
 @struct.dataclass
@@ -64,21 +80,33 @@ class TestEngine(engine_api.Engine):
   JetStream efficient serving infrastructure.
   """
 
-  def __init__(self, batch_size: int, cache_length: int, weight: float):
+  def __init__(
+      self,
+      batch_size: int,
+      cache_length: int,
+      weight: float,
+      vocab_size: int = 1024,
+  ):
     self.prefill_cache_batch = batch_size
     self.generate_cache_batch = batch_size
     self.cache_length = cache_length
     self.weight = weight
+    self.vocab_size = vocab_size
     self._mesh = jax.sharding.Mesh(
         mesh_utils.create_device_mesh((1, 1, 1), jax.devices()), ("x", "y", "z")
     )
+    self._prng_key = jax.random.PRNGKey(42)
 
   def load_params(self) -> Params:
     """Loads model weights."""
     # An integer, used to multiply inputs.
     return jnp.array([self.weight], dtype=jnp.float32)
 
-  @functools.partial(jax.jit, static_argnums=(0,))
+  @functools.partial(
+      jax.jit,
+      static_argnums=(0,),
+      static_argnames=("request_id",),
+  )
   def prefill(
       self,
       *,
@@ -86,6 +114,7 @@ class TestEngine(engine_api.Engine):
       existing_prefix: Optional[jax.Array] = None,
       padded_tokens: jax.Array,
       true_length: int,
+      request_id: Optional[uuid.UUID] = None,
   ) -> Tuple[Prefix, engine_api.ResultTokens]:
     """Computes a kv-cache for a new generate request.
 
@@ -101,26 +130,34 @@ class TestEngine(engine_api.Engine):
     """
     if existing_prefix is not None:
       raise NotImplementedError
-    del true_length
     assert padded_tokens.ndim == 1
-    # Wait to simulate model step time.
-    fake_size = 4096
-    fake_work = jnp.ones((fake_size, fake_size)) @ jnp.ones(
-        (fake_size, fake_size)
-    )
-    # Do some fake work that isn't eliminated by dead code elimination (DCE).
-    params = params + fake_work.mean() - fake_work.mean()
+
+    # Generate dummy prefill cache content
     prefill_cache = padded_tokens[None, :] * params
 
-    # get dummy first token
-    first_step = (prefill_cache.sum(axis=-1))[:, jnp.newaxis]
-    first_token_data = jnp.concatenate(
-        [first_step, jnp.ones_like(first_step), jnp.ones_like(first_step)],
-        axis=-1,
+    # Create a dummy first generated token.
+    first_generated_token = (prefill_cache.sum(axis=-1).astype(jnp.int32))[
+        :, jnp.newaxis
+    ]
+
+    prefix = Prefix(
+        logits=jax.random.normal(self._prng_key, (1, self.vocab_size)),
+        cache=prefill_cache,
+        next_pos=jnp.full((1, 1), true_length, dtype=jnp.int32),
+        num_generated_tokens=jnp.zeros((1, 1), dtype=jnp.int32),
+        first_token=first_generated_token,
     )
-    speculations = first_step.shape[1]
-    first_token = engine_api.ResultTokens(
-        data=first_token_data.astype(jnp.int32),
+
+    speculations = first_generated_token.shape[1]
+    result_tokens = engine_api.ResultTokens(
+        data=jnp.concatenate(
+            (
+                first_generated_token,
+                jnp.ones_like(first_generated_token),
+                jnp.ones_like(first_generated_token),
+            ),
+            axis=-1,
+        ),
         tokens_idx=(0, speculations),
         # Validity occupies the same amount of space, but next in line.
         valid_idx=(speculations, 2 * speculations),
@@ -128,8 +165,63 @@ class TestEngine(engine_api.Engine):
         length_idx=(2 * speculations, 2 * speculations + 1),
         samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
     )
+    return (prefix, result_tokens)
 
-    return (prefill_cache, first_step), first_token
+  @functools.partial(jax.jit, static_argnums=(0,))
+  def prefill_multisampling(
+      self,
+      *,
+      params: Params,
+      existing_prefix: Optional[jax.Array] = None,
+      padded_tokens: jax.Array,
+      true_length: int,
+      sampler: Optional[Callable[[Any], Any]] = None,  # pylint: disable=unused-argument
+      rng: Optional[engine_api.PRNGKeyType] = None,
+      num_samples: int = 1,
+  ) -> Tuple[Prefix, engine_api.ResultTokens]:
+    """Computes a kv-cache for a new generate request.
+
+    With multi-sampling, the engine will generate multiple first tokens in the
+    prefilling stage. The number of tokens is specified by num_samples.
+    """
+    if existing_prefix is not None:
+      raise NotImplementedError
+    assert padded_tokens.ndim == 1
+
+    # Generate dummy prefill cache content
+    prefill_cache = padded_tokens[None, :] * params
+
+    # Create a dummy first generated token.
+    first_generated_token = (prefill_cache.sum(axis=-1).astype(jnp.int32))[
+        :, jnp.newaxis
+    ]
+
+    prefix = Prefix(
+        logits=jax.random.normal(self._prng_key, (1, self.vocab_size)),
+        cache=prefill_cache,
+        next_pos=jnp.full((1, 1), true_length, dtype=jnp.int32),
+        num_generated_tokens=jnp.zeros((1, 1), dtype=jnp.int32),
+        first_token=first_generated_token,
+    )
+
+    speculations = first_generated_token.shape[1]
+    result_tokens = engine_api.ResultTokens(
+        data=jnp.concatenate(
+            (
+                first_generated_token,
+                jnp.ones_like(first_generated_token),
+                jnp.ones_like(first_generated_token),
+            ),
+            axis=-1,
+        ),
+        tokens_idx=(0, speculations),
+        # Validity occupies the same amount of space, but next in line.
+        valid_idx=(speculations, 2 * speculations),
+        # And lengths is rank 1.
+        length_idx=(2 * speculations, 2 * speculations + 1),
+        samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
+    )
+    return (prefix, result_tokens)
 
   @functools.partial(jax.jit, static_argnums=(0,))
   def generate(
@@ -153,7 +245,7 @@ class TestEngine(engine_api.Engine):
     # Update generate cache
     generate_cache = jax.lax.dynamic_update_slice_in_dim(
         generate_cache,
-        previous_timestep,
+        previous_timestep.astype(jnp.float32),
         start_index=generate_cache_index,
         axis=1,
     )
@@ -176,7 +268,7 @@ class TestEngine(engine_api.Engine):
         -(l_iota - generate_cache_index) % self.cache_length
     ) <= generate_lengths[:, None]
     length_masked_gen_cache = generate_cache * length_mask
-    new_timestep = (
+    generated_tokens = (
         prefill_cache.sum(axis=-1)
         + (length_masked_gen_cache.sum(axis=-1) / params)
     )[:, jnp.newaxis]
@@ -188,12 +280,16 @@ class TestEngine(engine_api.Engine):
     # Do some fake work that isn't eliminated by dead code elimination (DCE).
     generate_cache = generate_cache + fake_work.mean() - fake_work.mean()
     new_lengths = generate_lengths + 1
-    speculations = new_timestep.shape[1]
+    speculations = generated_tokens.shape[1]
     # Concatenates the tokens, their validity and the lengths of each sequence
     # into one tensor so that copy operations are faster on Cloud TPU
     # infrastructure.
     token_data = jnp.concatenate(
-        [new_timestep, jnp.ones_like(new_timestep), new_lengths[:, None]],
+        [
+            generated_tokens,
+            jnp.ones_like(generated_tokens),
+            new_lengths[:, None],
+        ],
         axis=-1,
     )
     return DecodeState(
@@ -201,7 +297,7 @@ class TestEngine(engine_api.Engine):
         generate_cache=generate_cache,
         generate_cache_index=generate_cache_index,
         generate_lengths=new_lengths,
-        generate_tokens=new_timestep,
+        generate_tokens=generated_tokens,
     ), engine_api.ResultTokens(
         data=token_data.astype(jnp.int32),
         # Tokens are shape [batch, speculations], so when we concatenate
@@ -215,16 +311,21 @@ class TestEngine(engine_api.Engine):
         samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
     )
 
-  @functools.partial(jax.jit, static_argnums=(0,), donate_argnums=(2,))
+  @functools.partial(
+      jax.jit,
+      static_argnums=(0,),
+      donate_argnums=(2,),
+      static_argnames=("request_id",),
+  )
   def insert(
       self,
       prefix: Prefix,
       decode_state: DecodeState,
       slot: int,
+      request_id: Optional[uuid.UUID] = None,
   ) -> DecodeState:
     """Adds `prefix` into `decode_state` at `slot`."""
-    # [B, T], [T,] -> [B, T]
-    prefill_cache, previous_timestep = prefix
+    prefill_cache = prefix.cache
     prefill_cache = jax.lax.dynamic_update_slice_in_dim(
         decode_state.prefill_cache, prefill_cache, slot, axis=0
     )
@@ -243,7 +344,7 @@ class TestEngine(engine_api.Engine):
     )
     generate_tokens = jax.lax.dynamic_update_slice_in_dim(
         decode_state.generate_tokens,
-        previous_timestep,
+        prefix.first_token,
         slot * samples_per_slot,
         axis=0,
     )
@@ -254,10 +355,59 @@ class TestEngine(engine_api.Engine):
         generate_tokens=generate_tokens,
     )
 
-  def get_prefix_destination_sharding(self) -> Any:
-    return jax.sharding.NamedSharding(
-        mesh=self.mesh, spec=jax.sharding.PartitionSpec()
+  @functools.partial(jax.jit, static_argnums=(0,), donate_argnums=(2,))
+  def bulk_insert(
+      self,
+      prefix: Prefix,
+      decode_state: DecodeState,
+      slots: list[int],
+  ) -> DecodeState:
+    """Insert a single computed prefill cache into multiple slots in
+    KV cache.
+    """
+    prefill_cache = prefix.cache
+    generate_cache = decode_state.generate_cache
+    generate_lengths = decode_state.generate_lengths
+    generate_tokens = decode_state.generate_tokens
+    for slot in slots:
+      prefill_cache = jax.lax.dynamic_update_slice_in_dim(
+          decode_state.prefill_cache, prefill_cache, slot, axis=0
+      )
+      generate_cache = jax.lax.dynamic_update_slice_in_dim(
+          generate_cache,
+          jnp.zeros((1, self.cache_length)),
+          slot,
+          axis=0,
+      )
+      samples_per_slot = self.generate_cache_batch // self.prefill_cache_batch
+      generate_lengths = jax.lax.dynamic_update_slice_in_dim(
+          generate_lengths,
+          jnp.ones((samples_per_slot), dtype=jnp.int32),
+          slot * samples_per_slot,
+          axis=0,
+      )
+      generate_tokens = jax.lax.dynamic_update_slice_in_dim(
+          generate_tokens,
+          prefix.first_token,
+          slot * samples_per_slot,
+          axis=0,
+      )
+    return decode_state.replace(
+        prefill_cache=prefill_cache,
+        generate_cache=generate_cache,
+        generate_lengths=generate_lengths,
+        generate_tokens=generate_tokens,
     )
+
+  def get_prefix_destination_sharding(self) -> Any:
+    res = jax.tree_util.tree_map(
+        lambda _: jax.sharding.NamedSharding(
+            mesh=self.mesh, spec=jax.sharding.PartitionSpec()
+        ),
+        asdict(Prefix()),
+        is_leaf=lambda _: True,
+    )
+    return res
 
   def get_tokenizer(self) -> tokenizer_pb2.TokenizerParameters:
     """Return a protobuf of tokenizer info, callable from Py or C++."""
@@ -277,7 +427,7 @@ class TestEngine(engine_api.Engine):
             (self.generate_cache_batch), dtype=jnp.int32
         ),
         generate_tokens=jnp.zeros(
-            (self.generate_cache_batch, 1), dtype=jnp.float32
+            (self.generate_cache_batch, 1), dtype=jnp.int32
         ),
     )
 

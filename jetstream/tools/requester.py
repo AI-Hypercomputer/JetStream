@@ -30,6 +30,9 @@ _TEXT = flags.DEFINE_string("text", "My dog is cute", "The message")
 _MAX_TOKENS = flags.DEFINE_integer(
     "max_tokens", 3, "Maximum number of output/decode tokens of a sequence"
 )
+_NUM_SAMPLES = flags.DEFINE_integer(
+    "num_samples", 1, "Number of responses to generate per request"
+)
 _TOKENIZER = flags.DEFINE_string(
     "tokenizer",
     None,
@@ -50,19 +53,22 @@ def _GetResponseAsync(
   """Gets an async response."""
 
   response = stub.Decode(request)
-  output = []
+  outputs = {i: [] for i in range(request.num_samples)}
   for resp in response:
-    if _CLIENT_SIDE_TOKENIZATION.value:
-      output.extend(resp.stream_content.samples[0].token_ids)
-    else:
-      output.extend(resp.stream_content.samples[0].text)
-  if _CLIENT_SIDE_TOKENIZATION.value:
-    vocab = load_vocab(_TOKENIZER.value)
-    text_output = vocab.tokenizer.decode(output)
-  else:
-    text_output = "".join(output)
+    # print(len(resp.stream_content.samples))
+    for i, sample in enumerate(resp.stream_content.samples):
+      if _CLIENT_SIDE_TOKENIZATION.value:
+        outputs[i].extend(sample.token_ids)
+      else:
+        outputs[i].extend(sample.text)
   print(f"Prompt: {_TEXT.value}")
-  print(f"Response: {text_output}")
+  for i, output in outputs.items():
+    if _CLIENT_SIDE_TOKENIZATION.value:
+      vocab = load_vocab(_TOKENIZER.value)
+      text_output = vocab.tokenizer.decode(output)
+    else:
+      text_output = "".join(output)
+    print(f"The {i}th Response: {text_output}")
 
 
 def main(argv: Sequence[str]) -> None:
@@ -82,6 +88,7 @@ def main(argv: Sequence[str]) -> None:
               token_ids=token_ids
           ),
           max_tokens=_MAX_TOKENS.value,
+          num_samples=_NUM_SAMPLES.value,
       )
     else:
       request = jetstream_pb2.DecodeRequest(
@@ -89,6 +96,7 @@ def main(argv: Sequence[str]) -> None:
               text=_TEXT.value
           ),
           max_tokens=_MAX_TOKENS.value,
+          num_samples=_NUM_SAMPLES.value,
       )
     return _GetResponseAsync(stub, request)
 

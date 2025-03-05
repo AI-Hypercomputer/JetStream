@@ -23,7 +23,7 @@ import backend
 
 import mlperf_loadgen as lg
 
-_MLPERF_ID = "mixtral-8x7b"
+_MLPERF_ID = "llama2-70b"
 
 sys.path.insert(0, os.getcwd())
 
@@ -135,7 +135,12 @@ def get_args():
           'eg. {"tok_input_len": "tok_input_length"}'
       ),
   )
-
+  parser.add_argument(
+      "--mlperf-conf-id",
+      type=str,
+      default=_MLPERF_ID,
+      help="When given overrides the default user.conf path",
+  )
   args = parser.parse_args()
   return args
 
@@ -156,8 +161,7 @@ def main():
   else:
     user_conf = args.user_conf
 
-  settings.FromConfig(args.mlperf_conf, _MLPERF_ID, args.scenario)
-  settings.FromConfig(user_conf, _MLPERF_ID, args.scenario)
+  settings.FromConfig(user_conf, args.mlperf_conf_id, args.scenario)
   log.info("Mlperf config: %s", args.mlperf_conf)
   log.info("User config: %s", user_conf)
 

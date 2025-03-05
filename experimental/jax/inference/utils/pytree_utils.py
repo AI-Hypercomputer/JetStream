@@ -18,12 +18,10 @@ from jax.tree_util import register_pytree_node
 
 
 def register_flat_dataclass_as_pytree(cls):
-  def flatten(v):
-    fields = cls.__dataclass_fields__
-    children = ()
-    aux_data = None
-    for i in fields:
-      children += (getattr(v, i),)
+  def flatten(obj):
+    children, aux_data = (), None
+    for field in cls.__dataclass_fields__:
+      children += (getattr(obj, field),)
     return (children, aux_data)
 
   def unflatten(aux_data, children):
