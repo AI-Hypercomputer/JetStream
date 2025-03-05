@@ -730,7 +730,7 @@ class Driver:
       try:
         new_request = my_generate_backlog.get(block=block, timeout=1.0)
         if new_request is None:
-          break
+          return None
         ThreadDebugLog(
             thread_name,
             f"Got a new ActiveRequest from generate backlog {idx}.",
@@ -828,7 +828,7 @@ class Driver:
           break
 
       if my_generate_backlog.queue[0] is None:
-        break
+        return None
 
       expected_slots = my_generate_backlog.queue[0].num_samples
 
@@ -857,7 +857,7 @@ class Driver:
       try:
         new_request = my_generate_backlog.get(block=False)
         if new_request is None:
-          break
+          return None
         ThreadDebugLog(
             thread_name,
             f"Got a new ActiveRequest from generate backlog {idx}.",
@@ -965,6 +965,8 @@ class Driver:
             generate_engine,
             my_detokenize_backlog,
         )
+      if decode_state is None:
+        break
 
       # At this point, we know that we have at least some slots filled.
       assert (
