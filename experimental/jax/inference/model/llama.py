@@ -24,7 +24,7 @@ from .sampling.sampler import Sampler, SamplingParams
 from inference.model.postprocess import *
 
 
-class LlamaFeedForward(nn.Module):
+class _LlamaFeedForward(nn.Module):
 
   def __init__(
       self,
@@ -81,7 +81,7 @@ class LlamaFeedForward(nn.Module):
     return x
 
 
-class LlamaAttention(nn.Module):
+class _LlamaAttention(nn.Module):
 
   def __init__(
       self,
@@ -185,7 +185,7 @@ class LlamaAttention(nn.Module):
     return output, kv_cache
 
 
-class LlamaDecoderLayer(nn.Module):
+class _LlamaDecoderLayer(nn.Module):
 
   def __init__(
       self,
@@ -202,7 +202,7 @@ class LlamaDecoderLayer(nn.Module):
     else:
       enable_collective_matmul = False
 
-    self.self_attn = LlamaAttention(
+    self.self_attn = _LlamaAttention(
         config,
         parallel.AttentionParallelConfig(
             mesh=mesh,
@@ -211,7 +211,7 @@ class LlamaDecoderLayer(nn.Module):
         ),
     )
 
-    self.ffw = LlamaFeedForward(
+    self.ffw = _LlamaFeedForward(
         config,
         parallel_config=parallel.FeedForwardParallelConfig(
             mesh, enable_collective_matmul=enable_collective_matmul
@@ -223,7 +223,7 @@ class LlamaDecoderLayer(nn.Module):
         eps=config.rms_norm_eps,
         parallel_config=parallel.RMSNormParallelConfig(
             mesh=mesh,
-            activation_shared=enable_collective_matmul,
+            activation_sharded=enable_collective_matmul,
         ),
     )
 
@@ -232,7 +232,7 @@ class LlamaDecoderLayer(nn.Module):
         eps=config.rms_norm_eps,
         parallel_config=parallel.RMSNormParallelConfig(
             mesh=mesh,
-            activation_shared=enable_collective_matmul,
+            activation_sharded=enable_collective_matmul,
         ),
     )
 
@@ -284,7 +284,7 @@ class LlamaModel(nn.Model):
 
     self.layers = nn.ModuleList(
         [
-            LlamaDecoderLayer(
+            _LlamaDecoderLayer(
                 config=config,
                 parallel_config=parallel.DecoderLayerParallelConfig(
                     mesh=parallel_config.mesh,
@@ -304,7 +304,7 @@ class LlamaModel(nn.Model):
         config.rms_norm_eps,
         parallel_config=parallel.RMSNormParallelConfig(
             mesh=mesh,
-            activation_shared=enable_collective_matmul,
+            activation_sharded=enable_collective_matmul,
         ),
     )
     lm_head_parallel = parallel.LinearParallelConfig(

@@ -23,6 +23,7 @@ from inference import parallel
 from pydantic import BaseModel
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
+from inference.config import Config, ModelId
 from inference.runtime.engine import *
 from inference.runtime.request_type import *
 
@@ -31,23 +32,21 @@ from inference.runtime.request_type import *
 async def lifespan(app: FastAPI):
   devices = jax.devices()
   mesh = parallel.create_device_mesh(
-      devices,
-      (len(devices),),
+      devices=devices,
+      shape=(len(devices), 1),
   )
   loop = asyncio.get_running_loop()
   app.state.req_queue = queue.Queue()
   print("starting engine")
   engine = Engine(
       mesh=mesh,
-      model_load_params=ModelLoadParams(
-          model_id="meta-llama/Llama-2-7b-chat-hf"
-      ),
-      inference_params=InferenceParams(),
+      inference_params=Config.get(ModelId.llama_2_7b_chat_hf),
       mode=EngineMode.ONLINE,
       channel=OnlineChannel(
           req_queue=app.state.req_queue,
           aio_loop=loop,
       ),
+      debug_mode=False,
   )
   engine.start()
   yield

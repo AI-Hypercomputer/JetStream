@@ -17,8 +17,7 @@ import jax
 from jax import numpy as jnp
 
 P = jax.sharding.PartitionSpec
-MAX_INT8 = 127
-MIN_INT8 = -128
+MAX_INT8 = 127.5
 
 
 class QuantizedTensor(NamedTuple):
@@ -43,8 +42,7 @@ def to_int8(x: jnp.ndarray, h: jnp.ndarray) -> jnp.ndarray:
   Returns:
     Int8 array.
   """
-  x = x * h
-  return jnp.clip(jnp.round(x), MIN_INT8, MAX_INT8).astype(jnp.int8)
+  return jnp.int8(jnp.rint(x * (MAX_INT8 / h)))
 
 
 def from_int8(
@@ -60,11 +58,10 @@ def from_int8(
   Returns:
     Float array.
   """
-  x = x.astype(dtype=dtype) / h
-  return x.astype(dtype=dtype)
+  return x.astype(dtype) * h / MAX_INT8
 
 
-def get_quantization_scales(x: jnp.ndarray, axis=-1) -> jnp.ndarray:
+def get_quantization_scales(x: jnp.ndarray) -> jnp.ndarray:
   """Computes the quantization scales for a float array.
 
   These are the maximum values of the trailing dimension.
@@ -76,13 +73,11 @@ def get_quantization_scales(x: jnp.ndarray, axis=-1) -> jnp.ndarray:
     Array of the same shape as input but with the trailing dimension reduced to
     a size 1 absolute max value.
   """
-  scale_reciprocal = MAX_INT8 / jnp.max(jnp.abs(x), axis=axis, keepdims=True)
-  return scale_reciprocal.astype(jnp.float32)
+  return jnp.max(jnp.abs(x), axis=-1, keepdims=True)
 
 
 def quantize_to_int8(
     x: jnp.ndarray,
-    axis=-1,
 ) -> QuantizedTensor:
   """Quantizes a float array to an int8 QuantizedTensor.
 
@@ -92,7 +87,7 @@ def quantize_to_int8(
   Returns:
     Int8 QuantizedTensor.
   """
-  x_scales = get_quantization_scales(x, axis=axis)
+  x_scales = get_quantization_scales(x)
   return QuantizedTensor(weight=to_int8(x, x_scales), scales=x_scales)
 
 

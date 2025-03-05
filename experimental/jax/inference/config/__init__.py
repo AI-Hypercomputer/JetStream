@@ -14,22 +14,4 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-"""Model management utility module """
-import jax
-from jax import numpy as jnp
-import torch
-
-torch_jax_dtype_map = {
-    torch.bfloat16: jnp.bfloat16,
-    torch.float32: jnp.float32,
-    jnp.bfloat16: torch.bfloat16,
-    jnp.float32: torch.float32,
-}
-
-
-def convert_to_jax_array_on_cpu(x: torch.Tensor):
-  device = jax.devices("cpu")[0]
-  return jax.device_put(
-      jnp.asarray(x.float().numpy(), dtype=torch_jax_dtype_map[x.dtype]),
-      device=device,
-  )
+from .config import Config, ModelId

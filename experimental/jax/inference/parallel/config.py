@@ -114,7 +114,7 @@ class LinearParallelConfig:
 @dataclasses.dataclass
 class RMSNormParallelConfig:
   mesh: jax.sharding.Mesh
-  activation_shared: bool = False
+  activation_sharded: bool = False
 
 
 @enum.unique

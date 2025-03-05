@@ -13,7 +13,9 @@
 # limitations under the License.
 
 source run_utils.sh
-
+export TOKENIZER_PATH=meta-llama/Llama-2-70b-chat-hf
+export DATASET_PREFIX=""
+export MODEL_ID="llama2-70b"
 DATASET_NAME=$(get_dataset_name ${DATASET_TYPE})
 export DATASET_PATH=${DATA_DISK_DIR}/${DATASET_NAME}.pkl
 export API_URL=${API_URL}
@@ -41,7 +43,7 @@ cd ../ && python3 main.py \
 	--input-mode tokenized \
 	--output-mode tokenized \
 	--max-output-len 1024 \
-	--mlperf-conf ../mlperf.conf \
+	--mlperf-conf mlperf.conf \
 	--user-conf ${USER_CONFIG} \
 	--audit-conf ../../../compliance/nvidia/TEST06/audit.config \
 	--total-sample-count ${TOTAL_SAMPLE_COUNT} \
@@ -50,4 +52,5 @@ cd ../ && python3 main.py \
 	--tokenizer-path ${TOKENIZER_PATH} \
 	--log-interval ${LOG_INTERVAL} \
 	--num-client-threads ${NUM_CLIENT_THREADS} \
+	--mlperf-conf-id "${MODEL_ID}" \
 	--output-log-dir ${OUTPUT_LOG_DIR} 2>&1 | tee ${OUTPUT_LOG_DIR}/server_audit_log.log

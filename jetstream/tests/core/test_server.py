@@ -18,22 +18,22 @@ See orchestrator test for why these characters specifically will be the
 response.
 """
 
-from typing import Any, Type
 import unittest
+from typing import Any, Type
 
-
+import grpc
+import portpicker
 import requests
 from parameterized import parameterized
-import grpc
+
 from jetstream.core import config_lib
 from jetstream.core import server_lib
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine import engine_api
-import portpicker
 
 
-class ServerTest(unittest.IsolatedAsyncioTestCase):
+class ServerTest(unittest.TestCase):
 
   @parameterized.expand(
       [
@@ -63,7 +63,7 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
           ),
       ]
   )
-  async def test_server(
+  def test_server(
       self,
       config: Type[config_lib.ServerConfig],
       metrics_enabled: bool,
@@ -94,18 +94,16 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
 
     # if prometheus not configured, assert no metrics collector on Driver
     if metrics_enabled is not True:
-      assert server._driver._metrics_collector is None  # pylint: disable=protected-access
+      self.assertIsNone(server._driver._metrics_collector)  # pylint: disable=protected-access
 
-    async with grpc.aio.secure_channel(
+    with grpc.secure_channel(
         f"localhost:{port}", grpc.local_channel_credentials()
     ) as channel:
       stub = jetstream_pb2_grpc.OrchestratorStub(channel)
 
       healthcheck_request = jetstream_pb2.HealthCheckRequest()
       healthcheck_response = stub.HealthCheck(healthcheck_request)
-      healthcheck_response = await healthcheck_response
-
-      assert healthcheck_response.is_live is True
+      self.assertTrue(healthcheck_response.is_live)
 
       # The string representation of np.array([[65, 66]]), [2] will be prepended
       # as BOS
@@ -116,24 +114,25 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
       )
       iterator = stub.Decode(request)
       counter = 0
-      async for resp in iterator:
+      for resp in iterator:
         output_text = resp.stream_content.samples[0].text
         token_ids = resp.stream_content.samples[0].token_ids
         output_token_id = token_ids[0] if len(token_ids) > 0 else None
         print(f"actual output: {output_text=} {output_token_id=}")
-        assert output_text == expected_text[counter]
-        assert output_token_id == expected_token_ids[counter]
+        self.assertEqual(output_text, expected_text[counter])
+        self.assertEqual(output_token_id, expected_token_ids[counter])
         counter += 1
       # assert prometheus server is running and responding
       if metrics_enabled is True:
-        assert server._driver._metrics_collector is not None  # pylint: disable=protected-access
-        assert (
+        self.assertIsNotNone(server._driver._metrics_collector)  # pylint: disable=protected-access
+        self.assertEqual(
             requests.get(
                 f"http://localhost:{metrics_port}", timeout=5
-            ).status_code
-            == requests.status_codes.codes["ok"]
+            ).status_code,
+            requests.status_codes.codes["ok"],
         )
       server.stop()
+      pass
 
   def test_jax_profiler_server(self):
     port = portpicker.pick_unused_port()
@@ -147,13 +146,13 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         credentials=credentials,
         enable_jax_profiler=True,
     )
-    assert server
+    self.assertIsNotNone(server)
     server.stop()
 
   def test_get_devices(self):
-    assert len(server_lib.get_devices()) == 1
+    self.assertEqual(len(server_lib.get_devices()), 1)
 
-  async def test_model_warmup(self):
+  def test_model_warmup(self):
     port = portpicker.pick_unused_port()
 
     print("port: " + str(port))
@@ -166,24 +165,22 @@ class ServerTest(unittest.IsolatedAsyncioTestCase):
         credentials=credentials,
         enable_model_warmup=True,
     )
-
-    async with grpc.aio.secure_channel(
+    # await _wait_for_server_ready(port, timeout_sec=5)
+    with grpc.secure_channel(
         f"localhost:{port}", grpc.local_channel_credentials()
     ) as channel:
       stub = jetstream_pb2_grpc.OrchestratorStub(channel)
 
       healthcheck_request = jetstream_pb2.HealthCheckRequest()
       healthcheck_response = stub.HealthCheck(healthcheck_request)
-      healthcheck_response = await healthcheck_response
-
-      assert healthcheck_response.is_live is True
+      self.assertTrue(healthcheck_response.is_live)
 
       for pe in server._driver._prefill_engines:  # pylint: disable=protected-access
-        assert isinstance(pe, engine_api.JetStreamEngine)
-        assert pe.warm is True
+        self.assertIsInstance(pe, engine_api.JetStreamEngine)
+        self.assertTrue(pe.warm)
 
       for ge in server._driver._generate_engines:  # pylint: disable=protected-access
-        assert isinstance(ge, engine_api.JetStreamEngine)
-        assert ge.warm is True
+        self.assertIsInstance(ge, engine_api.JetStreamEngine)
+        self.assertTrue(ge.warm)
 
-      server.stop()
+    server.stop()

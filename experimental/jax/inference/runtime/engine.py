@@ -19,6 +19,7 @@ limitations under the License.
 import enum
 import dataclasses
 import datetime
+import math
 import queue
 import threading
 from typing import Any
@@ -28,37 +29,16 @@ import jax.profiler
 from jax import numpy as jnp
 from jax.sharding import Mesh, NamedSharding, PartitionSpec as P
 import numpy as np
-from inference.model import ModelSource, ModelRegistry, SamplingParams
 from inference import nn
 from inference import parallel
+from inference.config.config import InferenceParams
+from inference.model import ModelRegistry, SamplingParams
+from inference.model.llama import LlamaForCausalLM
 from inference.runtime.kv_cache import *
 from inference.runtime.request_type import *
 from inference.runtime.kv_cache import KVCacheStorage, KVCacheManager
-from inference.runtime.batch_scheduler import BatchScheduler, SchedulePolicy
+from inference.runtime.batch_scheduler import BatchScheduler, Schedule, SchedulePolicy
 from inference.runtime.model_executor import Executor
-
-
-@dataclasses.dataclass
-class ModelLoadParams:
-  model_id: str
-  tokenizer_path: str | None = None
-  weights_path: str | None = None
-  source: ModelSource = ModelSource.HUGGINGFACE
-  hf_model_config: Any | None = None
-  dummy_weights: bool = False
-
-
-@dataclasses.dataclass
-class InferenceParams:
-  max_num_seqs: int = 160
-  max_seq_length: int = 2048
-  max_input_length: int = 1024
-  prefill_chunk_sizes: list[int] = dataclasses.field(
-      default_factory=lambda: [128, 256, 512, 1024]
-  )
-  # prefill_chunk_sizes: list[int] = dataclasses.field(default_factory=lambda: [256])
-  page_size: int = 128
-  hbm_utilization: float = 0.8
 
 
 @enum.unique
@@ -80,65 +60,64 @@ class OnlineChannel:
 
 
 class Engine:
+  """Engine is a wrapper of the model for inference"""
 
   def __init__(
       self,
       mesh: Mesh,
-      model_load_params: ModelLoadParams,
       inference_params: InferenceParams,
       mode: EngineMode,
       channel: OfflineChannel | OnlineChannel,
-      debug_mode: bool = False,
+      debug_mode: bool,
   ):
-    """Engine is a wrapper of the model for inference"""
     print("Initializing engine")
     self.mesh = mesh
     self.inference_params = inference_params
     model_registry = ModelRegistry()
-    self.tokenizer = model_registry.load_tokenizer(
-        model_id=model_load_params.model_id,
-        path=model_load_params.tokenizer_path,
-    )
 
+    print("-" * 40)
+    print("Loading tokenizer")
+    self.tokenizer = model_registry.load_tokenizer(inference_params.model_id)
+
+    print("-" * 40)
     print("Loading model config")
-    model_config = model_registry.load_model_config(model_load_params.model_id)
+    model_config = model_registry.load_model_config(inference_params.model_id)
     if debug_mode:
       model_config.num_hidden_layers = 1
 
-    model_cls = model_registry.model_cls(model_load_params.model_id)
-    self.model: nn.CausalLM = model_cls(
+    self.model: nn.CausalLM = LlamaForCausalLM(
         model_config,
         parallel.ModelParallelConfig(mesh=self.mesh),
         self.tokenizer.eos_token_id,
         self.inference_params.max_seq_length,
     )
 
-    if model_load_params.dummy_weights:
-      print("Initializing random params")
+    print("-" * 40)
+    if debug_mode:
+      print("Initializing random model weights to devices")
       self.weights_dict = self.model.init_weights()
     else:
-      print("Loading model weights")
+      print("Loading model weights to host")
       weights_on_host = model_registry.load_weights_to_host(
-          model_load_params.model_id,
-          self.mesh.devices.size,
-          model_config,
-          model_load_params.weights_path,
-          model_load_params.source,
+          model_id=inference_params.model_id,
+          num_devices=self.mesh.devices.size,
+          model_config=model_config,
+          dtype=jnp.bfloat16,
       )
       print("Loading model weights to devices")
       self.weights_dict = self.model.load_weights_dict(weights_on_host)
 
-    print("Initializing KV Cache storage")
+    print("-" * 40)
+    print("Initializing KV cache storage/manager")
     # init kv cache
     self.kv_storage = KVCacheStorage(
         mesh=self.mesh,
         model_config=model_config,
-        page_size=inference_params.page_size,
-        hbm_utilization=inference_params.hbm_utilization,
+        page_size=self.inference_params.page_size,
+        hbm_utilization=self.inference_params.hbm_utilization,
     )
-    num_hbm_pages = self.kv_storage.num_hbm_pages
     self.kv_manager = KVCacheManager(
-        num_hbm_pages, self.inference_params.page_size
+        self.kv_storage.num_hbm_pages_per_layer, self.inference_params.page_size
     )
 
     self.mode = mode
@@ -146,38 +125,44 @@ class Engine:
 
     if self.mode == EngineMode.OFFLINE:
       mode = SchedulePolicy.OFFLINE
-    if self.mode == EngineMode.ONLINE:
+    else:
+      assert self.mode == EngineMode.ONLINE
       mode = SchedulePolicy.ONLINE
 
+    print("-" * 40)
+    print("Initializing batch scheduler")
     self.scheduler = BatchScheduler(
         self.kv_manager,
-        self.inference_params.max_num_seqs,
+        self.inference_params.batch_size,
         self.inference_params.max_seq_length,
         mode,
     )
 
+    print("-" * 40)
     print("Initializing GenerateState")
     self.active_prefill_request = None
+    self.num_pages_per_seq = math.ceil(
+        self.inference_params.max_seq_length / self.inference_params.page_size
+    )
     slots = queue.SimpleQueue()
-    for i in range(self.inference_params.max_num_seqs):
-      slots.put(i)
+    for i in range(self.inference_params.batch_size):
+      slots.put(i, block=True)
     self.generate_state = GenerateState(
         token_ids=jnp.zeros(
-            shape=(self.inference_params.max_num_seqs,),
+            shape=(self.inference_params.batch_size,),
             dtype=jnp.int32,
             device=NamedSharding(self.mesh, P(None)),
         ),
         positions=jnp.full(
-            shape=(self.inference_params.max_num_seqs,),
+            shape=(self.inference_params.batch_size,),
             fill_value=-1,
             dtype=jnp.int32,
             device=NamedSharding(self.mesh, P(None)),
         ),
         page_table=jnp.full(
             shape=(
-                self.inference_params.max_num_seqs,
-                self.inference_params.max_seq_length
-                // self.inference_params.page_size,
+                self.inference_params.batch_size,
+                self.num_pages_per_seq,
             ),
             fill_value=self.kv_manager.dummy_page_idx,
             dtype=jnp.int32,
@@ -187,18 +172,15 @@ class Engine:
         active_slot_req_map={},
     )
     self.sample_params = SamplingParams(
-        jax.device_put(
+        temperature=jax.device_put(
             jnp.asarray((1.0), dtype=jnp.float32), NamedSharding(self.mesh, P())
         ),
-        jax.device_put(
+        top_k=jax.device_put(
             jnp.asarray((1), dtype=jnp.int32), NamedSharding(self.mesh, P())
         ),
-        jax.device_put(jax.random.key(0), NamedSharding(self.mesh, P())),
+        rng=jax.device_put(jax.random.key(0), NamedSharding(self.mesh, P())),
     )
 
-    self.num_pages_per_seq = (
-        self.inference_params.max_seq_length // self.inference_params.page_size
-    )
     self.model_executor = Executor(
         self.mesh,
         self.weights_dict,
@@ -207,24 +189,29 @@ class Engine:
         debug_mode=debug_mode,
     )
 
+    print("-" * 40)
+    print("Compiling engine")
     self.model_executor.compile(
         self.inference_params.prefill_chunk_sizes,
-        self.inference_params.max_num_seqs,
+        self.inference_params.batch_size,
         self.inference_params.max_seq_length,
         self.inference_params.max_input_length,
         self.kv_storage.hbm_kv_caches,
         self.sample_params,
     )
 
-    print("Engine compilation finished")
     # running loop
     self.requests_dict: dict[str, Request] = {}
 
+    print("-" * 40)
+    print("Starting threads:", end="")
     if self.mode == EngineMode.OFFLINE:
+      print(" dequeue,", end="")
       self._dequeue_offline_req_thread = threading.Thread(
           name="dequeue_offline_request", target=self._dequeue_offline_request
       )
     else:
+      print(" dequeue,", end="")
       self._dequeue_online_req_thread = threading.Thread(
           name="_dequeue_online_request", target=self._dequeue_online_request
       )
@@ -232,8 +219,9 @@ class Engine:
     # TODO: Assign the max_device_requests_sem number by the
     # device spec and cost model.
     self._max_device_requests_sem = threading.Semaphore(
-        self.inference_params.max_num_seqs * 1.5
+        self.inference_params.batch_size * 3 // 2
     )
+    print(" preprocess,", end="")
     self._preprocess_queue: queue.Queue[Request] = queue.Queue()
     # TODO: Seperate the running loop with the static inference model.
     self._preprocess_thread = threading.Thread(
@@ -241,16 +229,19 @@ class Engine:
     )
     # Add backpressure to prevent that the inference thread never releases
     # the GIL and keeps dispatching the device program.
+    print(" postprocess,", end="")
     self._postprocess_queue: queue.Queue[PostProcessRequest] = queue.Queue(8)
     self._postprocess_thread = threading.Thread(
         name="postprocess", target=self._postprocess
     )
 
+    print(" inference")
     self._inference_thread = threading.Thread(
         name="inference", target=self._inference
     )
     self.total_reqs = 0
     self.complete_reqs = 0
+    self.start_time = None
 
   def start(self):
     jax.profiler.start_server(9999)
@@ -264,16 +255,18 @@ class Engine:
     self._postprocess_thread.start()
     self._inference_thread.start()
 
-    print("Engine starts: ", datetime.datetime.now())
+    self.start_time = datetime.datetime.now()
+    print("-" * 40)
+    print("Engine starts: ", self.start_time)
 
   def stop(self):
     jax.profiler.stop_server()
     # Stop listen to the queue when item is None.
-    self.channel.req_queue.put(None)
-    self._preprocess_queue.put(None)
+    self.channel.req_queue.put(None, block=True)
+    self._preprocess_queue.put(None, block=True)
     self.scheduler.enqueue_prefill_req(None)
     self.scheduler.enqueue_generate_req(None)
-    self._postprocess_queue.put(None)
+    self._postprocess_queue.put(None, block=True)
 
     if self.mode == EngineMode.OFFLINE:
       self._dequeue_offline_req_thread.join()
@@ -284,120 +277,108 @@ class Engine:
     self._inference_thread.join()
     self._postprocess_thread.join()
 
-    print("Engine stops: ", datetime.datetime.now())
+    stop_time = datetime.datetime.now()
+    duration = (stop_time - self.start_time).total_seconds()
+    print(f"Engine stops: {stop_time}")
+    print("-" * 40)
+    print(f"Engine total run time: {duration:.2f} seconds")
 
   def _dequeue_online_request(self):
+    """ "Dequeues online requests and put them in the preprocess queue."""
     while True:
-      online_req: OnlineRequest = self.channel.req_queue.get()
-      if not online_req:
+      r = self.channel.req_queue.get(block=True)
+      if r is None:
         return
-
+      assert isinstance(r, OnlineRequest)
       req = Request(
-          id=uuid.uuid4().hex,
-          prompt=online_req.prompt,
-          aio_response_queue=online_req.res_queue,
+          id=uuid.uuid4().hex, prompt=r.prompt, aio_response_queue=r.res_queue
       )
-
-      self._preprocess_queue.put(req)
+      self._preprocess_queue.put(req, block=True)
       self.requests_dict[req.id] = req
 
   def _dequeue_offline_request(self):
+    """ "Dequeues offline requests and put them in the preprocess queue."""
     while True:
-      offline_req: OfflineRequest = self.channel.req_queue.get()
-      if not offline_req:
+      r = self.channel.req_queue.get(block=True)
+      if r is None:
         return
-
-      req = Request(
-          id=uuid.uuid4().hex,
-          prompt=offline_req.prompt,
-      )
-
-      self._preprocess_queue.put(req)
+      assert isinstance(r, OfflineRequest)
+      req = Request(id=uuid.uuid4().hex, prompt=r.prompt)
+      self._preprocess_queue.put(req, block=True)
       self.requests_dict[req.id] = req
 
+  def _encode(self, prompt: str) -> tuple[np.ndarray, list[int]]:
+    """Encodes the text prompt and trims/pads it to the max input length."""
+    token_id_list = self.tokenizer.encode(prompt)
+    token_id_array = np.asarray(token_id_list)
+    length = token_id_array.size
+    assert length == len(token_id_list)
+    bound = self.inference_params.max_input_length
+    if length == bound:
+      return token_id_array, token_id_list
+    elif length < bound:
+      return np.pad(token_id_array, (0, bound - length)), token_id_list
+    else:
+      return token_id_array[-bound:], token_id_list[-bound:]
+
+  def _select_chunk_size(self, token_len: int) -> int:
+    """Selects a prefill chunk size that is big enough."""
+    for size in self.inference_params.prefill_chunk_sizes:  # ascending
+      if token_len <= size:
+        return size
+    return self.inference_params.prefill_chunk_sizes[-1]
+
+  def _build_prefill_request(self, req: Request) -> PrefillRequest:
+    """Builds a token prefill request from the original text prompt."""
+    padded_token_ids, req.prompt_token_ids = self._encode(req.prompt)
+    chunk_size = self._select_chunk_size(len(req.prompt_token_ids))
+    pi = self.kv_manager.dummy_page_idx
+    dummy_page_indices = [pi] * self.num_pages_per_seq
+    device_tokens = jax.device_put(
+        padded_token_ids, NamedSharding(self.mesh, P(None))  # no sharding
+    )
+    positions = np.arange(0, device_tokens.shape[0])
+    device_positions = jax.device_put(
+        positions, NamedSharding(self.mesh, P(None))  # no sharding
+    )
+    return PrefillRequest(
+        id=req.id,
+        unpadded_token_ids=req.prompt_token_ids,
+        chunk_idx=0,
+        chunk_size=chunk_size,
+        page_indices=dummy_page_indices,
+        device_token_ids=device_tokens,
+        device_positions=device_positions,
+    )
+
   def _preprocess(self) -> jax.Array:
+    """Converts prompts to prefill requests and give them to the scheduler."""
     while True:
-      req: Request | None = self._preprocess_queue.get()
-      if not req:
+      req = self._preprocess_queue.get(block=True)
+      if req is None:
         return
-
-      token_id_list = self.tokenizer.encode(req.prompt)
-      req.prompt_token_ids = token_id_list
-
-      # Don't put too many pending requests
-      # to the HBM.
+      assert isinstance(req, Request)
+      # Don't put too many pending requests to the HBM.
       self._max_device_requests_sem.acquire()
-
-      tokens = np.asarray(token_id_list)
-      token_len = tokens.size
-      num_paddings = self.inference_params.max_input_length - token_len
-      if num_paddings < 0:
-        padded_tokens = tokens[-self.inference_params.max_input_length :]
-        req.prompt_token_ids = token_id_list[
-            -self.inference_params.max_input_length :
-        ]
-      else:
-        padded_tokens = np.pad(
-            tokens, (0, self.inference_params.max_input_length - token_len)
-        )
-      padded_tokens = jax.device_put(
-          padded_tokens, NamedSharding(self.mesh, P(None))
-      )
-
-      positions = jax.device_put(
-          np.arange(0, padded_tokens.shape[0]),
-          NamedSharding(self.mesh, P(None)),
-      )
-
-      dummy_page_indices = [
-          self.kv_manager.dummy_page_idx for _ in range(self.num_pages_per_seq)
-      ]
-
-      # Select chunk size.
-      # TODO: move it to a function.
-      chunk_size_idx = 0
-      chunk_sizes = self.inference_params.prefill_chunk_sizes
-      while (
-          chunk_size_idx < len(chunk_sizes)
-          and token_len > chunk_sizes[chunk_size_idx]
-      ):
-        chunk_size_idx += 1
-      chunk_size_idx = (
-          chunk_size_idx - 1
-          if chunk_size_idx == len(chunk_sizes)
-          else chunk_size_idx
-      )
-
-      self.scheduler.enqueue_prefill_req(
-          PrefillRequest(
-              id=req.id,
-              unpadded_token_ids=req.prompt_token_ids,
-              page_indices=dummy_page_indices,
-              chunk_idx=0,
-              chunk_size=self.inference_params.prefill_chunk_sizes[
-                  chunk_size_idx
-              ],
-              device_token_ids=padded_tokens,
-              device_positions=positions,
-          )
-      )
+      prefill = self._build_prefill_request(req)
+      self.scheduler.enqueue_prefill_req(prefill)
 
   def _inference(self) -> jax.Array:
     while True:
       schedule = self.scheduler.schedule(
           self.active_prefill_request, self.generate_state
       )
-      if not schedule:
+      if schedule is None:
         return
 
+      assert isinstance(schedule, Schedule)
       input = self.model_executor.prepare_input_and_update_generate_state(
           schedule,
           self.generate_state,
           self.kv_storage.hbm_kv_caches,
           self.sample_params,
-          self.inference_params.max_num_seqs,
+          self.inference_params.batch_size,
       )
-
       output, self.kv_storage.hbm_kv_caches = self.model_executor.execute(input)
 
       # Prepare for next iteration and post-processed request.
@@ -412,22 +393,20 @@ class Engine:
       )
 
       if schedule.schedule_prefill:
-        prefill_req = schedule.prefill_request
-        prefill_req.chunk_idx += 1
-        start_idx = prefill_req.chunk_idx * prefill_req.chunk_size
-        prefill_length = len(prefill_req.unpadded_token_ids)
-
+        prefill = schedule.prefill_request
+        prefill.chunk_idx += 1
+        start_idx = prefill.chunk_idx * prefill.chunk_size
+        prefill_length = len(prefill.unpadded_token_ids)
         if start_idx < prefill_length:
-          self.active_prefill_request = prefill_req
+          self.active_prefill_request = prefill
         else:
           self.active_prefill_request = None
           post_req.prefill_request_id = schedule.prefill_request.id
-
           generate_req = GenerateRequest(
-              id=prefill_req.id,
+              id=prefill.id,
               slot=-1,
               pos=prefill_length,
-              page_indices=prefill_req.page_indices,
+              page_indices=prefill.page_indices,
               device_prefill_token_id=output.prefill_token,
           )
           self.scheduler.enqueue_generate_req(generate_req)
@@ -435,7 +414,6 @@ class Engine:
       if schedule.schedule_generate:
         self.generate_state.token_ids = output.generate_tokens
         self.generate_state.positions = output.generate_next_pos
-
         with self.generate_state.map_mutex:
           for (
               slot,
@@ -445,26 +423,27 @@ class Engine:
             post_req.generate_active_slots.append(slot)
             post_req.generate_active_request_ids.append(processed_gr.id)
 
-      self._postprocess_queue.put(post_req)
+      self._postprocess_queue.put(post_req, block=True)
 
   def _postprocess(self) -> str:
     while True:
-      p_req = self._postprocess_queue.get()
-      if not p_req:
+      post = self._postprocess_queue.get(block=True)
+      if post is None:
         return
 
-      p_req.prefill_token_id = np.asarray(p_req.prefill_token_id).item()
-      p_req.prefill_done = np.asarray(p_req.prefill_done).item()
-      p_req.generate_token_ids = np.asarray(p_req.generate_token_ids).tolist()
-      p_req.generate_done = np.asarray(p_req.generate_done).tolist()
+      assert isinstance(post, PostProcessRequest)
+      post.prefill_token_id = np.asarray(post.prefill_token_id).item()
+      post.prefill_done = np.asarray(post.prefill_done).item()
+      post.generate_token_ids = np.asarray(post.generate_token_ids).tolist()
+      post.generate_done = np.asarray(post.generate_done).tolist()
 
       # Free finished slot.
-      if len(p_req.generate_active_request_ids) > 0:
+      if len(post.generate_active_request_ids) > 0:
         with self.generate_state.map_mutex:
           slot_to_del = []
           for slot in self.generate_state.active_slot_req_map.keys():
-            if p_req.generate_done[slot]:
-              self.generate_state.available_slots.put(slot)
+            if post.generate_done[slot]:
+              self.generate_state.available_slots.put(slot, block=True)
               pages_to_free = self.generate_state.active_slot_req_map[
                   slot
               ].page_indices
@@ -474,26 +453,26 @@ class Engine:
             del self.generate_state.active_slot_req_map[slot]
 
       # Return generated tokens to the client.
-      if p_req.prefill_request_id:
-        req = self.requests_dict[p_req.prefill_request_id]
-        req.generated_token_ids.append(p_req.prefill_token_id)
+      if post.prefill_request_id:
+        req = self.requests_dict[post.prefill_request_id]
+        req.generated_token_ids.append(post.prefill_token_id)
         generated_text = self.tokenizer._convert_id_to_token(
-            p_req.prefill_token_id
+            post.prefill_token_id
         ).replace("▁", " ")
         req.generated_text += generated_text
 
         if self.mode == EngineMode.ONLINE:
           self.channel.aio_loop.call_soon_threadsafe(
               req.aio_response_queue.put_nowait,
-              Response(generated_text, p_req.prefill_token_id),
+              Response(generated_text, post.prefill_token_id),
           )
 
-        if p_req.prefill_done:
+        if post.prefill_done:
           req.completed = True
           if self.mode == EngineMode.ONLINE:
             self.channel.aio_loop.call_soon_threadsafe(
                 req.aio_response_queue.put_nowait,
-                Response(generated_text, p_req.prefill_token_id),
+                Response(generated_text, post.prefill_token_id),
             )
 
           else:
@@ -505,19 +484,19 @@ class Engine:
                 )
             )
 
-          del self.requests_dict[p_req.prefill_request_id]
+          del self.requests_dict[post.prefill_request_id]
           self._max_device_requests_sem.release()
 
       for slot, req_id in zip(
-          p_req.generate_active_slots, p_req.generate_active_request_ids
+          post.generate_active_slots, post.generate_active_request_ids
       ):
         if req_id not in self.requests_dict:
           continue
         req = self.requests_dict[req_id]
 
-        req.generated_token_ids.append(p_req.generate_token_ids[slot])
+        req.generated_token_ids.append(post.generate_token_ids[slot])
         generated_text = self.tokenizer._convert_id_to_token(
-            p_req.generate_token_ids[slot]
+            post.generate_token_ids[slot]
         ).replace("▁", " ")
         req.generated_text += generated_text
 
@@ -526,11 +505,11 @@ class Engine:
               req.aio_response_queue.put_nowait,
               Response(
                   generated_text=generated_text,
-                  generated_tokens=p_req.generate_token_ids[slot],
+                  generated_tokens=post.generate_token_ids[slot],
               ),
           )
 
-        if p_req.generate_done[slot]:
+        if post.generate_done[slot]:
           req.completed = True
           if self.mode == EngineMode.ONLINE:
             self.channel.aio_loop.call_soon_threadsafe(
@@ -548,6 +527,3 @@ class Engine:
 
           self._max_device_requests_sem.release()
           del self.requests_dict[req_id]
-
-  def handle_request(self, request: OfflineRequest | OnlineRequest):
-    self.channel.req_queue.put(request)

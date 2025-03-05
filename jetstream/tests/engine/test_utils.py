@@ -58,7 +58,7 @@ class UtilsTest(unittest.TestCase):
     vocab = mock_utils.TestVocab()
     per_channel, complete = token_utils.process_result_tokens(
         tokenizer=vocab,
-        slot=0,
+        slots=0,
         slot_max_length=4,
         result_tokens=result_tokens,
         complete=mock_complete,
@@ -76,7 +76,7 @@ class UtilsTest(unittest.TestCase):
     )
     per_channel, complete = token_utils.process_result_tokens(
         tokenizer=vocab,
-        slot=1,
+        slots=1,
         slot_max_length=4,
         result_tokens=result_tokens,
         complete=mock_complete,
