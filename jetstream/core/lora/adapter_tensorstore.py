@@ -62,7 +62,7 @@ class AdapterMetadata:
   size_hbm: int = 0             # Size in HBM (bytes)
   size_cpu: int = 0             # Size in CPU RAM (bytes)
   last_accessed: float = 0.0    # timestamp
-  config: Dict[str, Any] = None
+  config: Dict[str, Any] = {}
 
 
 class AdapterTensorStore:
