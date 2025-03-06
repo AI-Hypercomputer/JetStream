@@ -666,6 +666,18 @@ class Driver:
 
       adapter_id = request.adapter_id
 
+      # As prefill is happening one prompt at a time, for each prefill, we are
+      # applying the LoRA params on base to create a copy of params (equivalent
+      # to the size of base params) and use that for generating kv-cache. This
+      # copy is called the final_prefill_params, which is deleted soon after the
+      # generation of kv-cache.
+      # We can have memory-optimizations by updating the original copy of
+      # base params at the cost of extra computations to revert it back to original
+      # base params after kv-cache computation of each prompt, so that it can
+      # be used by the next prompt. But this optimization could also be tricky
+      # because as of now same params are being shared by prefill and generate,
+      # where generate always expect the base_params. So some race conditions need
+      # to be avoided.
       final_prefill_params = None
       if adapter_id == "":
         final_prefill_params = prefill_params
