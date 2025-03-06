@@ -580,7 +580,6 @@ class Driver:
 
       if request is None:
         break
-
       request.metadata.prefill_dequeue_time = time.perf_counter()
       is_bos = True
       logging.info(
@@ -590,7 +589,6 @@ class Driver:
           self._prefill_backlog.qsize(),
           is_bos,
       )
-
       # Tokenize and padding the text or token input.
       padded_tokens, true_length = self._process_prefill_content(
           request, tokenizer, is_bos, prefill_engine.max_prefill_length
@@ -703,7 +701,6 @@ class Driver:
       # Place the request on the correct generate backlog and block if full.
       new_request.metadata.generate_enqueue_time = time.perf_counter()
       self._generate_backlogs[target_idx].put(new_request, block=True)
-
       logging.info(
           "Successfully transferred prefill "
           "from prefill engine %d to generate engine %d "
@@ -727,7 +724,6 @@ class Driver:
     decode_state = generate_engine.init_decode_state()
 
     generate_params = self._generate_params[idx]
-
     logging.info("---------Generate params %d loaded.---------", idx)
     time_of_last_generate = time.time()
     time_of_last_print = time.time()
@@ -841,7 +837,6 @@ class Driver:
           generate_params, decode_state
       )
       sampled_tokens.copy_to_host_async()
-
       # Respond to detokenization backpressure.
       my_detokenize_backlog.put((generate_timestep, sampled_tokens), block=True)
       generate_timestep += 1
@@ -1135,7 +1130,6 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     prefill_content, is_client_side_tokenization = self._get_prefill_content(
         request
     )
-
     # Wrap request as an ActiveRequest.
     active_request = ActiveRequest(
         max_tokens=request.max_tokens,
