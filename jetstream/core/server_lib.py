@@ -34,6 +34,7 @@ import jax
 from jetstream.core import config_lib
 from jetstream.core import orchestrator
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
+from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine import warmup_utils, engine_api
 
 from prometheus_client import start_http_server
@@ -66,25 +67,19 @@ class JetStreamServer:
 
     asyncio.run_coroutine_threadsafe(do_init(), loop=self._loop).result()
     self._driver = driver
+    jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
+        orchestrator.LLMOrchestrator(driver=self._driver), self._grpc_server
+    )
 
     if enable_llm_inference_pool:
-      module_name = "jetstream.core.llm_inference_pool_api"
-      llm_inference_pool = importlib.import_module(module_name)
+      module_name = "jetstream.core.lora.multi_lora_inference_api"
+      multi_lora_inference = importlib.import_module(module_name)
 
       module_name = "jetstream.core.proto.multi_lora_decoding_pb2_grpc"
       multi_lora_decoding_pb2_grpc = importlib.import_module(module_name)
 
-      asyncio.run(self._driver.loadAdaptersFromCatalogToTensorStore())
-
       multi_lora_decoding_pb2_grpc.add_v1Servicer_to_server(
-          llm_inference_pool.MultiLoraManager(driver=self._driver), self._grpc_server
-      )
-    else:
-      module_name = "jetstream.core.proto.jetstream_pb2_grpc"
-      jetstream_pb2_grpc = importlib.import_module(module_name)
-
-      jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
-          orchestrator.LLMOrchestrator(driver=self._driver), self._grpc_server
+          multi_lora_inference.MultiLoraManager(driver=self._driver), self._grpc_server
       )
 
     self._grpc_server.add_secure_port(f"{_HOST}:{port}", credentials)
@@ -136,9 +131,9 @@ def create_driver(
     An orchestrator driver.
   """
   engines = config_lib.get_engines(config, devices=devices)
-  prefill_params = [{"base_params": pe.load_params()} for pe in engines.prefill_engines]
-  generate_params = [{"base_params": ge.load_params()} for ge in engines.generate_engines]
-  shared_params = [{"base_params": ie.load_params()} for ie in engines.interleaved_engines]
+  prefill_params = [pe.load_params() for pe in engines.prefill_engines]
+  generate_params = [ge.load_params() for ge in engines.generate_engines]
+  shared_params = [ie.load_params() for ie in engines.interleaved_engines]
   logging.info("Loaded all weights.")
 
   interleaved_mode = (
@@ -177,8 +172,6 @@ def create_driver(
       print(f"Model warmup encountered an error: {e}")
       traceback.print_exc()
       os.kill(os.getpid(), signal.SIGKILL)
-
-  logging.info("AMANGU: Going to create the drivers.")
 
   return orchestrator.Driver(
       prefill_engines=prefill_engines,

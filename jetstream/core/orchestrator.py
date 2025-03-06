@@ -92,7 +92,7 @@ from typing import Any, AsyncIterator, Optional, Tuple, cast
 import grpc
 import jax
 import jax.numpy as jnp
-from jetstream.core import adapter_tensorstore
+from jetstream.core.lora import adapter_tensorstore
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
@@ -231,6 +231,7 @@ class Driver:
   # All metrics we want to monitor should be collected with this
   _metrics_collector: JetstreamMetricsCollector | None = None
 
+  # An object to store and manage the adapters
   _adapter_tensorstore: adapter_tensorstore.AdapterTensorStore | None = None
 
   def __init__(
@@ -254,8 +255,8 @@ class Driver:
       generate_params = []
 
     self._adapter_tensorstore = adapter_tensorstore.AdapterTensorStore(
-        hbm_memory_budget=(20 * (1024 ** 3)),
-        cpu_memory_budget=(100 * (1024 ** 3)))
+        hbm_memory_budget=(20 * (1024 ** 3)),       # 20 GB HBM
+        cpu_memory_budget=(100 * (1024 ** 3)))      # 100 GB RAM
 
     logging.info(
         "Initialising driver with %d prefill engines and %d generate engines.",
@@ -314,7 +315,6 @@ class Driver:
         self._metrics_collector.get_generate_backlog_metric(idx).set_function(
             functools.partial(float, backlog.qsize())
         )
-
     # Stage 4
     # After prefill and generation, ActiveRequests are placed on the
     # detokenization backlog for tokens to be sent into each ActiveRequest's
@@ -459,7 +459,6 @@ class Driver:
         )
     )
 
-
     while any(t.is_alive() for t in self._all_threads):
       # Empty all backlogs and mark any remaining requests as cancelled.
       for q in all_backlogs:
@@ -510,6 +509,19 @@ class Driver:
 
     return float(total_size)
 
+  def _export_lora_request_info(self):
+    """Export the metric named `lora_request_info`."""
+
+    adapters_list_str = ""
+    max_loras = 0
+    if self._metrics_collector:
+      for idx, engine in enumerate(self._generate_engines):
+        adapters_list_str += asyncio.run(self._adapter_tensorstore.get_hbm_loaded_adapters())
+        max_loras += engine.max_concurrent_decodes
+
+      self._metrics_collector.get_lora_request_info_metric(max_loras,
+          adapters_list_str).set_to_current_time()
+
   def get_total_concurrent_requests(self) -> int:
     """Gets the total number of concurrent requests the driver can handle."""
     # We don't support filling all backlogs at once because it can cause GIL
@@ -555,6 +567,7 @@ class Driver:
     """Thread which runs in the background performing prefills."""
     logging.info("---------Spinning up prefill thread %d.---------", idx)
     prefill_engine = self._prefill_engines[idx]
+    prefill_params = self._prefill_params[idx]
     metadata = prefill_engine.get_tokenizer()
     tokenizer = prefill_engine.build_tokenizer(metadata)
     logging.info("---------Prefill params %d loaded.---------", idx)
@@ -567,7 +580,6 @@ class Driver:
       if request is None:
         break
 
-      prefill_params = self._prefill_params[idx]
 
       request.metadata.prefill_dequeue_time = time.perf_counter()
       is_bos = True
@@ -584,19 +596,13 @@ class Driver:
           request, tokenizer, is_bos, prefill_engine.max_prefill_length
       )
 
-      start_time = time.perf_counter()
-      logging.info(f"AMANGU Log (orchestrator.py): Starting timer for Driver._prefill_thread -> prefill_engine.prefill().")
-
       adapter_id = request.adapter_id
 
-      if adapter_id == "":
-        adapter_id = "base_params"
-
       final_params = None
-      if adapter_id == "base_params":
-        final_params = prefill_params[adapter_id]
+      if adapter_id == "":
+        final_params = prefill_params
       else:
-        final_params = copy.deepcopy(prefill_params["base_params"])
+        final_params = copy.deepcopy(prefill_params)
         lora_params = self._adapter_tensorstore.get_lora_weights(adapter_id)
         lora_config = self._adapter_tensorstore.get_lora_config(adapter_id)
         self._prefill_engines[idx].apply_adapter(
@@ -612,10 +618,6 @@ class Driver:
       )
 
       del final_params
-      end_time = time.perf_counter()
-      elapsed_time = (end_time - start_time) * 1e6
-
-      logging.info(f"AMANGU Log (orchestrator.py): Time taken for Driver._prefill_thread -> prefill_engine.prefill() is {elapsed_time} Micro-seconds.")
 
       request.prefill_result = prefill_result
 
@@ -627,9 +629,6 @@ class Driver:
           (first_token, request, request.metadata.prefill_dequeue_time),
           block=True,
       )
-
-      elapsed_time = request.metadata.transfer_enqueue_time - request.metadata.prefill_dequeue_time
-      logging.info(f"AMANGU Log (orchestrator.py): Time taken in whole prefill_thread is {elapsed_time} Seconds.")
 
       # Once prefill is complete, place it on the generation queue and block if
       # full.
@@ -721,19 +720,15 @@ class Driver:
     logging.info("---------Spinning up generate thread %d.---------", idx)
     generate_engine = self._generate_engines[idx]
     my_slots = self._generate_slots[idx]
-    logging.info(f"AMANGU: In _generate_thread: my_slots size = {my_slots.qsize()}")
-    logging.info(f"AMANGU: In _generate_thread: max_concurrent_decodes = {generate_engine.max_concurrent_decodes}")
     my_generate_backlog = self._generate_backlogs[idx]
     my_detokenize_backlog = self._generate_detokenize_backlogs[idx]
 
     # Keep track of what step tokens were generated at.
     generate_timestep = 0
-    generate_engine.print_stats("Pre-start Generate Thread: Before init_decode_state")
     # State to store things like running kv cache in.
     decode_state = generate_engine.init_decode_state()
-    generate_engine.print_stats("Pre-start Generate Thread: After init_decode_state")
 
-    # generate_params = self._generate_params[idx]
+    generate_params = self._generate_params[idx]
 
     logging.info("---------Generate params %d loaded.---------", idx)
     time_of_last_generate = time.time()
@@ -783,10 +778,8 @@ class Driver:
           block |= not self._transfer_backlogs[idx].empty()
         try:
           new_request = my_generate_backlog.get(block=block, timeout=1.0)
-
           if new_request is None:
             break
-
           new_request.metadata.generate_dequeue_time = time.perf_counter()
           if (
               self._metrics_collector
@@ -828,6 +821,8 @@ class Driver:
         decode_state = generate_engine.insert(
             new_request.prefill_result, decode_state, slot=slot
         )
+        
+        self._export_lora_request_info()
 
         del new_request.prefill_result
         new_request.generate_timestep_added = generate_timestep
@@ -842,31 +837,11 @@ class Driver:
           my_slots.qsize() < max_concurrent_decodes
       ), "At this point we must have some requests inserted into the slots."
 
-      generate_params = self._generate_params[idx]
-
-      adapter_id = "base_params"
-
-      start_time = time.perf_counter()
-
-      if self._metrics_collector:
-        adapters_list_str = asyncio.run(self._adapter_tensorstore.get_hbm_loaded_adapters())
-
-        max_loras = max_concurrent_decodes
-
-        self._metrics_collector.get_lora_request_info_metric(max_loras,
-            adapters_list_str).set_to_current_time()
-
       # Now we actually take a generate step on requests in the slots.
       decode_state, sampled_tokens = generate_engine.generate(
-          generate_params[adapter_id], decode_state
+          generate_params, decode_state
       )
       sampled_tokens.copy_to_host_async()
-
-      end_time = time.perf_counter()
-
-      elapsed_time = (end_time - start_time) * 1e6
-
-      logging.info(f"AMANGU Log (orchestrator.py): Time taken to execute Decode.generate_thread -> generate_engine.generate is {elapsed_time} Micro-seconds.")
 
       # Respond to detokenization backpressure.
       my_detokenize_backlog.put((generate_timestep, sampled_tokens), block=True)
@@ -1004,50 +979,6 @@ class Driver:
         my_live_requests[slot] = active_request
 
 
-  async def loadAdaptersFromCatalogToTensorStore(self):
-    logging.info(f"Loading adapters from the catalog file at the start of the server.")
-
-    if not self._prefill_engines and not self._generate_engines:
-      logging.info(f"There is no MaxEngine object defined. So could not load any adapter.")
-
-    engine = None
-
-    if self._prefill_engines:
-      engine = self._prefill_engines[0]
-    else:
-      engine = self._generate_engines[0]
-
-    adapter_params_and_config = engine.load_adapters_from_catalog_file()
-
-    if not adapter_params_and_config:
-      logging.info("There is no adapter loaded from the catelog file.")
-
-    tasks = []
-    for key, value in adapter_params_and_config.items():
-      adapter_id = key
-      adapter_config = value["config"]
-      adapter_params_pytree =value["params"]
-
-      try:
-        self._adapter_tensorstore.register_adapter(
-            adapter_id,
-            adapter_config["adapter_path"],
-            adapter_config)
-
-      except ValueError as e:
-        logging.info(f"Registration failed with error: {str(e)}")
-
-      task = asyncio.create_task(self._adapter_tensorstore.load_adapter(adapter_id, adapter_params_pytree, False))
-      task.set_name(f"Task:loading-adapter-{adapter_id}")
-      tasks.append(task)
-
-    await asyncio.gather(*tasks)
-
-    logging.info(f"All adapters from catalog file loaded successfully.")
-
-    engine.print_stats("After loading all adapters from catelog.")
-
-
   def loadAdapterToTensorstore(
           self,
           adapter_id,
@@ -1108,64 +1039,6 @@ class Driver:
     logging.info(f"Listing loaded adapters.")
 
     return self._adapter_tensorstore.adapter_registry
-
-
-  def loadAndApplyAdapter(
-          self,
-          adapter_id,
-          adapter_config_path,
-          adapter_weights_path):
-    logging.info(f"Loading and applying fine-tuning adapter to base weights")
-
-    for index, params in enumerate(self._prefill_params):
-      if adapter_id not in params:
-        params[adapter_id] = copy.deepcopy(params["base_params"])
-        self._prefill_engines[index].load_and_apply_adapter(params[adapter_id],
-                                                            adapter_config_path,
-                                                            adapter_weights_path)
-      else:
-        logging.info(f"Adapter={adapter_id} is already present in the prefill_params.")
-
-    for index, params in enumerate(self._generate_params):
-      if adapter_id not in params:
-        params[adapter_id] = copy.deepcopy(params["base_params"])
-        self._generate_engines[index].load_and_apply_adapter(params[adapter_id],
-                                                             adapter_config_path,
-                                                             adapter_weights_path)
-      else:
-        logging.info(f"Adapter={adapter_id} is already present in the generate_params.")
-
-  def unloadAdapter(
-          self,
-          adapter_id):
-    logging.info(f"Unloading the adapter with adapter_id={adapter_id}")
-
-    for params in self._prefill_params:
-      if adapter_id in params:
-        del params[adapter_id]
-        logging.info(f"Successfully deleted Adapter={adapter_id} from the prefill_params.")
-      else:
-        logging.info(f"Adapter={adapter_id} is not there in the prefill_params.")
-
-    for params in self._generate_params:
-      if adapter_id in params:
-        del params[adapter_id]
-        logging.info(f"Successfully deleted Adapter={adapter_id} from the generate_params.")
-      else:
-        logging.info(f"Adapter={adapter_id} is not there in the generate_params.")
-
-  def mayBeListLoadedAdapters(self):
-    logging.info(f"Listing loaded adapters:")
-
-    loaded_adapters_in_prefill = []
-    for params in self._prefill_params:
-      loaded_adapters_in_prefill.extend(list(params.keys()))
-    logging.info(f"In prefill_params: {loaded_adapters_in_prefill}")
-
-    loaded_adapters_in_generate = []
-    for params in self._generate_params:
-      loaded_adapters_in_generate.extend(list(params.keys()))
-    logging.info(f"In generate_params: {loaded_adapters_in_generate}")
 
 
 class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):

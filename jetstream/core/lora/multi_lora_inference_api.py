@@ -20,8 +20,8 @@ import grpc
 import time
 
 from typing import Any, AsyncIterator, Optional, Tuple, cast
-from jetstream.core import adapter_tensorstore
 from jetstream.core import orchestrator
+from jetstream.core.lora import adapter_tensorstore
 from jetstream.core.proto import multi_lora_decoding_pb2_grpc
 from jetstream.core.proto import multi_lora_decoding_pb2
 from jetstream.core.utils import async_multifuture
@@ -39,8 +39,8 @@ class MultiLoraManager(multi_lora_decoding_pb2_grpc.v1Servicer):
 
   def models(
       self,
-	  request: multi_lora_decoding_pb2.ListAdaptersRequest,
-	  context: Optional[grpc.aio.ServicerContext] = None,
+	    request: multi_lora_decoding_pb2.ListAdaptersRequest,
+	    context: Optional[grpc.aio.ServicerContext] = None,
   ) -> multi_lora_decoding_pb2.ListAdaptersResponse:
     """ListAdapters all loaded LoRA adapters."""
 

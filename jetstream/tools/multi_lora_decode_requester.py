@@ -12,49 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Benchmark JetStream online serving.
-
-On the server side, run one of the following commands:
-    * For real server, you need to pass correct server config (include the
-      model config that being passed into your engine impl) to the command
-      below. Refer to config_lib.py and implementations/mock/config.py for
-      config impl detail.
-
-    (run with real server)
-    python -m jetstream.core.implementations.<your_impl>.server \
-        --config <your_server_config>
-
-    (run with mock server)
-    python -m jetstream.core.implementations.mock.server
-
-On the client side, run:
-    * For real server and shareGPT dataset, you need to pass the tokenizer,
-      server config, and dataset flags to the command below, and make some
-      changes to the tokenizer logic in the benchmark script (get_tokenizer
-      and sample_requests func) to use your tokenizer correctly.
-    * Add `--save-result` flag to save the benchmark result to a json file in
-      current folder.
-    * You can also add `--run_eval true` if you want to calculate ROUGE score
-      on the predicted outputs.
-
-    (run with real model and engines)
-    python -m benchmarks.benchmark_serving \
-        --tokenizer <your_tokenizer> \
-        --dataset <target_dataset_name> \
-        --dataset-path <target_dataset_path> \
-        --request-rate <request_rate>
-
-    (run with mock)
-    python -m benchmarks.benchmark_serving \
-        --request-rate 1
-
-e2e example:
-python3 benchmark_serving.py \
-    --tokenizer /home/{username}/maxtext/assets/tokenizer \
-    --num-prompts 100 \
-    --dataset sharegpt \
-    --dataset-path ~/ShareGPT_V3_unfiltered_cleaned_split.json
-
+"""Decoding multiple LoRA requests via JetStream online serving.
 """
 
 
