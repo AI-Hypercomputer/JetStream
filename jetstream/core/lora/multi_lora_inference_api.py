@@ -18,6 +18,7 @@
 import logging
 import grpc
 import time
+import uuid
 
 from typing import Any, AsyncIterator, Optional, Tuple, cast
 from jetstream.core import orchestrator
@@ -197,6 +198,7 @@ class MultiLoraManager(multi_lora_decoding_pb2_grpc.v1Servicer):
 
     # Wrap request as an ActiveRequest.
     active_request = orchestrator.ActiveRequest(
+        request_id=uuid.uuid4(),
         max_tokens=request.max_tokens,
         prefill_content=prefill_content,
         is_client_side_tokenization=is_client_side_tokenization,

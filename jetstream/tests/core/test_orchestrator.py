@@ -14,7 +14,7 @@
 
 """Integration test of the orchestrator.
 
-This test tests the multi-htreaded orchestrator, where a prefill request is
+This test tests the multithreaded orchestrator, where a prefill request is
 popped onto a prefill queue, prefilled, sent to a generation queue and run for
 a number of decoding steps.
 
@@ -42,6 +42,7 @@ tokenizer returns).
 """
 
 import unittest
+from parameterized import parameterized
 from jetstream.core import orchestrator
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.utils.return_sample import ReturnSample
@@ -50,7 +51,9 @@ from jetstream.engine import mock_engine
 
 class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
 
-  def _setup_driver_interleaved_mode(self):
+  def _setup_driver(
+      self, interleaved_mode: bool = True, multi_sampling: bool = False
+  ):
     prefill_engine = mock_engine.TestEngine(
         batch_size=32, cache_length=256, weight=2.0
     )
@@ -64,13 +67,66 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
         generate_engines=[generate_engine],
         prefill_params=[prefill_engine.load_params()],
         generate_params=[generate_engine.load_params()],
-        interleaved_mode=True,
+        interleaved_mode=interleaved_mode,
+        multi_sampling=multi_sampling,
     )
     return driver
 
-  async def test_orchestrator_interleaved_mode(self):
+  def _setup_driver_chunked_prefill(self, interleaved_mode: bool = True):
+    prefill_engine = mock_engine.TestEngine(
+        batch_size=32, cache_length=256, weight=2.0, use_chunked_prefill=True
+    )
+    # Create a generate engine with a different set of weights
+    # so that we can test that the right one is in use at a given time.
+    generate_engine = mock_engine.TestEngine(
+        batch_size=4,
+        cache_length=32,
+        weight=4.0,
+        use_chunked_prefill=True,
+    )
+    driver = orchestrator.Driver(
+        prefill_engines=[prefill_engine],
+        generate_engines=[generate_engine],
+        prefill_params=[prefill_engine.load_params_dict()],
+        generate_params=[generate_engine.load_params()],
+        interleaved_mode=interleaved_mode,
+    )
+    return driver
+
+  @parameterized.expand([True, False])
+  async def test_orchestrator_chunked_prefill(self, interleaved_mode: bool):
     """Test the multithreaded orchestration."""
-    driver = self._setup_driver_interleaved_mode()
+    driver = self._setup_driver_chunked_prefill(interleaved_mode)
+    client = orchestrator.LLMOrchestrator(driver=driver)
+
+    # The string representation of np.array([[65, 66]]), [2] will be prepend
+    # as BOS.
+    text = "AB"
+
+    request = jetstream_pb2.DecodeRequest(
+        text_content=jetstream_pb2.DecodeRequest.TextContent(text=text),
+        max_tokens=3,
+    )
+    iterator = client.Decode(request)
+    # chr of [266, 332, 415].
+    expected_text = ["B", "R", "g", ""]
+    expected_token_ids = [66, 82, 103, None]
+    counter = 0
+    async for resp in iterator:
+      output_text = resp.stream_content.samples[0].text
+      token_ids = resp.stream_content.samples[0].token_ids
+      output_token_id = token_ids[0] if len(token_ids) > 0 else None
+      print(f"actual output: {output_text=} {output_token_id=}")
+      assert output_text == expected_text[counter]
+      assert output_token_id == expected_token_ids[counter]
+      counter += 1
+    driver.stop()
+    print("Orchestrator driver stopped.")
+
+  @parameterized.expand([True, False])
+  async def test_orchestrator(self, interleaved_mode: bool):
+    """Test the multithreaded orchestration."""
+    driver = self._setup_driver(interleaved_mode)
     client = orchestrator.LLMOrchestrator(driver=driver)
 
     # The string representation of np.array([[65, 66]]), [2] will be prepend
@@ -97,9 +153,76 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
     driver.stop()
     print("Orchestrator driver stopped.")
 
-  async def test_orchestrator_interleaved_mode_client_tokenization(self):
+  @parameterized.expand([1, 2, 3, 4])
+  async def test_orchestrator_multi_sampling(self, num_samples: int):
     """Test the multithreaded orchestration."""
-    driver = self._setup_driver_interleaved_mode()
+    driver = self._setup_driver(interleaved_mode=True, multi_sampling=True)
+    client = orchestrator.LLMOrchestrator(driver=driver)
+
+    # The string representation of np.array([[65, 66]]), [2] will be prepend
+    # as BOS.
+    text = "AB"
+
+    request = jetstream_pb2.DecodeRequest(
+        text_content=jetstream_pb2.DecodeRequest.TextContent(text=text),
+        max_tokens=3,
+        num_samples=num_samples,
+    )
+    iterator = client.Decode(request)
+    # chr of [266, 332, 415].
+    expected_text = ["Ċ", "Ō", "Ɵ", ""]
+    expected_token_ids = [266, 332, 415, None]
+    counter = 0
+    async for resp in iterator:
+      for sample in resp.stream_content.samples:
+        output_text = sample.text
+        token_ids = sample.token_ids
+        output_token_id = token_ids[0] if len(token_ids) > 0 else None
+        print(f"actual output: {output_text=} {output_token_id=}")
+        assert output_text == expected_text[counter]
+        assert output_token_id == expected_token_ids[counter]
+      counter += 1
+    driver.stop()
+    print("Orchestrator driver stopped.")
+
+  @parameterized.expand([True, False])
+  async def test_orchestrator_client_tokenization_chunked_prefill(
+      self, interleaved_mode: bool
+  ):
+    """Test the multithreaded orchestration."""
+    driver = self._setup_driver_chunked_prefill(interleaved_mode)
+    client = orchestrator.LLMOrchestrator(driver=driver)
+
+    # The token ids of  string "AB", [2] will be prepend
+    # as BOS.
+    token_ids = [65, 66]
+
+    request = jetstream_pb2.DecodeRequest(
+        token_content=jetstream_pb2.DecodeRequest.TokenContent(
+            token_ids=token_ids
+        ),
+        max_tokens=3,
+    )
+    iterator = client.Decode(request)
+    # Return token ids only when in client side tokenization mode.
+    expected_text = ["", "", "", ""]
+    expected_token_ids = [133, 166, 207, None]
+    counter = 0
+    async for resp in iterator:
+      output_text = resp.stream_content.samples[0].text
+      token_ids = resp.stream_content.samples[0].token_ids
+      output_token_id = token_ids[0] if len(token_ids) > 0 else None
+      print(f"actual output: {output_text=} {output_token_id=}")
+      assert output_text == expected_text[counter]
+      assert output_token_id == expected_token_ids[counter]
+      counter += 1
+    driver.stop()
+    print("Orchestrator driver stopped.")
+
+  @parameterized.expand([True, False])
+  async def test_orchestrator_client_tokenization(self, interleaved_mode: bool):
+    """Test the multithreaded orchestration."""
+    driver = self._setup_driver(interleaved_mode)
     client = orchestrator.LLMOrchestrator(driver=driver)
 
     # The token ids of  string "AB", [2] will be prepend
@@ -128,8 +251,9 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
     driver.stop()
     print("Orchestrator driver stopped.")
 
-  def test_should_buffer_response(self):
-    driver = self._setup_driver_interleaved_mode()
+  @parameterized.expand([True, False])
+  def test_should_buffer_response(self, interleaved_mode: bool):
+    driver = self._setup_driver(interleaved_mode)
     client = orchestrator.LLMOrchestrator(driver=driver)
     self.assertTrue(
         client.should_buffer_response(

@@ -19,6 +19,7 @@ See implementations/*/sever.py for examples.
 
 import asyncio
 from concurrent import futures
+import gc
 import logging
 import os
 import signal
@@ -117,6 +118,7 @@ def create_driver(
     jax_padding: bool = True,
     metrics_collector: JetstreamMetricsCollector | None = None,
     enable_model_warmup: bool = False,
+    multi_sampling: bool = False,
 ):
   """Creates a driver with a specified config.
 
@@ -126,15 +128,21 @@ def create_driver(
     jax_padding: The flag to enable JAX padding during tokenization.
     metrics_collector: The JetStream Promethus metric collector.
     enable_model_warmup: The flag to enable model server warmup.
+    multi_sampling: The flag to enable multi-sampling.
 
   Returns:
     An orchestrator driver.
   """
   engines = config_lib.get_engines(config, devices=devices)
+  model_load_start_time = time.time()
   prefill_params = [pe.load_params() for pe in engines.prefill_engines]
   generate_params = [ge.load_params() for ge in engines.generate_engines]
   shared_params = [ie.load_params() for ie in engines.interleaved_engines]
   logging.info("Loaded all weights.")
+  if metrics_collector:
+    metrics_collector.get_model_load_time_metric().set(
+        time.time() - model_load_start_time
+    )
   interleaved_mode = (
       len(config.prefill_slices) + len(config.generate_slices) == 0
   )
@@ -181,6 +189,7 @@ def create_driver(
       jax_padding=jax_padding,
       metrics_collector=metrics_collector,
       is_ray_backend=config.is_ray_backend,
+      multi_sampling=multi_sampling,
   )
 
 
@@ -195,6 +204,7 @@ def run(
     enable_jax_profiler: bool = False,
     jax_profiler_port: int = 9999,
     enable_model_warmup: bool = False,
+    multi_sampling: bool = False,
     enable_llm_inference_pool: bool = False,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
@@ -211,6 +221,7 @@ def run(
     enable_jax_profiler: The flag to enable JAX profiler server.
     jax_profiler_port: The port JAX profiler server (default to 9999).
     enable_model_warmup: The flag to enable model server warmup.
+    multi_sampling: The flag to enable multi-sampling.
 
   Returns:
     JetStreamServer that wraps the grpc server and orchestrator driver.
@@ -224,14 +235,21 @@ def run(
         "Starting Prometheus server on port %d", metrics_server_config.port
     )
     start_http_server(metrics_server_config.port)
-    metrics_collector = JetstreamMetricsCollector()
+    metrics_collector = JetstreamMetricsCollector(
+        model_name=metrics_server_config.model_name
+    )
   else:
     logging.info(
         "Not starting Prometheus server: --prometheus_port flag not set"
     )
 
   driver = create_driver(
-      config, devices, jax_padding, metrics_collector, enable_model_warmup
+      config,
+      devices,
+      jax_padding,
+      metrics_collector,
+      enable_model_warmup,
+      multi_sampling,
   )
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.
@@ -239,6 +257,19 @@ def run(
   jetstream_server = JetStreamServer(driver, threads, port, credentials, enable_llm_inference_pool)
   logging.info("Starting server on port %d with %d threads", port, threads)
 
+  # Tweak gc config.
+  # Force a gen 2 collection here.
+  gc.collect(generation=2)
+  # Freeze objects currently tracked and ignore them in future gc runs.
+  gc.freeze()
+  allocs, gen1, gen2 = gc.get_threshold()
+  allocs = config.gc_gen0_allocs
+  gen1 = gen1 * config.gc_gen1_multipler
+  gen2 = gen2 * config.gc_gen2_multipler
+  gc.set_threshold(allocs, gen1, gen2)
+  print("GC tweaked (allocs, gen1, gen2): ", allocs, gen1, gen2)
+
+  logging.info("Starting server on port %d with %d threads", port, threads)
   jetstream_server.start()
 
   if metrics_collector:

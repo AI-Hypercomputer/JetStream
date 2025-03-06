@@ -59,10 +59,12 @@ message DecodeRequest {
     Metadata metadata = 7;
   }
 
-  string adapter_id = 8;
+  int32 num_samples = 8;
+
+  string adapter_id = 9;
 
   reserved 1, 2, 3;
-  // Next ID: 9
+  // Next ID: 10
 }
 
 message DecodeResponse {

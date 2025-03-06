@@ -99,7 +99,13 @@ def initialize_prefill_jit_cache(
   def compile_prefill(length):
     padded_tokens, true_length = jnp.ones((length), dtype="int32"), length
 
-    _, _ = prefill_engine._downstream_engine.prefill(  # pylint: disable=protected-access
+    _, _ = prefill_engine.prefill(
+        params=prefill_params,
+        padded_tokens=padded_tokens,
+        true_length=true_length,
+    )
+
+    _, _ = prefill_engine.prefill_multisampling(
         params=prefill_params,
         padded_tokens=padded_tokens,
         true_length=true_length,
@@ -165,6 +171,10 @@ def initialize_insert_generate_jit_cache(
     )
 
     generate_engine.insert(prefix=prefill, decode_state=decode_state, slot=0)
+
+    generate_engine.bulk_insert(
+        prefix=prefill, decode_state=decode_state, slots=[0]
+    )
 
     logging.info(
         "---------Generate engine %d compiled for insert length %d.---------",

@@ -136,6 +136,27 @@ class TokenUtilsTest(unittest.TestCase):
     )
     self.assertEqual(true_length, expected_true_length)
 
+  def test_chunk_and_pad_tokens(self):
+    jax.config.update("jax_platform_name", "cpu")
+    tokens = jnp.arange(0, 65, dtype=jnp.int32)
+    _, true_lengths, _ = token_utils.chunk_and_pad_tokens(
+        tokens,
+        bos_id=1,
+        pad_id=0,
+        is_bos=True,
+        prefill_lengths=[2, 4, 16, 64, 128],
+        chunk_size=16,
+        max_prefill_length=128,
+        jax_padding=True,
+    )
+    print("true_lengths ", true_lengths)
+    assert len(true_lengths) == 5
+    assert true_lengths[0] == 17
+    assert true_lengths[1] == 16
+    assert true_lengths[2] == 16
+    assert true_lengths[3] == 16
+    assert true_lengths[4] == 1
+
   def test_tokenize_and_pad(self):
     jax.config.update("jax_platform_name", "cpu")
     self.setup_sentencepiece()
