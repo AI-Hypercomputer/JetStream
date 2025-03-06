@@ -93,5 +93,4 @@ message HealthCheckRequest {}
 message HealthCheckResponse {
   // Denotes whether the model server is live
   bool is_live = 1;
-
 }

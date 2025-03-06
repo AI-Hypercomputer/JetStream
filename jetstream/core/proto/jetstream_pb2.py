@@ -29,7 +29,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0fjetstream.proto\x12\x0fjetstream_proto\"\x90\x03\n\rDecodeRequest\x12\x12\n\nmax_tokens\x18\x04 \x01(\x05\x12\x42\n\x0ctext_content\x18\x05 \x01(\x0b\x32*.jetstream_proto.DecodeRequest.TextContentH\x00\x12\x44\n\rtoken_content\x18\x06 \x01(\x0b\x32+.jetstream_proto.DecodeRequest.TokenContentH\x00\x12;\n\x08metadata\x18\x07 \x01(\x0b\x32\'.jetstream_proto.DecodeRequest.MetadataH\x01\x12\x12\n\nadapter_id\x18\x08 \x01(\t\x1a\x1b\n\x0bTextContent\x12\x0c\n\x04text\x18\x01 \x01(\t\x1a!\n\x0cTokenContent\x12\x11\n\ttoken_ids\x18\x01 \x03(\x05\x1a\x1e\n\x08Metadata\x12\x12\n\nstart_time\x18\x01 \x01(\x02\x42\t\n\x07\x63ontentB\x13\n\x11metadata_optionalJ\x04\x08\x01\x10\x02J\x04\x08\x02\x10\x03J\x04\x08\x03\x10\x04\"\xcb\x02\n\x0e\x44\x65\x63odeResponse\x12I\n\x0finitial_content\x18\x02 \x01(\x0b\x32..jetstream_proto.DecodeResponse.InitialContentH\x00\x12G\n\x0estream_content\x18\x03 \x01(\x0b\x32-.jetstream_proto.DecodeResponse.StreamContentH\x00\x1a\x10\n\x0eInitialContent\x1a\x81\x01\n\rStreamContent\x12\x45\n\x07samples\x18\x01 \x03(\x0b\x32\x34.jetstream_proto.DecodeResponse.StreamContent.Sample\x1a)\n\x06Sample\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x11\n\ttoken_ids\x18\x02 \x03(\x05\x42\t\n\x07\x63ontentJ\x04\x08\x01\x10\x02\"\x14\n\x12HealthCheckRequest\"&\n\x13HealthCheckResponse\x12\x0f\n\x07is_live\x18\x01 \x01(\x08\"\x15\n\x13ListAdaptersRequest\"s\n\x14ListAdaptersResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x15\n\rerror_message\x18\x02 \x01(\t\x12\x33\n\radapter_infos\x18\x03 \x03(\x0b\x32\x1c.jetstream_proto.AdapterInfo\"\x82\x01\n\x0b\x41\x64\x61pterInfo\x12\x12\n\nadapter_id\x18\x01 \x01(\t\x12\x14\n\x0cloading_cost\x18\x02 \x01(\x03\x12\x10\n\x08size_hbm\x18\x03 \x01(\x03\x12\x10\n\x08size_cpu\x18\x04 \x01(\x03\x12\x15\n\rlast_accessed\x18\x05 \x01(\x02\x12\x0e\n\x06status\x18\x06 \x01(\t\">\n\x12LoadAdapterRequest\x12\x12\n\nadapter_id\x18\x01 \x01(\t\x12\x14\n\x0c\x61\x64\x61pter_path\x18\x02 \x01(\t\"=\n\x13LoadAdapterResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x15\n\rerror_message\x18\x02 \x01(\t\"*\n\x14UnloadAdapterRequest\x12\x12\n\nadapter_id\x18\x01 \x01(\t\"?\n\x15UnloadAdapterResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x15\n\rerror_message\x18\x02 \x01(\t2\xb9\x01\n\x0cOrchestrator\x12M\n\x06\x44\x65\x63ode\x12\x1e.jetstream_proto.DecodeRequest\x1a\x1f.jetstream_proto.DecodeResponse\"\x00\x30\x01\x12Z\n\x0bHealthCheck\x12#.jetstream_proto.HealthCheckRequest\x1a$.jetstream_proto.HealthCheckResponse\"\x00\x32\xb2\x02\n\x13MultiAdapterManager\x12]\n\x0cListAdapters\x12$.jetstream_proto.ListAdaptersRequest\x1a%.jetstream_proto.ListAdaptersResponse\"\x00\x12Z\n\x0bLoadAdapter\x12#.jetstream_proto.LoadAdapterRequest\x1a$.jetstream_proto.LoadAdapterResponse\"\x00\x12`\n\rUnloadAdapter\x12%.jetstream_proto.UnloadAdapterRequest\x1a&.jetstream_proto.UnloadAdapterResponse\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0fjetstream.proto\x12\x0fjetstream_proto\"\x90\x03\n\rDecodeRequest\x12\x12\n\nmax_tokens\x18\x04 \x01(\x05\x12\x42\n\x0ctext_content\x18\x05 \x01(\x0b\x32*.jetstream_proto.DecodeRequest.TextContentH\x00\x12\x44\n\rtoken_content\x18\x06 \x01(\x0b\x32+.jetstream_proto.DecodeRequest.TokenContentH\x00\x12;\n\x08metadata\x18\x07 \x01(\x0b\x32\'.jetstream_proto.DecodeRequest.MetadataH\x01\x12\x12\n\nadapter_id\x18\x08 \x01(\t\x1a\x1b\n\x0bTextContent\x12\x0c\n\x04text\x18\x01 \x01(\t\x1a!\n\x0cTokenContent\x12\x11\n\ttoken_ids\x18\x01 \x03(\x05\x1a\x1e\n\x08Metadata\x12\x12\n\nstart_time\x18\x01 \x01(\x02\x42\t\n\x07\x63ontentB\x13\n\x11metadata_optionalJ\x04\x08\x01\x10\x02J\x04\x08\x02\x10\x03J\x04\x08\x03\x10\x04\"\xcb\x02\n\x0e\x44\x65\x63odeResponse\x12I\n\x0finitial_content\x18\x02 \x01(\x0b\x32..jetstream_proto.DecodeResponse.InitialContentH\x00\x12G\n\x0estream_content\x18\x03 \x01(\x0b\x32-.jetstream_proto.DecodeResponse.StreamContentH\x00\x1a\x10\n\x0eInitialContent\x1a\x81\x01\n\rStreamContent\x12\x45\n\x07samples\x18\x01 \x03(\x0b\x32\x34.jetstream_proto.DecodeResponse.StreamContent.Sample\x1a)\n\x06Sample\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x11\n\ttoken_ids\x18\x02 \x03(\x05\x42\t\n\x07\x63ontentJ\x04\x08\x01\x10\x02\"\x14\n\x12HealthCheckRequest\"&\n\x13HealthCheckResponse\x12\x0f\n\x07is_live\x18\x01 \x01(\x08\x32\xb9\x01\n\x0cOrchestrator\x12M\n\x06\x44\x65\x63ode\x12\x1e.jetstream_proto.DecodeRequest\x1a\x1f.jetstream_proto.DecodeResponse\"\x00\x30\x01\x12Z\n\x0bHealthCheck\x12#.jetstream_proto.HealthCheckRequest\x1a$.jetstream_proto.HealthCheckResponse\"\x00\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -56,22 +56,6 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_HEALTHCHECKREQUEST']._serialized_end=793
   _globals['_HEALTHCHECKRESPONSE']._serialized_start=795
   _globals['_HEALTHCHECKRESPONSE']._serialized_end=833
-  _globals['_LISTADAPTERSREQUEST']._serialized_start=835
-  _globals['_LISTADAPTERSREQUEST']._serialized_end=856
-  _globals['_LISTADAPTERSRESPONSE']._serialized_start=858
-  _globals['_LISTADAPTERSRESPONSE']._serialized_end=973
-  _globals['_ADAPTERINFO']._serialized_start=976
-  _globals['_ADAPTERINFO']._serialized_end=1106
-  _globals['_LOADADAPTERREQUEST']._serialized_start=1108
-  _globals['_LOADADAPTERREQUEST']._serialized_end=1170
-  _globals['_LOADADAPTERRESPONSE']._serialized_start=1172
-  _globals['_LOADADAPTERRESPONSE']._serialized_end=1233
-  _globals['_UNLOADADAPTERREQUEST']._serialized_start=1235
-  _globals['_UNLOADADAPTERREQUEST']._serialized_end=1277
-  _globals['_UNLOADADAPTERRESPONSE']._serialized_start=1279
-  _globals['_UNLOADADAPTERRESPONSE']._serialized_end=1342
-  _globals['_ORCHESTRATOR']._serialized_start=1345
-  _globals['_ORCHESTRATOR']._serialized_end=1530
-  _globals['_MULTIADAPTERMANAGER']._serialized_start=1533
-  _globals['_MULTIADAPTERMANAGER']._serialized_end=1839
+  _globals['_ORCHESTRATOR']._serialized_start=836
+  _globals['_ORCHESTRATOR']._serialized_end=1021
 # @@protoc_insertion_point(module_scope)

@@ -516,8 +516,9 @@ class Driver:
     max_loras = 0
     if self._metrics_collector:
       for idx, engine in enumerate(self._generate_engines):
-        adapters_list_str += asyncio.run(self._adapter_tensorstore.get_hbm_loaded_adapters())
         max_loras += engine.max_concurrent_decodes
+
+      adapters_list_str += asyncio.run(self._adapter_tensorstore.get_hbm_loaded_adapters())
 
       self._metrics_collector.get_lora_request_info_metric(max_loras,
           adapters_list_str).set_to_current_time()
@@ -580,7 +581,6 @@ class Driver:
       if request is None:
         break
 
-
       request.metadata.prefill_dequeue_time = time.perf_counter()
       is_bos = True
       logging.info(
@@ -616,7 +616,6 @@ class Driver:
           padded_tokens=padded_tokens,
           true_length=true_length,
       )
-
       del final_params
 
       request.prefill_result = prefill_result
@@ -705,7 +704,6 @@ class Driver:
       new_request.metadata.generate_enqueue_time = time.perf_counter()
       self._generate_backlogs[target_idx].put(new_request, block=True)
 
-      elapsed_time = (new_request.metadata.generate_enqueue_time - new_request.metadata.transfer_dequeue_time) * 1e6
       logging.info(
           "Successfully transferred prefill "
           "from prefill engine %d to generate engine %d "
@@ -821,7 +819,8 @@ class Driver:
         decode_state = generate_engine.insert(
             new_request.prefill_result, decode_state, slot=slot
         )
-        
+      
+        # Export the lora_request_info metric
         self._export_lora_request_info()
 
         del new_request.prefill_result
@@ -1123,7 +1122,6 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
       request: jetstream_pb2.DecodeRequest,
       context: Optional[grpc.aio.ServicerContext] = None,
   ) -> AsyncIterator[jetstream_pb2.DecodeResponse]:
-
     """Decode."""
     if context is None:
       logging.warning(
@@ -1134,7 +1132,6 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     return_channel = async_multifuture.AsyncMultifuture()
     if context:
       context.add_done_callback(return_channel.cancel)
-
     prefill_content, is_client_side_tokenization = self._get_prefill_content(
         request
     )

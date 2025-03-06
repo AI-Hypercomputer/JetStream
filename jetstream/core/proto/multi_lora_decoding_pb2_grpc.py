@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from jetstream.core.proto import multi_lora_decoding_pb2 as multi__lora__decoding__pb2
+import multi_lora_decoding_pb2 as multi__lora__decoding__pb2
 
 GRPC_GENERATED_VERSION = '1.70.0'
 GRPC_VERSION = grpc.__version__

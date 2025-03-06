@@ -135,7 +135,6 @@ def create_driver(
   generate_params = [ge.load_params() for ge in engines.generate_engines]
   shared_params = [ie.load_params() for ie in engines.interleaved_engines]
   logging.info("Loaded all weights.")
-
   interleaved_mode = (
       len(config.prefill_slices) + len(config.generate_slices) == 0
   )
