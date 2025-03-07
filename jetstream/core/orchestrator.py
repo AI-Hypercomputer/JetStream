@@ -281,10 +281,6 @@ class Driver:
     if generate_params is None:
       raise ValueError("No generate parameter provided.")
 
-    self._adapter_tensorstore = adapter_tensorstore.AdapterTensorStore(
-        hbm_memory_budget=(20 * (1024 ** 3)),       # 20 GB HBM
-        cpu_memory_budget=(100 * (1024 ** 3)))      # 100 GB RAM
-
     logger.info(
         "Initializing the driver with %d prefill engines and %d "
         "generate engines in %s mode",
@@ -300,6 +296,15 @@ class Driver:
     self._interleaved_mode = interleaved_mode
     self._metrics_collector = metrics_collector
     self._multi_sampling = multi_sampling
+
+    total_slots = 0
+    for engine in self._generate_engines:
+      total_slots += engine.max_concurrent_decodes
+
+    self._adapter_tensorstore = adapter_tensorstore.AdapterTensorStore(
+        hbm_memory_budget=(20 * (1024 ** 3)),       # 20 GB HBM
+        cpu_memory_budget=(100 * (1024 ** 3)),      # 100 GB RAM
+        total_slots=total_slots)
 
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
@@ -930,6 +935,9 @@ class Driver:
           slot=slot,
           #request_id=new_request.request_id,
       )
+
+      self._adapter_tensorstore.insert_adapter_in_cache(new_request.adapter_id, slot)
+
       ThreadDebugLog(
           thread_name,
           f"Generate slice {idx} filled slot {slot} at step "
@@ -1136,7 +1144,7 @@ class Driver:
 
       # Now we actually take a generate step on requests in the slots.
       decode_state, sampled_tokens = generate_engine.generate(
-          generate_params, decode_state
+          generate_params, decode_state, self._adapter_tensorstore.decoding_adapters_cache,
       )
       sampled_tokens.copy_to_host_async()
       # Respond to detokenization backpressure.
