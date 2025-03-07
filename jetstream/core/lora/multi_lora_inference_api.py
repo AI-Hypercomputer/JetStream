@@ -31,7 +31,7 @@ from jetstream.engine import engine_api, tokenizer_api, token_utils
 
 
 class MultiLoraManager(multi_lora_decoding_pb2_grpc.v1Servicer):
-  """Manages the parameters of multiple lora requests and their lifelines."""
+  """Manages the parameters of multiple lora requests and their status/lifetimes."""
 
   _driver: orchestrator.Driver
 

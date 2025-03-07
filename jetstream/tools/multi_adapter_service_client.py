@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""A test request."""
+"""A gRPC client to interact with JetStream Server."""
 
 from typing import Sequence
 
@@ -55,7 +55,28 @@ _TEST_API_NAME = flags.DEFINE_string(
 
 
 def main(argv: Sequence[str]) -> None:
-  del argv
+  """
+  Main function for a gRPC client that interacts with a JetStream server.
+
+  This client can:
+    - Load a LoRA adapter.
+    - Unload a LoRA adapter.
+    - List loaded adapters and their metadata.
+    - Generate text completions (using LoRA adapters if specified).
+
+  The client uses command-line flags to specify the server address, port,
+  text input, maximum number of tokens, adapter ID, adapter path, and the
+  API to call.  It uses insecure gRPC channels (suitable for local testing).
+
+  Args:
+    argv: Command-line arguments (not used directly, flags are used instead).
+
+  Raises:
+    ValueError: For invalid configurations, like missing required parameters
+      for specific API calls.
+  """
+
+  del argv  # Unused
   # Note: Uses insecure_channel only for local testing. Please add grpc
   # credentials for Production.
   address = f"{_SERVER.value}:{_PORT.value}"
