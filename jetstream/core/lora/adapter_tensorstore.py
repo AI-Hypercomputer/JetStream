@@ -67,11 +67,31 @@ class AdapterMetadata:
 
 class AdapterTensorStore:
   def __init__(self, hbm_memory_budget: int, cpu_memory_budget: int, total_slots: int):
+  """
+  Manages the storage and retrieval of LoRA adapter weights, handling
+  placement in either HBM (High Bandwidth Memory, on the TPU/GPU) or CPU RAM.
+
+  This class implements an LRU (Least Recently Used) eviction policy
+  to manage memory usage.  It supports asynchronous loading and unloading
+  of adapters to avoid blocking the main inference thread.
+
+  This class also creates a unified_lora_weights of all the adapters which is being
+  used at any time for decoding purposes. These unified weights allows the backend
+  model to server multiple different LoRA adapters in a single batch.
+
+  Args:
+    hbm_memory_budget (int): The maximum amount of HBM (in bytes) to use for
+        storing LoRA adapter weights.
+    cpu_memory_budget (int): The maximum amount of CPU RAM (in bytes) to use
+        for storing LoRA adapter weights.
+    total_slots: Number of generate slots. This is also equals to max_concurrent_decodes.
+  """
+
     self.hbm_memory_budget = hbm_memory_budget
     self.cpu_memory_budget = cpu_memory_budget
     self.adapter_registry: Dict[str, AdapterMetadata] = {}    # All known adapters
-    self.loaded_adapters_hbm: Dict[str, jnp.ndarray] = {}     # adapter_id -> Unified LoRA params (in HBM)
-    self.loaded_adapters_cpu: Dict[str, np.ndarray] = {}      # adapter_id -> Unified LoRA params (in CPU RAM)
+    self.loaded_adapters_hbm: Dict[str, jnp.ndarray] = {}     # adapter_id -> LoRA params (in HBM)
+    self.loaded_adapters_cpu: Dict[str, np.ndarray] = {}      # adapter_id -> LoRA params (in CPU RAM)
     self.current_hbm_usage: int = 0
     self.current_cpu_usage: int = 0
     self.running_requests: int = 0    # Number of async tasks which are in "loading" state
@@ -82,6 +102,18 @@ class AdapterTensorStore:
 
   def register_adapter(self, adapter_id: str, adapter_path: str, config: Dict[str, Any]):
     """Registers a new LoRA adatper."""
+    """
+    Registers a LoRA adapter with the TensorStore.  This does *not* load
+    the adapter; it simply adds metadata about the adapter to the registry.
+
+    Args:
+      adapter_id (str): A unique identifier for the adapter.
+      adapter_path (str): The path to the adapter weights (file or directory).
+      config (dict): Config of the loRA adapter.
+
+    Raises:
+      ValueError: If an adapter with the same ID is already registered.
+    """
     if adapter_id in self.adapter_registry:
       raise ValueError(f"Adapter with ID '{adapter_id}' already registered.")
     self.adapter_registry[adapter_id] = AdapterMetadata(
@@ -234,9 +266,28 @@ class AdapterTensorStore:
       self,
       adapter_id: str,
       adapter_weights = None, 
-      to_hbm: bool = True,
-      force_load: bool = False):
-    """Loads a LoRA adapter's weights, managing HBM and CPU memory."""
+      to_hbm: bool = True):
+    """
+    Loads a LoRA adapter's weights into memory (either HBM or CPU RAM).
+
+    This method is asynchronous to avoid blocking the main thread during
+    potentially slow I/O operations.  It handles:
+      - Checking if the adapter is already loaded.
+      - Checking if there's enough memory (and evicting if necessary).
+      - Loading the weights (in a separate thread).
+      - Updating the adapter's status and metadata.
+
+    Args:
+      adapter_id (str): The ID of the adapter to load.
+      adapter_weights: In the form of a PyTree.
+      to_hbm (bool): Whether to load the adapter into HBM (True) or
+          CPU RAM (False). Defaults to True (HBM).
+
+    Raises:
+      ValueError: If the adapter ID is not registered.
+      RuntimeError: If there is not enough memory to load the adapter,
+                and eviction fails to free up enough space.
+    """
 
     if adapter_id not in self.adapter_registry:
       raise ValueError(f"Adapter with ID '{adapter_id}' not registered.")
@@ -244,7 +295,7 @@ class AdapterTensorStore:
     metadata = self.adapter_registry[adapter_id]
 
     async with self.lock:       # Acquire lock for thread safety
-      if not force_load and metadata.status in ("loaded_hbm", "loaded_cpu"):
+      if metadata.status in ("loaded_hbm", "loaded_cpu"):
         metadata.last_accessed = time.time()
 
         # if already loaded in HBM and we want HBM, or
@@ -267,7 +318,7 @@ class AdapterTensorStore:
           await asyncio.sleep(0.1)    # Short sleep to avoid busy-waiting
 
         # Make recursive call to load_adapter to copy to device
-        await self.load_adapter(adapter_id, adapter_weights, to_hbm, force_load)
+        await self.load_adapter(adapter_id, adapter_weights, to_hbm)
         return
 
       metadata.status = "loading"
