@@ -367,12 +367,14 @@ class JetStreamEngine(Engine):
       prefix: Prefix,
       decode_state: DecodeState,
       slot: int,
+      request_id: Optional[uuid.UUID] = None,
   ) -> DecodeState:
 
     decode_state = self._downstream_engine.insert(
         prefix=prefix,
         decode_state=decode_state,
         slot=slot,
+        request_id=request_id,
     )
     return decode_state
 
@@ -438,3 +440,17 @@ class JetStreamEngine(Engine):
   @property
   def colocated_cpus(self) -> Union[list[CpuDevices], None]:
     return self._downstream_engine.colocated_cpus
+
+  @property
+  def use_chunked_prefill(self) -> bool:
+    return self._downstream_engine.use_chunked_prefill
+
+  @property
+  def chunk_size(self) -> bool:
+    """Maximum prefill length."""
+    return self._downstream_engine.prefill_chunk_size
+
+  @property
+  def prefill_chunk_size(self) -> int:
+    """Maximum prefill length."""
+    return self._downstream_engine.prefill_chunk_size
