@@ -19,6 +19,7 @@ import dataclasses
 
 class ModelId:
   llama_2_7b_chat_hf = "meta-llama/Llama-2-7b-chat-hf"
+  llama_2_70b_chat_hf = "meta-llama/Llama-2-70b-chat-hf"
 
 
 @dataclasses.dataclass
@@ -37,6 +38,15 @@ class Config:
       ModelId.llama_2_7b_chat_hf: InferenceParams(
           model_id=ModelId.llama_2_7b_chat_hf,
           batch_size=320,
+          max_seq_length=2048,
+          max_input_length=1024,
+          prefill_chunk_sizes=[128, 256, 512, 1024],
+          page_size=128,
+          hbm_utilization=0.875,
+      ),
+      ModelId.llama_2_70b_chat_hf: InferenceParams(
+          model_id=ModelId.llama_2_70b_chat_hf,
+          batch_size=100,
           max_seq_length=2048,
           max_input_length=1024,
           prefill_chunk_sizes=[128, 256, 512, 1024],
