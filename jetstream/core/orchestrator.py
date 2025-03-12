@@ -1089,7 +1089,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
         ttft = time.perf_counter() - request_start_time
         if ttft > 2.0:
           logging.info(
-              datetime.now(),
+              f"{datetime.now()}: "
               f"Slow TTFT: {ttft:.2f}s,"
               f" stats={active_request.metadata.stats()},"
               f" prefill_qsize={self._driver.prefill_backlog_size()}",

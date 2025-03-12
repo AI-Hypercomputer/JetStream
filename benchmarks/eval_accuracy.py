@@ -66,11 +66,8 @@ def eval_accuracy(request_outputs_dict, match_type):
   for output in request_outputs_dict:
     preds.append(output["generated_text"])
     targets.append(output["original_output"])
-  if match_type != "math":
-    preds, targets = postprocess_text(preds, targets)
 
   if match_type == "math":
-
     correct_ans = 0
     wrong_ans = 0
     for p, t in zip(preds, targets):
@@ -87,11 +84,10 @@ def eval_accuracy(request_outputs_dict, match_type):
     result["literal"] = correct_ans / total_ans if total_ans > 0 else 0.0
     result["gen_len"] = total_ans
     result["gen_num"] = total_ans
-  if match_type == "rouge":
+  else:
     metric = evaluate.load("rouge")
-    nltk.download("punkt")
-    preds = []
-    targets = []
+    nltk.download("punkt_tab")
+    preds, targets = postprocess_text(preds, targets)
     result = metric.compute(
         predictions=preds,
         references=targets,
