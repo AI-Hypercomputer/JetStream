@@ -162,6 +162,7 @@ class Engine(abc.ABC):
       true_length: int,
       sampler: Optional[Callable[[Any], Any]] = None,
       request_id: Optional[uuid.UUID] = None,
+      slot: Optional[int] = None,
   ) -> Tuple[Prefix, ResultTokens]:
     """Computes a kv-cache for a set of tokens conditional on existing cache.
 

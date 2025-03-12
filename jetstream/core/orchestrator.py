@@ -115,6 +115,8 @@ formatter = logging.Formatter(
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+# When enabled, allocate a slot before prefill
+_allocate_slot_for_prefill=True
 
 def ThreadDebugLog(thread_name: str, message: str) -> None:
   logger.debug("[%s] %s", thread_name, message)
@@ -163,6 +165,7 @@ class ActiveRequest:
   prefill_result: Any = None
   # The number of responses for one request.
   num_samples: int = 1
+  slot_id: Optional[int] = None
   #################### Information relevant for prefill ########################
   prefill_content: Optional[str | list[int]] = None
   ################## Information relevant for detokenization ###################
@@ -585,10 +588,24 @@ class Driver:
     thread_name = f"Prefill thread {idx}"
     ThreadDebugLog(thread_name, f"Prefill params {idx} loaded.")
 
+    my_slots = None
+    slot = None
+    if _allocate_slot_for_prefill:
+      # Make sure there are only 1 generate engine to ensure the preallocated
+      # slot is from the same generate engine.
+      assert len(self._generate_engines) == 1
+      my_slots = self._generate_slots[idx]
+
     while self.live:
       my_transfer_backlog = self._transfer_backlogs[idx]
-      # The prefill thread can just sleep until it has work to do.
-      request = self._prefill_backlog.get(block=True)
+
+      if _allocate_slot_for_prefill:
+        slot = my_slots.get(block=True) # Preallocate generate slot
+        request = self._prefill_backlog.get(block=True) # Get prefill request
+        request.slot_id = slot
+      else:
+        # The prefill thread can just sleep until it has work to do.
+        request = self._prefill_backlog.get(block=True)
 
       if request is None:
         break
@@ -661,6 +678,7 @@ class Driver:
               params=prefill_params,
               padded_tokens=padded_tokens,
               true_length=true_length,
+              slot=slot,
           )
       request.prefill_result = prefill_result
       request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
@@ -676,6 +694,8 @@ class Driver:
       ThreadDebugLog(thread_name, "Completed prefilling for one ActiveRequest.")
       # Once prefill is complete, place it on the transfer queue and block if
       # full.
+      if _allocate_slot_for_prefill:
+        assert request.slot_id is not None # Just to make slot is preallocated.
       my_transfer_backlog.put(request, block=True)
       ThreadDebugLog(
           thread_name,
@@ -777,23 +797,28 @@ class Driver:
     # we can still generate if we can't insert. We do this in a while loop to
     # insert as many sequences as possible.
     while True:
-      my_slots_size = my_slots.qsize()
+      block = False
+      slot = None
+      if _allocate_slot_for_prefill:
+        ThreadDebugLog(thread_name, "Use preallocated slot.")
+      else:
+        my_slots_size = my_slots.qsize()
 
-      try:
-        slot = my_slots.get(block=False)
-        # Found a slot, now see if we can fill it.
-      except queue.Empty:
-        # Exit this while loop as we have no free slots to insert into.
-        ThreadDebugLog(thread_name, "All slots are occupied.")
-        break
+        try:
+          slot = my_slots.get(block=False)
+          # Found a slot, now see if we can fill it.
+        except queue.Empty:
+          # Exit this while loop as we have no free slots to insert into.
+          ThreadDebugLog(thread_name, "All slots are occupied.")
+          break
 
-      ThreadDebugLog(thread_name, "Got an available slot.")
+        ThreadDebugLog(thread_name, "Got an available slot.")
 
-      # We block when the decode slots are all free since we need to get a
-      # prefilled request to insert. We add timeout for the block to handle
-      # the case when the prefill backlog is cancelled and we end up with no
-      # more useful prefill work to do.
-      block = my_slots_size == max_concurrent_decodes
+        # We block when the decode slots are all free since we need to get a
+        # prefilled request to insert. We add timeout for the block to handle
+        # the case when the prefill backlog is cancelled and we end up with no
+        # more useful prefill work to do.
+        block = my_slots_size == max_concurrent_decodes
       if self._interleaved_mode:
         # For interleaved mode, we also blocks when prefill backlog
         # is not empty or there are transfer work to do.
@@ -808,6 +833,10 @@ class Driver:
             thread_name,
             f"Got a new ActiveRequest from generate backlog {idx}.",
         )
+        if _allocate_slot_for_prefill:
+          assert new_request.slot_id is not None
+          slot = new_request.slot_id
+
         new_request.metadata.generate_dequeue_time = time.perf_counter()
         if (
             self._metrics_collector
