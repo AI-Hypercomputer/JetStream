@@ -104,8 +104,8 @@ class AdapterTensorStore:
 
   def register_adapter(self,
       adapter_id: str,
-      adapter_path: str = None,
-      adapter_config: Dict[str, Any] = None):
+      adapter_path: str | None = None,
+      adapter_config: Dict[str, Any] | None = None):
     """Registers a new LoRA adatper."""
     """
     Registers a LoRA adapter with the TensorStore.  This also loads the adapter; 
@@ -284,6 +284,7 @@ class AdapterTensorStore:
 
     try:
       if adapter_weights is None:
+        adapter_path = f"{self.adapters_dir_path}/{adapter_id}"
         adapter_weights, adapter_config = self.engine.load_single_adapter(adapter_path)
 
       if adapter_weights is None:

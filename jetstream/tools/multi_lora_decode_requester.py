@@ -28,8 +28,8 @@ import os
 
 
 import grpc
-from jetstream.core.proto import multi_lora_decoding_pb2
-from jetstream.core.proto import multi_lora_decoding_pb2_grpc
+from jetstream.core.proto import jetstream_pb2
+from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine.token_utils import load_vocab
 from jetstream.external_tokenizers.llama3 import llama3_tokenizer
 import numpy as np
@@ -41,6 +41,7 @@ class InputRequest:
   output: str = ""
   output_len: int = 0
   sample_idx: int = -1
+  adapter_id: str = ""
 
 
 @dataclass
@@ -90,12 +91,12 @@ async def grpc_async_request(
   """Send grpc synchronous request since the current grpc server is sync."""
   options = [("grpc.keepalive_timeout_ms", 10000)]
   async with grpc.aio.insecure_channel(api_url, options=options) as channel:
-    stub = multi_lora_decoding_pb2_grpc.v1Stub(channel)
+    stub = jetstream_pb2_grpc.OrchestratorStub(channel)
     print("Making request")
     ttft = 0
     token_list = []
     request_start_time = time.perf_counter()
-    response = stub.completions(request)
+    response = stub.Decode(request)
     async for resp in response:
       if ttft == 0:
         ttft = time.perf_counter() - request_start_time
@@ -112,12 +113,12 @@ async def send_request(
   """Send the request to JetStream server."""
   # Tokenization on client side following MLPerf standard.
   token_ids = tokenizer.encode(input_request.prompt)
-  request = multi_lora_decoding_pb2.CompletionRequest(
-      token_content=multi_lora_decoding_pb2.CompletionRequest.TokenContent(
+  request = jetstream_pb2.DecodeRequest(
+      token_content=jetstream_pb2.DecodeRequest.TokenContent(
           token_ids=token_ids
       ),
       max_tokens=input_request.output_len,
-      adapter_id=input_request.adapter_id,
+      lora_adapter_id=input_request.adapter_id,
   )
   output = RequestFuncOutput()
   output.input_request = input_request

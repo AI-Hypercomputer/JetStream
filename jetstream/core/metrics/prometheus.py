@@ -254,14 +254,14 @@ class JetstreamMetricsCollector:
 
   _kv_cache_utilization = Gauge(
       name="kv_cache_utilization_perc",
-      documentation="Percentage of kv-cache utilized by the requests under processing.",
+      documentation="kv-cache utilization % by the requests under processing.",
       labelnames=["id"],
       multiprocess_mode="sum",
   )
 
   _lora_request_info = Gauge(
       name="lora_request_info",
-      documentation="Information about LoRA adapters loaded into TPU Memory for serving current requests.",
+      documentation="LoRA adapters loaded into HBM for processing requests.",
       labelnames=[
         "id",
         "max_lora",
@@ -322,4 +322,5 @@ class JetstreamMetricsCollector:
     return self._kv_cache_utilization.labels(**self.universal_labels)
 
   def get_lora_request_info_metric(self, max_lora: int, loaded_adapters: str):
-    return self._lora_request_info.labels(**self.universal_labels, max_lora=max_lora, running_lora_adapters=loaded_adapters)
+    return self._lora_request_info.labels(**self.universal_labels,
+        max_lora=max_lora, running_lora_adapters=loaded_adapters)
