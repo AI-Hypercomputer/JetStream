@@ -34,6 +34,7 @@ import grpc
 import jax
 from jetstream.core import config_lib
 from jetstream.core import orchestrator
+from jetstream.core.lora import adapter_tensorstore
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine import warmup_utils, engine_api
@@ -119,6 +120,7 @@ def create_driver(
     metrics_collector: JetstreamMetricsCollector | None = None,
     enable_model_warmup: bool = False,
     multi_sampling: bool = False,
+    lora_input_adapters_path: str = None
 ):
   """Creates a driver with a specified config.
 
@@ -147,10 +149,41 @@ def create_driver(
       len(config.prefill_slices) + len(config.generate_slices) == 0
   )
 
+  prefill_adapter_tensorstore = []
+  generate_adapter_tensorstore = []
+  shared_adapter_tensorstore = []
+
+  if lora_input_adapters_path:
+    for pe in engines.prefill_engines:
+      prefill_adapter_tensorstore.append(adapter_tensorstore.AdapterTensorStore(
+        engine=pe,
+        adapters_dir_path=lora_input_adapters_path,
+        hbm_memory_budget=(20 * (1024 ** 3)),       # 20 GB HBM
+        cpu_memory_budget=(100 * (1024 ** 3))      # 100 GB RAM
+        ))
+
+    for ge in engines.generate_engines:
+      generate_adapter_tensorstore.append(adapter_tensorstore.AdapterTensorStore(
+        engine=ge,
+        adapters_dir_path=lora_input_adapters_path,
+        hbm_memory_budget=(20 * (1024 ** 3)),       # 20 GB HBM
+        cpu_memory_budget=(100 * (1024 ** 3))      # 100 GB RAM
+        ))
+
+    for ie in engines.interleaved_engines:
+      shared_adapter_tensorstore.append(adapter_tensorstore.AdapterTensorStore(
+        engine=ie,
+        adapters_dir_path=lora_input_adapters_path,
+        hbm_memory_budget=(20 * (1024 ** 3)),       # 20 GB HBM
+        cpu_memory_budget=(100 * (1024 ** 3))      # 100 GB RAM
+        ))
+
   prefill_engines = engines.prefill_engines + engines.interleaved_engines
   generate_engines = engines.generate_engines + engines.interleaved_engines
   prefill_params = prefill_params + shared_params
   generate_params = generate_params + shared_params
+  prefill_adapter_tensorstore += shared_adapter_tensorstore
+  generate_adapter_tensorstore += shared_adapter_tensorstore
 
   if prefill_engines is None:
     prefill_engines = []
@@ -185,6 +218,8 @@ def create_driver(
       generate_engines=generate_engines,
       prefill_params=prefill_params,
       generate_params=generate_params,
+      prefill_adapter_tensorstore=prefill_adapter_tensorstore,
+      generate_adapter_tensorstore=generate_adapter_tensorstore,
       interleaved_mode=interleaved_mode,
       jax_padding=jax_padding,
       metrics_collector=metrics_collector,
@@ -205,7 +240,7 @@ def run(
     jax_profiler_port: int = 9999,
     enable_model_warmup: bool = False,
     multi_sampling: bool = False,
-    enable_llm_inference_pool: bool = False,
+    lora_input_adapters_path: str = None,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
@@ -222,6 +257,7 @@ def run(
     jax_profiler_port: The port JAX profiler server (default to 9999).
     enable_model_warmup: The flag to enable model server warmup.
     multi_sampling: The flag to enable multi-sampling.
+    lora_input_adapters_path: Input path for all lora adapters.
 
   Returns:
     JetStreamServer that wraps the grpc server and orchestrator driver.
@@ -250,10 +286,14 @@ def run(
       metrics_collector,
       enable_model_warmup,
       multi_sampling,
+      lora_input_adapters_path
   )
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.
   threads = threads or max(driver.get_total_concurrent_requests(), 64)
+  enable_llm_inference_pool = False
+  if lora_input_adapters_path:
+    enable_llm_inference_pool = True
   jetstream_server = JetStreamServer(driver, threads, port, credentials, enable_llm_inference_pool)
   logging.info("Starting server on port %d with %d threads", port, threads)
 

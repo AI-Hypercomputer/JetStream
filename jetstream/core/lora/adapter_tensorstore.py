@@ -26,6 +26,7 @@ import asyncio
 import functools
 from typing import Dict, Optional, Any
 import numpy as np
+from jetstream.engine import engine_api
 
 
 def _get_size_of_pytree(params):
@@ -82,8 +83,14 @@ class AdapterTensorStore:
   """
 
 
-  def __init__(self, hbm_memory_budget: int, cpu_memory_budget: int):
+  def __init__(self,
+      engine: engine_api.Engine,
+      adapters_dir_path: str,
+      hbm_memory_budget: int,
+      cpu_memory_budget: int):
     """Initializes the AdapterTensorStore."""
+    self.engine = engine                                      # Possibly MaxEngine object
+    self.adapters_dir_path = adapters_dir_path.rstrip("/")    # All Adapters path without trailing `/`
     self.hbm_memory_budget = hbm_memory_budget
     self.cpu_memory_budget = cpu_memory_budget
     self.adapter_registry: Dict[str, AdapterMetadata] = {}    # All known adapters
@@ -95,26 +102,49 @@ class AdapterTensorStore:
     self.lock = asyncio.Lock()        # Use an asyncio Lock for thread safety
 
 
-  def register_adapter(self, adapter_id: str, adapter_path: str, config: Dict[str, Any]):
+  def register_adapter(self,
+      adapter_id: str,
+      adapter_path: str = None,
+      adapter_config: Dict[str, Any] = None):
     """Registers a new LoRA adatper."""
     """
-    Registers a LoRA adapter with the TensorStore.  This does *not* load
-    the adapter; it simply adds metadata about the adapter to the registry.
+    Registers a LoRA adapter with the TensorStore.  This also loads the adapter; 
+    IF called without adapter_config. Because in this case, it needs
+    to get adapter_config from the engine's load_single_adapter() call, which
+    also provides the adapter_params. So in that case it is beneficial to load
+    the adapter to HBM. This call path is expected only from the direct inference
+    request.
+    OTHERWISE, it simply adds metadata about the adapter to the registry.
 
     Args:
       adapter_id (str): A unique identifier for the adapter.
       adapter_path (str): The path to the adapter weights (file or directory).
-      config (dict): Config of the loRA adapter.
+      adapter_config (dict): Config of the loRA adapter.
 
     Raises:
       ValueError: If an adapter with the same ID is already registered.
     """
     if adapter_id in self.adapter_registry:
-      raise ValueError(f"Adapter with ID '{adapter_id}' already registered.")
+      logging.warning(f"Adapter with ID '{adapter_id}' already registered.")
+      return
+
+    if adapter_path is None:
+      adapter_path = f"{self.adapters_dir_path}/{adapter_id}"
+
+    adapter_params = None
+    if adapter_config is None:
+      adapter_params, adapter_config = self.engine.load_single_adapter(adapter_path)
+
+    if adapter_config is None:
+      raise ValueError(f"Failed to read adapter_config from {adapter_path}")
+
     self.adapter_registry[adapter_id] = AdapterMetadata(
         adapter_id=adapter_id,
         adapter_path=adapter_path,
-        config=config)
+        config=adapter_config)
+
+    if adapter_params is not None:
+      asyncio.run(self.load_adapter(adapter_id, adapter_params, True))
 
 
   async def _transfer_to_hbm(self, adapter_id: str):
@@ -254,7 +284,10 @@ class AdapterTensorStore:
 
     try:
       if adapter_weights is None:
-        raise ValueError("Adapter weights for adapter_id={adapter_id} is None.")
+        adapter_weights, adapter_config = self.engine.load_single_adapter(adapter_path)
+
+      if adapter_weights is None:
+        raise ValueError("Failed to load adapter_weights from {adapter_path}.")
 
       async with self.lock:       # Critical section for memory management
         adapter_weights_as_jnp_array = _as_jnp_array(adapter_weights)
@@ -303,21 +336,36 @@ class AdapterTensorStore:
         self.running_requests -= 1
 
 
-  def get_lora_config(self, adapter_id):
+  def get_lora_config(self, adapter_id: str, load_if_not_loaded: bool = False):
     """Getter for the LoRA adapter config."""
     metadata = self.adapter_registry.get(adapter_id)
+
+    if load_if_not_loaded and metadata is None:
+      self.register_adapter(adapter_id)
+      metadata = self.adapter_registry.get(adapter_id)
+
+    if metadata is None:
+      raise ValueError(f"LoRA adapter with id={adapter_id} is not loaded.")
+
     return metadata.config
 
 
-  def get_lora_weights(self, adapter_id, to_hbm: bool = True):
+  def get_lora_weights(self,
+      adapter_id,
+      to_hbm: bool = True,
+      load_if_not_loaded: bool = False):
     """Retrieves the unified LoRA parameters for the given adapter IDs.
        Handles HBM/CPU placement.
     """
 
     metadata = self.adapter_registry.get(adapter_id)
 
+    if load_if_not_loaded and metadata is None:
+      self.register_adapter(adapter_id)
+      metadata = self.adapter_registry.get(adapter_id)
+
     if metadata is None:
-      raise ValueError(f"Adapter with ID '{adapter_id}' not registered.")
+      raise ValueError(f"LoRA adapter with id={adapter_id} is not loaded.")
 
     if metadata.status != "loaded_hbm" and metadata.status != "loaded_cpu":
       asyncio.run(self.load_adapter(adapter_id, None, to_hbm))    # Start loading (async)

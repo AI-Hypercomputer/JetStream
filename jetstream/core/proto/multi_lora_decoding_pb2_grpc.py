@@ -14,11 +14,6 @@ class v1Stub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.completions = channel.unary_stream(
-                '/v1/completions',
-                request_serializer=multi__lora__decoding__pb2.CompletionRequest.SerializeToString,
-                response_deserializer=multi__lora__decoding__pb2.CompletionResponse.FromString,
-                )
         self.models = channel.unary_unary(
                 '/v1/models',
                 request_serializer=multi__lora__decoding__pb2.ListAdaptersRequest.SerializeToString,
@@ -38,13 +33,6 @@ class v1Stub(object):
 
 class v1Servicer(object):
     """Missing associated documentation comment in .proto file."""
-
-    def completions(self, request, context):
-        """Generate text based on a prompt. Supports streaming responses.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
 
     def models(self, request, context):
         """Lists all the currently loaded LoRA adapters
@@ -70,11 +58,6 @@ class v1Servicer(object):
 
 def add_v1Servicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'completions': grpc.unary_stream_rpc_method_handler(
-                    servicer.completions,
-                    request_deserializer=multi__lora__decoding__pb2.CompletionRequest.FromString,
-                    response_serializer=multi__lora__decoding__pb2.CompletionResponse.SerializeToString,
-            ),
             'models': grpc.unary_unary_rpc_method_handler(
                     servicer.models,
                     request_deserializer=multi__lora__decoding__pb2.ListAdaptersRequest.FromString,
@@ -99,23 +82,6 @@ def add_v1Servicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class v1(object):
     """Missing associated documentation comment in .proto file."""
-
-    @staticmethod
-    def completions(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_stream(request, target, '/v1/completions',
-            multi__lora__decoding__pb2.CompletionRequest.SerializeToString,
-            multi__lora__decoding__pb2.CompletionResponse.FromString,
-            options, channel_credentials,
-            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
     def models(request,
