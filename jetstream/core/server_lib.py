@@ -187,6 +187,7 @@ def run(
     jax_profiler_port: int = 9999,
     enable_model_warmup: bool = False,
     multi_sampling: bool = False,
+    lora_input_adapters_path: str = None,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
@@ -203,6 +204,7 @@ def run(
     jax_profiler_port: The port JAX profiler server (default to 9999).
     enable_model_warmup: The flag to enable model server warmup.
     multi_sampling: The flag to enable multi-sampling.
+    lora_input_adapters_path: Path to define the location of all lora adapters.
 
   Returns:
     JetStreamServer that wraps the grpc server and orchestrator driver.
