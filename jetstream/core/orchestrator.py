@@ -553,7 +553,7 @@ class Driver:
     if self._metrics_collector:
       for idx, engine in enumerate(self._generate_engines):
         max_loras += engine.max_concurrent_decodes
-        if idx < len(self._generate_adapterstore):
+        if self._generate_adapterstore and idx < len(self._generate_adapterstore):
           adapters_list_str += asyncio.run(
               self._generate_adapterstore[idx].get_hbm_loaded_adapters())
 
@@ -643,7 +643,7 @@ class Driver:
     prefill_engine = self._prefill_engines[idx]
     prefill_params = self._prefill_params[idx]
     adapter_tensorstore = None
-    if idx < len(self._prefill_adapterstore):
+    if self._prefill_adapterstore and idx < len(self._prefill_adapterstore):
       adapter_tensorstore = self._prefill_adapterstore[idx]
     metadata = prefill_engine.get_tokenizer()
     tokenizer = prefill_engine.build_tokenizer(metadata)
