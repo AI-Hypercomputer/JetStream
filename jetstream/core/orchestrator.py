@@ -1370,8 +1370,8 @@ class Driver:
 
   def load_adapter_to_tensorstore(
           self,
-          adapter_id,
-          adapter_path):
+          adapter_id: str,
+          adapter_path: str):
     """Load the adapter to adapter_tensorstore for each engine."""
     logger.info("Loading adapter_id=%s from %s.",
         adapter_id, adapter_path)
@@ -1429,7 +1429,7 @@ class Driver:
 
   def unload_adapter_from_tensorstore(
           self,
-          adapter_id):
+          adapter_id: str):
     """Unload the adapter from adapter_tensorstore of each engine."""
     logger.info("Unloading adapter_id=%s", adapter_id)
 

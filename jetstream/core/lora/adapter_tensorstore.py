@@ -27,6 +27,7 @@ import functools
 from typing import Dict, Optional, Any
 import numpy as np
 from jetstream.engine import engine_api
+from enum import Enum
 
 
 def _get_size_of_pytree(params):
@@ -54,12 +55,18 @@ def _as_jnp_array(params):
 
   return jax.tree_util.tree_map(convert_if_np, params)
 
+class AdapterStatus(str, Enum):
+    UNLOADED = "unloaded"
+    LOADING = "loading"
+    LOADED_HBM = "loaded_hbm"
+    LOADED_CPU = "loaded_cpu"
+
 
 @dataclasses.dataclass
 class AdapterMetadata:
   adapter_id: str
   adapter_path: str
-  status: str = "unloaded"      # "loaded_hbm", "loaded_cpu", "loading", "unloading"
+  status: AdapterStatus = AdapterStatus.UNLOADED
   size_hbm: int = 0             # Size in HBM (bytes)
   size_cpu: int = 0             # Size in CPU RAM (bytes)
   last_accessed: float = 0.0    # timestamp
@@ -155,7 +162,7 @@ class AdapterTensorStore:
     async with self.lock: #Acquire lock
       metadata = self.adapter_registry[adapter_id]
 
-      if metadata.status == "loaded_hbm":
+      if metadata.status == AdapterStatus.LOADED_HBM:
         return
 
       # Check if we have enough space in HBM; evict if necessary
@@ -172,7 +179,7 @@ class AdapterTensorStore:
       self.current_cpu_usage -= metadata.size_cpu
       self.current_hbm_usage += metadata.size_hbm
 
-      metadata.status = "loaded_hbm"
+      metadata.status = AdapterStatus.LOADED_HBM
       metadata.last_accessed = time.time()
 
 
@@ -185,7 +192,7 @@ class AdapterTensorStore:
     async with self.lock:
       metadata = self. adapter_registry[adapter_id]
 
-      if metadata.status == "loaded_cpu":
+      if metadata.status == AdapterStatus.LOADED_CPU:
         return
 
       # Check if we have enough space in CPU; evict if necessary.
@@ -200,7 +207,7 @@ class AdapterTensorStore:
       self.current_hbm_usage -= metadata.size_hbm
       self.current_cpu_usage += metadata.size_cpu
 
-      metadata.status = "loaded_cpu"
+      metadata.status = AdapterStatus.LOADED_CPU
       metadata.last_accessed = time.time()
 
 
@@ -211,7 +218,7 @@ class AdapterTensorStore:
 
     async with self.lock:
       for adapter_id, metadata in self.adapter_registry.items():
-        if metadata.status == "loaded_hbm":
+        if metadata.status == AdapterStatus.LOADED_HBM:
           hbm_loaded_adapters.append(adapter_id)
 
     return ", ".join(hbm_loaded_adapters)
@@ -250,33 +257,33 @@ class AdapterTensorStore:
     metadata = self.adapter_registry[adapter_id]
 
     async with self.lock:       # Acquire lock for thread safety
-      if metadata.status in ("loaded_hbm", "loaded_cpu"):
+      if metadata.status in (AdapterStatus.LOADED_HBM, AdapterStatus.LOADED_CPU):
         metadata.last_accessed = time.time()
 
         # if already loaded in HBM and we want HBM, or
         # already loaded in CPU and we want CPU, we're done.
-        if ((to_hbm and metadata.status == "loaded_hbm") or
-            not to_hbm and metadata.status == "loaded_cpu"):
+        if ((to_hbm and metadata.status == AdapterStatus.LOADED_HBM) or
+            not to_hbm and metadata.status == AdapterStatus.LOADED_CPU):
           return
-        elif to_hbm and metadata.status == "loaded_cpu":
+        elif to_hbm and metadata.status == AdapterStatus.LOADED_CPU:
           # Transfer from cpu to hbm
           self._transfer_to_hbm(adapter_id)
           return
-        elif not to_hbm and metadata.status == "loaded_hbm":
+        elif not to_hbm and metadata.status == AdapterStatus.LOADED_HBM:
           # Transfer from hbm to cpu
           self._transfer_to_cpu(adapter_id)
           return
 
-      if metadata.status == "loading":
+      if metadata.status == AdapterStatus.LOADING:
         # Wait untill loading is done.
-        while metadata.status == "loading":
+        while metadata.status == AdapterStatus.LOADING:
           await asyncio.sleep(0.1)    # Short sleep to avoid busy-waiting
 
         # Make recursive call to load_adapter to copy to device
         await self.load_adapter(adapter_id, adapter_weights, to_hbm)
         return
 
-      metadata.status = "loading"
+      metadata.status = AdapterStatus.LOADING
       self.running_requests += 1
 
     # Load the adapter (asynchronous)
@@ -319,18 +326,18 @@ class AdapterTensorStore:
         if to_hbm:
           self.loaded_adapters_hbm[adapter_id] = adapter_weights_as_jnp_array # Convert the PyTree to Jax Array
           self.current_hbm_usage += adapter_size_hbm
-          metadata.status = "loaded_hbm"
+          metadata.status = AdapterStatus.LOADED_HBM
 
         else: #to cpu
           self.loaded_adapters_cpu[adapter_id] = adapter_weights_as_np_array # Convert the PyTree to NumPy Array
           self.current_cpu_usage += adapter_size_cpu
-          metadata.status = "loaded_cpu"
+          metadata.status = AdapterStatus.LOADED_CPU
           
         metadata.last_accessed = time.time()
 
     except Exception as e:
       async with self.lock:
-        metadata.status = "unloaded"    # Mark as unloaded on error
+        metadata.status = AdapterStatus.UNLOADED    # Mark as unloaded on error
         raise e   # Re-Raise the exception
     finally:
       async with self.lock:
@@ -368,11 +375,11 @@ class AdapterTensorStore:
     if metadata is None:
       raise ValueError(f"LoRA adapter with id={adapter_id} is not loaded.")
 
-    if metadata.status != "loaded_hbm" and metadata.status != "loaded_cpu":
+    if metadata.status != AdapterStatus.LOADED_HBM and metadata.status != AdapterStatus.LOADED_CPU:
       asyncio.run(self.load_adapter(adapter_id, None, to_hbm))    # Start loading (async)
-    elif to_hbm and metadata.status == "loaded_cpu":
+    elif to_hbm and metadata.status == AdapterStatus.LOADED_CPU:
       asyncio.run(self._transfer_to_hbm(adapter_id))
-    elif not to_hbm and metadata.status == "loaded_hbm":
+    elif not to_hbm and metadata.status == AdapterStatus.LOADED_HBM:
       asyncio.run(self._transfer_to_cpu(adapter_id))
 
     # Wait till all the running requests are completed
@@ -397,21 +404,21 @@ class AdapterTensorStore:
     metadata = self.adapter_registry[adapter_id]
 
     async with self.lock:
-      if metadata.status == "unloaded":
+      if metadata.status == AdapterStatus.UNLOADED:
         return    # Already unloaded
-      if metadata.status == "loading":
+      if metadata.status == AdapterStatus.LOADING:
         # Wait for the loading to get complete.
-        while metadata.status == "loading":
+        while metadata.status == AdapterStatus.LOADING:
           await asyncio.sleep(0.1)
 
-      if metadata.status == "loaded_hbm":
+      if metadata.status == AdapterStatus.LOADED_HBM:
         del self.loaded_adapters_hbm[adapter_id]
         self.current_hbm_usage -= metadata.size_hbm
-        metadata.status = "unloaded"
-      elif metadata.status == "loaded_cpu":
+        metadata.status = AdapterStatus.UNLOADED
+      elif metadata.status == AdapterStatus.LOADED_CPU:
         del self.loaded_adapters_cpu[adapter_id]
         self.current_cpu_usage -= metadata.size_cpu
-        metadata.status = "unloaded"
+        metadata.status = AdapterStatus.UNLOADED
 
       metadata.last_accessed = time.time()    # Unload time
       metadata.size_hbm = 0
@@ -431,7 +438,7 @@ class AdapterTensorStore:
     lru_time = float('inf')
 
     for adapter_id, metadata in self.adapter_registry.items():
-      if metadata.status == "loaded_hbm" if from_hbm else metadata.status == "loaded_cpu":
+      if metadata.status == AdapterStatus.LOADED_HBM if from_hbm else metadata.status == AdapterStatus.LOADED_CPU:
         if metadata.last_accessed < lru_time:
           lru_time = metadata.last_accessed
           lru_adapter_id = adapter_id
