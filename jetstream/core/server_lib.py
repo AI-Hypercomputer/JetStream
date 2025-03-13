@@ -209,6 +209,11 @@ def run(
   Returns:
     JetStreamServer that wraps the grpc server and orchestrator driver.
   """
+  # TODO: Deleting the lora_input_adapters_path for now.
+  # Planning to use it in next big PR. Currently accomodating it
+  # to fix the params mismatch between maxText and JetStream
+  del lora_input_adapters_path
+
   server_start_time = time.time()
   logging.info("Kicking off gRPC server.")
   # Setup Prometheus server
