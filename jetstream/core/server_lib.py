@@ -187,7 +187,7 @@ def run(
     jax_profiler_port: int = 9999,
     enable_model_warmup: bool = False,
     multi_sampling: bool = False,
-    lora_input_adapters_path: str = None,
+    lora_input_adapters_path: str | None = None,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
