@@ -61,7 +61,7 @@ message DecodeRequest {
 
   int32 num_samples = 8;
 
-  string adapter_id = 9;
+  string lora_adapter_id = 9;
 
   reserved 1, 2, 3;
   // Next ID: 10

@@ -26,6 +26,8 @@ import asyncio
 import functools
 from typing import Dict, Optional, Any
 import numpy as np
+from jetstream.engine import engine_api
+from enum import Enum
 
 
 def _get_size_of_pytree(params):
@@ -53,12 +55,18 @@ def _as_jnp_array(params):
 
   return jax.tree_util.tree_map(convert_if_np, params)
 
+class AdapterStatus(str, Enum):
+    UNLOADED = "unloaded"
+    LOADING = "loading"
+    LOADED_HBM = "loaded_hbm"
+    LOADED_CPU = "loaded_cpu"
+
 
 @dataclasses.dataclass
 class AdapterMetadata:
   adapter_id: str
   adapter_path: str
-  status: str = "unloaded"      # "loaded_hbm", "loaded_cpu", "loading", "unloading"
+  status: AdapterStatus = AdapterStatus.UNLOADED
   size_hbm: int = 0             # Size in HBM (bytes)
   size_cpu: int = 0             # Size in CPU RAM (bytes)
   last_accessed: float = 0.0    # timestamp
@@ -66,7 +74,6 @@ class AdapterMetadata:
 
 
 class AdapterTensorStore:
-  def __init__(self, hbm_memory_budget: int, cpu_memory_budget: int, total_slots: int):
   """
   Manages the storage and retrieval of LoRA adapter weights, handling
   placement in either HBM (High Bandwidth Memory, on the TPU/GPU) or CPU RAM.
@@ -87,6 +94,14 @@ class AdapterTensorStore:
     total_slots: Number of generate slots. This is also equals to max_concurrent_decodes.
   """
 
+  def __init__(self,
+      engine: engine_api.Engine,
+      adapters_dir_path: str,
+      hbm_memory_budget: int,
+      cpu_memory_budget: int):
+    """Initializes the AdapterTensorStore."""
+    self.engine = engine                                      # Possibly MaxEngine object
+    self.adapters_dir_path = adapters_dir_path.rstrip("/")    # All Adapters path without trailing `/`
     self.hbm_memory_budget = hbm_memory_budget
     self.cpu_memory_budget = cpu_memory_budget
     self.adapter_registry: Dict[str, AdapterMetadata] = {}    # All known adapters
@@ -100,26 +115,49 @@ class AdapterTensorStore:
     self.lock = asyncio.Lock()        # Use an asyncio Lock for thread safety
 
 
-  def register_adapter(self, adapter_id: str, adapter_path: str, config: Dict[str, Any]):
+  def register_adapter(self,
+      adapter_id: str,
+      adapter_path: str | None = None,
+      adapter_config: Dict[str, Any] | None = None):
     """Registers a new LoRA adatper."""
     """
-    Registers a LoRA adapter with the TensorStore.  This does *not* load
-    the adapter; it simply adds metadata about the adapter to the registry.
+    Registers a LoRA adapter with the TensorStore.  This also loads the adapter; 
+    IF called without adapter_config. Because in this case, it needs
+    to get adapter_config from the engine's load_single_adapter() call, which
+    also provides the adapter_params. So in that case it is beneficial to load
+    the adapter to HBM. This call path is expected only from the direct inference
+    request.
+    OTHERWISE, it simply adds metadata about the adapter to the registry.
 
     Args:
       adapter_id (str): A unique identifier for the adapter.
       adapter_path (str): The path to the adapter weights (file or directory).
-      config (dict): Config of the loRA adapter.
+      adapter_config (dict): Config of the loRA adapter.
 
     Raises:
       ValueError: If an adapter with the same ID is already registered.
     """
     if adapter_id in self.adapter_registry:
-      raise ValueError(f"Adapter with ID '{adapter_id}' already registered.")
+      logging.warning(f"Adapter with ID '{adapter_id}' already registered.")
+      return
+
+    if adapter_path is None:
+      adapter_path = f"{self.adapters_dir_path}/{adapter_id}"
+
+    adapter_params = None
+    if adapter_config is None:
+      adapter_params, adapter_config = self.engine.load_single_adapter(adapter_path)
+
+    if adapter_config is None:
+      raise ValueError(f"Failed to read adapter_config from {adapter_path}")
+
     self.adapter_registry[adapter_id] = AdapterMetadata(
         adapter_id=adapter_id,
         adapter_path=adapter_path,
-        config=config)
+        config=adapter_config)
+
+    if adapter_params is not None:
+      asyncio.run(self.load_adapter(adapter_id, adapter_params, True))
 
 
   async def _transfer_to_hbm(self, adapter_id: str):
@@ -130,7 +168,7 @@ class AdapterTensorStore:
     async with self.lock: #Acquire lock
       metadata = self.adapter_registry[adapter_id]
 
-      if metadata.status == "loaded_hbm":
+      if metadata.status == AdapterStatus.LOADED_HBM:
         return
 
       # Check if we have enough space in HBM; evict if necessary
@@ -147,7 +185,7 @@ class AdapterTensorStore:
       self.current_cpu_usage -= metadata.size_cpu
       self.current_hbm_usage += metadata.size_hbm
 
-      metadata.status = "loaded_hbm"
+      metadata.status = AdapterStatus.LOADED_HBM
       metadata.last_accessed = time.time()
 
 
@@ -160,7 +198,7 @@ class AdapterTensorStore:
     async with self.lock:
       metadata = self. adapter_registry[adapter_id]
 
-      if metadata.status == "loaded_cpu":
+      if metadata.status == AdapterStatus.LOADED_CPU:
         return
 
       # Check if we have enough space in CPU; evict if necessary.
@@ -175,7 +213,7 @@ class AdapterTensorStore:
       self.current_hbm_usage -= metadata.size_hbm
       self.current_cpu_usage += metadata.size_cpu
 
-      metadata.status = "loaded_cpu"
+      metadata.status = AdapterStatus.LOADED_CPU
       metadata.last_accessed = time.time()
 
 
@@ -256,7 +294,7 @@ class AdapterTensorStore:
 
     async with self.lock:
       for adapter_id, metadata in self.adapter_registry.items():
-        if metadata.status == "loaded_hbm":
+        if metadata.status == AdapterStatus.LOADED_HBM:
           hbm_loaded_adapters.append(adapter_id)
 
     return ", ".join(hbm_loaded_adapters)
@@ -295,33 +333,33 @@ class AdapterTensorStore:
     metadata = self.adapter_registry[adapter_id]
 
     async with self.lock:       # Acquire lock for thread safety
-      if metadata.status in ("loaded_hbm", "loaded_cpu"):
+      if metadata.status in (AdapterStatus.LOADED_HBM, AdapterStatus.LOADED_CPU):
         metadata.last_accessed = time.time()
 
         # if already loaded in HBM and we want HBM, or
         # already loaded in CPU and we want CPU, we're done.
-        if ((to_hbm and metadata.status == "loaded_hbm") or
-            not to_hbm and metadata.status == "loaded_cpu"):
+        if ((to_hbm and metadata.status == AdapterStatus.LOADED_HBM) or
+            not to_hbm and metadata.status == AdapterStatus.LOADED_CPU):
           return
-        elif to_hbm and metadata.status == "loaded_cpu":
+        elif to_hbm and metadata.status == AdapterStatus.LOADED_CPU:
           # Transfer from cpu to hbm
           self._transfer_to_hbm(adapter_id)
           return
-        elif not to_hbm and metadata.status == "loaded_hbm":
+        elif not to_hbm and metadata.status == AdapterStatus.LOADED_HBM:
           # Transfer from hbm to cpu
           self._transfer_to_cpu(adapter_id)
           return
 
-      if metadata.status == "loading":
+      if metadata.status == AdapterStatus.LOADING:
         # Wait untill loading is done.
-        while metadata.status == "loading":
+        while metadata.status == AdapterStatus.LOADING:
           await asyncio.sleep(0.1)    # Short sleep to avoid busy-waiting
 
         # Make recursive call to load_adapter to copy to device
         await self.load_adapter(adapter_id, adapter_weights, to_hbm)
         return
 
-      metadata.status = "loading"
+      metadata.status = AdapterStatus.LOADING
       self.running_requests += 1
 
     # Load the adapter (asynchronous)
@@ -329,7 +367,11 @@ class AdapterTensorStore:
 
     try:
       if adapter_weights is None:
-        raise ValueError("Adapter weights for adapter_id={adapter_id} is None.")
+        adapter_path = f"{self.adapters_dir_path}/{adapter_id}"
+        adapter_weights, adapter_config = self.engine.load_single_adapter(adapter_path)
+
+      if adapter_weights is None:
+        raise ValueError("Failed to load adapter_weights from {adapter_path}.")
 
       async with self.lock:       # Critical section for memory management
         adapter_weights_as_jnp_array = _as_jnp_array(adapter_weights)
@@ -360,45 +402,60 @@ class AdapterTensorStore:
         if to_hbm:
           self.loaded_adapters_hbm[adapter_id] = adapter_weights_as_jnp_array # Convert the PyTree to Jax Array
           self.current_hbm_usage += adapter_size_hbm
-          metadata.status = "loaded_hbm"
+          metadata.status = AdapterStatus.LOADED_HBM
 
         else: #to cpu
           self.loaded_adapters_cpu[adapter_id] = adapter_weights_as_np_array # Convert the PyTree to NumPy Array
           self.current_cpu_usage += adapter_size_cpu
-          metadata.status = "loaded_cpu"
+          metadata.status = AdapterStatus.LOADED_CPU
           
         metadata.last_accessed = time.time()
 
     except Exception as e:
       async with self.lock:
-        metadata.status = "unloaded"    # Mark as unloaded on error
+        metadata.status = AdapterStatus.UNLOADED    # Mark as unloaded on error
         raise e   # Re-Raise the exception
     finally:
       async with self.lock:
         self.running_requests -= 1
 
 
-  def get_lora_config(self, adapter_id):
+  def get_lora_config(self, adapter_id: str, load_if_not_loaded: bool = False):
     """Getter for the LoRA adapter config."""
     metadata = self.adapter_registry.get(adapter_id)
+
+    if load_if_not_loaded and metadata is None:
+      self.register_adapter(adapter_id)
+      metadata = self.adapter_registry.get(adapter_id)
+
+    if metadata is None:
+      raise ValueError(f"LoRA adapter with id={adapter_id} is not loaded.")
+
     return metadata.config
 
 
-  def get_lora_weights(self, adapter_id, to_hbm: bool = True):
+  def get_lora_weights(self,
+      adapter_id,
+      to_hbm: bool = True,
+      load_if_not_loaded: bool = False):
     """Retrieves the unified LoRA parameters for the given adapter IDs.
        Handles HBM/CPU placement.
     """
 
     metadata = self.adapter_registry.get(adapter_id)
 
-    if metadata is None:
-      raise ValueError(f"Adapter with ID '{adapter_id}' not registered.")
+    if load_if_not_loaded and metadata is None:
+      self.register_adapter(adapter_id)
+      metadata = self.adapter_registry.get(adapter_id)
 
-    if metadata.status != "loaded_hbm" and metadata.status != "loaded_cpu":
+    if metadata is None:
+      raise ValueError(f"LoRA adapter with id={adapter_id} is not loaded.")
+
+    if metadata.status != AdapterStatus.LOADED_HBM and metadata.status != AdapterStatus.LOADED_CPU:
       asyncio.run(self.load_adapter(adapter_id, None, to_hbm))    # Start loading (async)
-    elif to_hbm and metadata.status == "loaded_cpu":
+    elif to_hbm and metadata.status == AdapterStatus.LOADED_CPU:
       asyncio.run(self._transfer_to_hbm(adapter_id))
-    elif not to_hbm and metadata.status == "loaded_hbm":
+    elif not to_hbm and metadata.status == AdapterStatus.LOADED_HBM:
       asyncio.run(self._transfer_to_cpu(adapter_id))
 
     # Wait till all the running requests are completed
@@ -423,21 +480,21 @@ class AdapterTensorStore:
     metadata = self.adapter_registry[adapter_id]
 
     async with self.lock:
-      if metadata.status == "unloaded":
+      if metadata.status == AdapterStatus.UNLOADED:
         return    # Already unloaded
-      if metadata.status == "loading":
+      if metadata.status == AdapterStatus.LOADING:
         # Wait for the loading to get complete.
-        while metadata.status == "loading":
+        while metadata.status == AdapterStatus.LOADING:
           await asyncio.sleep(0.1)
 
-      if metadata.status == "loaded_hbm":
+      if metadata.status == AdapterStatus.LOADED_HBM:
         del self.loaded_adapters_hbm[adapter_id]
         self.current_hbm_usage -= metadata.size_hbm
-        metadata.status = "unloaded"
-      elif metadata.status == "loaded_cpu":
+        metadata.status = AdapterStatus.UNLOADED
+      elif metadata.status == AdapterStatus.LOADED_CPU:
         del self.loaded_adapters_cpu[adapter_id]
         self.current_cpu_usage -= metadata.size_cpu
-        metadata.status = "unloaded"
+        metadata.status = AdapterStatus.UNLOADED
 
       metadata.last_accessed = time.time()    # Unload time
       metadata.size_hbm = 0
@@ -457,7 +514,7 @@ class AdapterTensorStore:
     lru_time = float('inf')
 
     for adapter_id, metadata in self.adapter_registry.items():
-      if metadata.status == "loaded_hbm" if from_hbm else metadata.status == "loaded_cpu":
+      if metadata.status == AdapterStatus.LOADED_HBM if from_hbm else metadata.status == AdapterStatus.LOADED_CPU:
         if metadata.last_accessed < lru_time:
           lru_time = metadata.last_accessed
           lru_adapter_id = adapter_id

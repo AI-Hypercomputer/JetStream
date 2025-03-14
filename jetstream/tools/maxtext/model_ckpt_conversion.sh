@@ -65,7 +65,7 @@ else
     pip install torch --index-url https://download.pytorch.org/whl/cpu
     # llama_or_mistral_ckpt.py requires local path, so we need to copy the checkpoint from CHKPT_BUCKET to local.
     tmp_ckpt_path="/tmp/"
-    gcloud storage cp -r ${CHKPT_BUCKET} ${tmp_ckpt_path}
+    #gcloud storage cp -r ${CHKPT_BUCKET} ${tmp_ckpt_path}
 
     path_parts=(${CHKPT_BUCKET//\// })
     directory_substring=${path_parts[-1]}
@@ -115,7 +115,7 @@ if [[ ! -z "${LORA_INPUT_ADAPTERS_PATH}" ]]; then
     MaxText/configs/base.yml \
     base_output_directory=${BASE_OUTPUT_DIRECTORY} \
     load_parameters_path=${SCANNED_CKPT_PATH}/base/0/items \
-    lora_input_adapters_path=${SCANNED_CKPT_PATH}/LoRAs \
+    lora_input_adapters_path=${SCANNED_CKPT_PATH}/loras \
     run_name=${RUN_NAME} \
     model_name=${MODEL_NAME} \
     force_unroll=true

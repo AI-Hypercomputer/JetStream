@@ -44,8 +44,8 @@ _CLIENT_SIDE_TOKENIZATION = flags.DEFINE_bool(
     False,
     "Enable client side tokenization with tokenizer.",
 )
-_ADAPTER_ID = flags.DEFINE_string(
-    "adapter_id",
+_LORA_ADAPTER_ID = flags.DEFINE_string(
+    "lora_adapter_id",
     "",
     "ID of the adapter for this decode request.",
     required=False)
@@ -94,7 +94,7 @@ def main(argv: Sequence[str]) -> None:
           ),
           max_tokens=_MAX_TOKENS.value,
           num_samples=_NUM_SAMPLES.value,
-          adapter_id=_ADAPTER_ID.value,
+          lora_adapter_id=_LORA_ADAPTER_ID.value,
       )
     else:
       request = jetstream_pb2.DecodeRequest(
@@ -103,7 +103,7 @@ def main(argv: Sequence[str]) -> None:
           ),
           max_tokens=_MAX_TOKENS.value,
           num_samples=_NUM_SAMPLES.value,
-          adapter_id=_ADAPTER_ID.value,
+          lora_adapter_id=_LORA_ADAPTER_ID.value,
       )
     return _GetResponseAsync(stub, request)
 

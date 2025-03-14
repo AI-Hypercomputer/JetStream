@@ -19,6 +19,8 @@ from typing import Sequence
 from absl import app
 from absl import flags
 import grpc
+from jetstream.core.proto import jetstream_pb2
+from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.proto import multi_lora_decoding_pb2
 from jetstream.core.proto import multi_lora_decoding_pb2_grpc
 from jetstream.engine.token_utils import load_vocab
@@ -32,15 +34,15 @@ _MAX_TOKENS = flags.DEFINE_integer(
     "max_tokens", 3, "Maximum number of output/decode tokens of a sequence"
 )
 
-_ADAPTER_ID = flags.DEFINE_string(
-    "adapter_id",
+_LORA_ADAPTER_ID = flags.DEFINE_string(
+    "lora_adapter_id",
     None,
     "Id of the fine-tuned adapter to be loaded on top of the base model.",
     required=False,
 )
 
-_ADAPTER_PATH = flags.DEFINE_string(
-    "adapter_path",
+_LORA_ADAPTER_PATH = flags.DEFINE_string(
+    "lora_adapter_path",
     None,
     "Path of the fine-tuned adapter to be loaded from.",
     required=False,
@@ -88,8 +90,8 @@ def main(argv: Sequence[str]) -> None:
     if _TEST_API_NAME.value == "load_lora_adapter":
       print(f"Calling the /v1/load_lora_adapter.")
 
-      adapter_id=_ADAPTER_ID.value
-      adapter_path=_ADAPTER_PATH.value
+      adapter_id=_LORA_ADAPTER_ID.value
+      adapter_path=_LORA_ADAPTER_PATH.value
 
       if adapter_id == None or adapter_path == None:
         print(f"For `load_lora_adapter` API call, `adapter_id` and `adapter_path` must be passed.")
@@ -110,7 +112,7 @@ def main(argv: Sequence[str]) -> None:
     elif _TEST_API_NAME.value == "unload_lora_adapter":
       print(f"Calling the /v1/unload_lora_adapter.")
 
-      adapter_id=_ADAPTER_ID.value
+      adapter_id=_LORA_ADAPTER_ID.value
 
       if adapter_id == None:
         print(f"For `unload_lora_adapter` API call, `adapter_id` must be passed.")
@@ -149,15 +151,16 @@ def main(argv: Sequence[str]) -> None:
     elif _TEST_API_NAME.value == "completions":
       print(f"Calling the /v1/completions.")
 
-      request = multi_lora_decoding_pb2.CompletionRequest(
-          text_content=multi_lora_decoding_pb2.CompletionRequest.TextContent(
+      request = jetstream_pb2.DecodeRequest(
+          text_content=jetstream_pb2.DecodeRequest.TextContent(
             text=_TEXT.value,
           ),
           max_tokens=_MAX_TOKENS.value,
-          adapter_id=_ADAPTER_ID.value,
+          lora_adapter_id=_LORA_ADAPTER_ID.value,
       )
+      stub = jetstream_pb2_grpc.OrchestratorStub(channel)
 
-      response = stub.completions(request)
+      response = stub.Decode(request)
 
       output = []
       for resp in response:
