@@ -262,6 +262,7 @@ def run(
     enable_jax_profiler: bool = False,
     jax_profiler_port: int = 9999,
     enable_model_warmup: bool = False,
+    enable_llm_inference_pool: bool = False,
     multi_sampling: bool = False,
     lora_input_adapters_path: str | None = None,
 ) -> JetStreamServer:

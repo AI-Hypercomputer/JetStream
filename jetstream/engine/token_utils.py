@@ -43,6 +43,9 @@ handler.setLevel(_LOG_LEVEL)
 logger.addHandler(handler)
 
 
+def _wyzhang_debug(thread_name: str, message: str):
+  logger.debug(f"wyzhangd [{thread_name}] {message}")
+
 
 # ResultToken class to store tokens ids.
 ResultTokens = Any
@@ -304,6 +307,10 @@ def process_result_tokens(
         str(slot_tokens),
         str(slot_lengths),
     )
+  _wyzhang_debug(
+      "detok",
+      f"Complete {str(complete)}, slot_tokens {str(slot_tokens)}, slot_len {str(slot_lengths)}",
+  )
   return_samples = []
   for idx in range(samples):
     text_so_far = []
@@ -335,6 +342,7 @@ def process_result_tokens(
     )
     if debug:
       logging.info("Return samples %s", str(return_samples))
+  _wyzhang_debug("detok", f"return samples {str(return_samples)}")
   return return_samples, complete
 
 

@@ -699,7 +699,7 @@ async def send_request(
   req_complete_cnt.increment()
 
   out_str = tokenizer.decode(out_tokens)
-  print(f"----- Response -----\n{out_str}\n")
+  print(f"wyzhangd: receive resp {out_str}")
 
   # Collect per-request output and metrics.
   output = RequestFuncOutput()
