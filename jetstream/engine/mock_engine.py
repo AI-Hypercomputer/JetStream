@@ -32,10 +32,11 @@ I.e. ['Ċ', 'Ə', 'ɖ'] when converted back with chr()
 
 import functools
 from dataclasses import asdict
-from typing import Any, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
+import uuid
 from flax import struct
 from jax.experimental import mesh_utils
 
@@ -85,6 +86,7 @@ class TestEngine(engine_api.Engine):
       cache_length: int,
       weight: float,
       vocab_size: int = 1024,
+      use_chunked_prefill: bool = False,
   ):
     self.prefill_cache_batch = batch_size
     self.generate_cache_batch = batch_size
@@ -95,13 +97,24 @@ class TestEngine(engine_api.Engine):
         mesh_utils.create_device_mesh((1, 1, 1), jax.devices()), ("x", "y", "z")
     )
     self._prng_key = jax.random.PRNGKey(42)
+    self._use_chunked_prefill = use_chunked_prefill
 
   def load_params(self) -> Params:
     """Loads model weights."""
     # An integer, used to multiply inputs.
     return jnp.array([self.weight], dtype=jnp.float32)
 
-  @functools.partial(jax.jit, static_argnums=(0,))
+  def load_params_dict(self) -> Params:
+    """Loads model weights."""
+    # An integer, used to multiply inputs.
+    return {"params": jnp.array([self.weight], dtype=jnp.float32)}
+
+  @functools.partial(
+      jax.jit,
+      static_argnums=(0,),
+      static_argnames=("request_id",),
+  )
+  # pylint: disable=unused-argument
   def prefill(
       self,
       *,
@@ -109,6 +122,11 @@ class TestEngine(engine_api.Engine):
       existing_prefix: Optional[jax.Array] = None,
       padded_tokens: jax.Array,
       true_length: int,
+      request_id: Optional[uuid.UUID] = None,
+      previous_chunk=None,
+      complete_padded_prompt=None,
+      complete_prompt_true_length=None,
+      positions=None,
   ) -> Tuple[Prefix, engine_api.ResultTokens]:
     """Computes a kv-cache for a new generate request.
 
@@ -127,20 +145,33 @@ class TestEngine(engine_api.Engine):
     assert padded_tokens.ndim == 1
 
     # Generate dummy prefill cache content
-    prefill_cache = padded_tokens[None, :] * params
+    if not self._use_chunked_prefill:
+      prefill_cache = padded_tokens[None, :] * params
+    else:
+      prefill_cache = padded_tokens[None, :]
 
     # Create a dummy first generated token.
     first_generated_token = (prefill_cache.sum(axis=-1).astype(jnp.int32))[
         :, jnp.newaxis
     ]
 
-    prefix = Prefix(
-        logits=jax.random.normal(self._prng_key, (1, self.vocab_size)),
-        cache=prefill_cache,
-        next_pos=jnp.full((1, 1), true_length, dtype=jnp.int32),
-        num_generated_tokens=jnp.zeros((1, 1), dtype=jnp.int32),
-        first_token=first_generated_token,
-    )
+    if not self._use_chunked_prefill:
+      prefix = Prefix(
+          logits=jax.random.normal(self._prng_key, (1, self.vocab_size)),
+          cache=prefill_cache,
+          next_pos=jnp.full((1, 1), true_length, dtype=jnp.int32),
+          num_generated_tokens=jnp.zeros((1, 1), dtype=jnp.int32),
+          first_token=first_generated_token,
+      )
+    else:
+      prefix = {
+          "logits": jax.random.normal(self._prng_key, (1, self.vocab_size)),
+          "cache": prefill_cache,
+          "next_pos": jnp.full((1, 1), true_length, dtype=jnp.int32),
+          "generated_tokens": jnp.zeros((1, 1), dtype=jnp.int32),
+          "tokens": first_generated_token,
+          "first_token": first_generated_token,
+      }
 
     speculations = first_generated_token.shape[1]
     result_tokens = engine_api.ResultTokens(
@@ -158,6 +189,68 @@ class TestEngine(engine_api.Engine):
         # And lengths is rank 1.
         length_idx=(2 * speculations, 2 * speculations + 1),
         samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
+    )
+    return (prefix, result_tokens)
+
+  @functools.partial(
+      jax.jit, static_argnums=(0,), static_argnames=("num_samples",)
+  )
+  def prefill_multisampling(
+      self,
+      *,
+      params: Params,
+      existing_prefix: Optional[jax.Array] = None,
+      padded_tokens: jax.Array,
+      true_length: int,
+      sampler: Optional[Callable[[Any], Any]] = None,  # pylint: disable=unused-argument
+      rng: Optional[engine_api.PRNGKeyType] = None,
+      num_samples: int = 1,
+  ) -> Tuple[Prefix, engine_api.ResultTokens]:
+    """Computes a kv-cache for a new generate request.
+
+    With multi-sampling, the engine will generate multiple first tokens in the
+    prefilling stage. The number of tokens is specified by num_samples.
+    """
+    if existing_prefix is not None:
+      raise NotImplementedError
+    assert padded_tokens.ndim == 1
+
+    # Generate dummy prefill cache content
+    prefill_cache = padded_tokens[None, :] * params
+
+    # Create dummy first generated tokens.
+    first_generated_tokens = []
+    for _ in range(num_samples):
+      first_generated_token = (prefill_cache.sum(axis=-1).astype(jnp.int32))[
+          :, jnp.newaxis
+      ]
+      first_generated_tokens.append(first_generated_token)
+    first_generated_tokens = jnp.concatenate(first_generated_tokens, axis=0)
+
+    prefix = Prefix(
+        logits=jax.random.normal(self._prng_key, (1, self.vocab_size)),
+        cache=prefill_cache,
+        next_pos=jnp.full((1, 1), true_length, dtype=jnp.int32),
+        num_generated_tokens=jnp.zeros((num_samples, 1), dtype=jnp.int32),
+        first_token=first_generated_tokens,
+    )
+
+    speculations = first_generated_token.shape[1]
+    result_tokens = engine_api.ResultTokens(
+        data=jnp.concatenate(
+            (
+                first_generated_tokens,
+                jnp.ones_like(first_generated_tokens),
+                jnp.ones_like(first_generated_tokens),
+            ),
+            axis=-1,
+        ),
+        tokens_idx=(0, speculations),
+        # Validity occupies the same amount of space, but next in line.
+        valid_idx=(speculations, 2 * speculations),
+        # And lengths is rank 1.
+        length_idx=(2 * speculations, 2 * speculations + 1),
+        samples_per_slot=num_samples,
     )
     return (prefix, result_tokens)
 
@@ -249,17 +342,27 @@ class TestEngine(engine_api.Engine):
         samples_per_slot=self.generate_cache_batch // self.prefill_cache_batch,
     )
 
-  @functools.partial(jax.jit, static_argnums=(0,), donate_argnums=(2,))
+  @functools.partial(
+      jax.jit,
+      static_argnums=(0,),
+      donate_argnums=(2,),
+      static_argnames=("request_id",),
+  )
   def insert(
       self,
-      prefix: Prefix,
+      prefix: Any,
       decode_state: DecodeState,
       slot: int,
+      request_id: Optional[uuid.UUID] = None,
   ) -> DecodeState:
     """Adds `prefix` into `decode_state` at `slot`."""
-    prefill_cache = prefix.cache
+    if not self._use_chunked_prefill:
+      prefill_cache = prefix.cache
+    else:
+      prefill_cache = prefix["cache"]
+
     prefill_cache = jax.lax.dynamic_update_slice_in_dim(
-        decode_state.prefill_cache, prefill_cache, slot, axis=0
+        decode_state.prefill_cache, prefill_cache * 1.0, slot, axis=0
     )
     generate_cache = jax.lax.dynamic_update_slice_in_dim(
         decode_state.generate_cache,
@@ -274,12 +377,60 @@ class TestEngine(engine_api.Engine):
         slot * samples_per_slot,
         axis=0,
     )
+    if not self._use_chunked_prefill:
+      first_token = prefix.first_token
+    else:
+      first_token = prefix["first_token"]
     generate_tokens = jax.lax.dynamic_update_slice_in_dim(
         decode_state.generate_tokens,
-        prefix.first_token,
+        first_token,
         slot * samples_per_slot,
         axis=0,
     )
+    return decode_state.replace(
+        prefill_cache=prefill_cache,
+        generate_cache=generate_cache,
+        generate_lengths=generate_lengths,
+        generate_tokens=generate_tokens,
+    )
+
+  @functools.partial(jax.jit, static_argnums=(0,), donate_argnums=(2,))
+  def bulk_insert(
+      self,
+      prefix: Prefix,
+      decode_state: DecodeState,
+      slots: list[int],
+  ) -> DecodeState:
+    """Insert a single computed prefill cache into multiple slots in
+    KV cache.
+    """
+    prefill_cache = decode_state.prefill_cache
+    generate_cache = decode_state.generate_cache
+    generate_lengths = decode_state.generate_lengths
+    generate_tokens = decode_state.generate_tokens
+    for slot in slots:
+      prefill_cache = jax.lax.dynamic_update_slice_in_dim(
+          prefill_cache, prefix.cache, slot, axis=0
+      )
+      generate_cache = jax.lax.dynamic_update_slice_in_dim(
+          generate_cache,
+          jnp.zeros((1, self.cache_length)),
+          slot,
+          axis=0,
+      )
+      samples_per_slot = 1
+      generate_lengths = jax.lax.dynamic_update_slice_in_dim(
+          generate_lengths,
+          jnp.ones((samples_per_slot), dtype=jnp.int32),
+          slot * samples_per_slot,
+          axis=0,
+      )
+      generate_tokens = jax.lax.dynamic_update_slice_in_dim(
+          generate_tokens,
+          prefix.first_token,
+          slot * samples_per_slot,
+          axis=0,
+      )
     return decode_state.replace(
         prefill_cache=prefill_cache,
         generate_cache=generate_cache,
@@ -343,3 +494,18 @@ class TestEngine(engine_api.Engine):
   def colocated_cpus(self) -> None:
     """CPU devices colocated with the engine's accelerators."""
     raise NotImplementedError
+
+  @property
+  def use_chunked_prefill(self) -> bool:
+    """Maximum prefill length."""
+    return self._use_chunked_prefill
+
+  @property
+  def chunk_size(self) -> bool:
+    """Maximum prefill length."""
+    return 2
+
+  @property
+  def prefill_chunk_size(self) -> int:
+    """Maximum prefill length."""
+    return 64

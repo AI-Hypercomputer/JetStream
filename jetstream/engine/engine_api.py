@@ -24,6 +24,7 @@ from typing import Any, Optional, Tuple, Union, Callable
 from flax import struct
 import jax
 import numpy as np
+import uuid
 
 from jetstream.engine import tokenizer_pb2
 from jetstream.engine import token_utils
@@ -42,6 +43,8 @@ DeviceTokens = Any
 CpuDevices = Any
 # Tokenkizer used by the engine
 Tokenizer = Any
+# PRNG key used for prefilling
+PRNGKeyType = Any
 
 
 @struct.dataclass
@@ -126,6 +129,21 @@ class ResultTokens(abc.ABC):
         ][:, 0],
     )
 
+  def get_result_at_slots(self, slots: tuple[int]) -> SlotData:
+    """Returns the tokens at given slots.
+
+    Args:
+      slots: a tuple of integers from [0, n) representing indices
+      into the batch.
+
+    """
+    return SlotData(
+        tokens=self.data[slots, self.tokens_idx[0] : self.tokens_idx[1]],
+        valid=self.data[slots, self.valid_idx[0] : self.valid_idx[1]],
+        # Only get a 1D representation here
+        lengths=self.data[slots, self.length_idx[0] : self.length_idx[1]][:, 0],
+    )
+
 
 class Engine(abc.ABC):
   """The computational core of the generative model server.
@@ -143,6 +161,7 @@ class Engine(abc.ABC):
       padded_tokens: jax.Array,
       true_length: int,
       sampler: Optional[Callable[[Any], Any]] = None,
+      request_id: Optional[uuid.UUID] = None,
   ) -> Tuple[Prefix, ResultTokens]:
     """Computes a kv-cache for a set of tokens conditional on existing cache.
 
@@ -152,6 +171,24 @@ class Engine(abc.ABC):
     kv_cache (typically) for the resulting text.
 
     If sampler is passed, then the engine should use it do sample next token.
+    """
+
+  @abc.abstractmethod
+  def prefill_multisampling(
+      self,
+      *,
+      params: Params,
+      existing_prefix: Optional[jax.Array] = None,
+      padded_tokens: jax.Array,
+      true_length: int,
+      sampler: Optional[Callable[[Any], Any]] = None,  # pylint: disable=unused-argument
+      rng: Optional[PRNGKeyType] = None,
+      num_samples: int = 1,
+  ) -> Tuple[Prefix, ResultTokens]:
+    """Computes a kv-cache for a new generate request.
+
+    With multi-sampling, the engine will generate multiple first tokens in the
+    prefilling stage. The number of tokens is specified by num_samples.
     """
 
   @abc.abstractmethod
@@ -181,6 +218,7 @@ class Engine(abc.ABC):
       prefix: Prefix,
       decode_state: DecodeState,
       slot: int,
+      request_id: Optional[uuid.UUID] = None,
   ) -> DecodeState:
     """Adds `new_request` into `caches` at 'slot'.
 
@@ -193,6 +231,17 @@ class Engine(abc.ABC):
     The slot may represent a tuple of positions (e.g. microbatch, pipeline stage
     and batch), but at the engine interface level all of these are exposed as
     a [0, n) range of slots and converted internally.
+    """
+
+  @abc.abstractmethod
+  def bulk_insert(
+      self,
+      prefix: Prefix,
+      decode_state: DecodeState,
+      slots: list[int],
+  ) -> DecodeState:
+    """Insert a single computed prefill cache into multiple slots in
+    KV cache.
     """
 
   def free_resource(
@@ -290,17 +339,56 @@ class JetStreamEngine(Engine):
     )
     return prefill_result, first_token
 
+  def prefill_multisampling(
+      self,
+      *,
+      params: Params,
+      existing_prefix: Optional[jax.Array] = None,
+      padded_tokens: jax.Array,
+      true_length: int,
+      sampler: Optional[Callable[[Any], Any]] = None,  # pylint: disable=unused-argument
+      rng: Optional[PRNGKeyType] = None,
+      num_samples: int = 1,
+  ) -> Tuple[Prefix, ResultTokens]:
+
+    prefill_result, first_token = self._downstream_engine.prefill_multisampling(
+        params=params,
+        existing_prefix=existing_prefix,
+        padded_tokens=padded_tokens,
+        true_length=true_length,
+        sampler=sampler,
+        rng=rng,
+        num_samples=num_samples,
+    )
+    return prefill_result, first_token
+
   def insert(
       self,
       prefix: Prefix,
       decode_state: DecodeState,
       slot: int,
+      request_id: Optional[uuid.UUID] = None,
   ) -> DecodeState:
 
     decode_state = self._downstream_engine.insert(
         prefix=prefix,
         decode_state=decode_state,
         slot=slot,
+        request_id=request_id,
+    )
+    return decode_state
+
+  def bulk_insert(
+      self,
+      prefix: Prefix,
+      decode_state: DecodeState,
+      slots: list[int],
+  ) -> DecodeState:
+
+    decode_state = self._downstream_engine.bulk_insert(
+        prefix=prefix,
+        decode_state=decode_state,
+        slots=slots,
     )
     return decode_state
 
@@ -352,3 +440,17 @@ class JetStreamEngine(Engine):
   @property
   def colocated_cpus(self) -> Union[list[CpuDevices], None]:
     return self._downstream_engine.colocated_cpus
+
+  @property
+  def use_chunked_prefill(self) -> bool:
+    return self._downstream_engine.use_chunked_prefill
+
+  @property
+  def chunk_size(self) -> bool:
+    """Maximum prefill length."""
+    return self._downstream_engine.prefill_chunk_size
+
+  @property
+  def prefill_chunk_size(self) -> int:
+    """Maximum prefill length."""
+    return self._downstream_engine.prefill_chunk_size

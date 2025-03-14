@@ -63,10 +63,9 @@ class PrefillRequest:
 
   id: str
   unpadded_token_ids: list[int]
-  page_indices: list[int]
   chunk_idx: int
   chunk_size: int
-
+  page_indices: list[int]
   device_token_ids: jax.Array
   device_positions: jax.Array
 

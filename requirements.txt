@@ -16,5 +16,8 @@ shortuuid
 fastapi
 uvicorn
 sympy
+nltk
+evaluate
+transformers
 # For profiling
 tensorboard-plugin-profile
