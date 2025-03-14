@@ -284,3 +284,15 @@ def special_handling(string):
     pass
 
   return string_set
+
+
+def post_processing_math_ans(answers):
+  output_set = set()
+  for ans in parse_set(answers):
+    matrix = latex_matrix_to_list(ans)
+    if matrix:
+      output_set.add(str(sympify_matrix(matrix)))
+    else:
+      ans = postprocess_math(ans)
+      output_set.update(ans)
+  return output_set

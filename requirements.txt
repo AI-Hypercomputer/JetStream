@@ -15,5 +15,6 @@ parameterized
 shortuuid
 fastapi
 uvicorn
+sympy
 # For profiling
 tensorboard-plugin-profile

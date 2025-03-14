@@ -18,10 +18,10 @@ import argparse
 import nltk
 import evaluate
 import json
+import re
 
 import numpy as np
-from sympy.parsing.latex import parse_latex
-from math_utils import *
+from math_utils import extract_numbers, post_processing_math_ans, sympify_set
 
 
 def extract_boxed_answers(text):
@@ -98,18 +98,6 @@ def postprocess_text(preds, targets):
   targets = ["\n".join(nltk.sent_tokenize(target)) for target in targets]
 
   return preds, targets
-
-
-def post_processing_math_ans(answers):
-  output_set = set()
-  for ans in parse_set(answers):
-    matrix = latex_matrix_to_list(ans)
-    if matrix:
-      output_set.add(str(sympify_matrix(matrix)))
-    else:
-      ans = postprocess_math(ans)
-      output_set.update(ans)
-  return output_set
 
 
 def eval_accuracy(request_outputs_dict, match_type):
