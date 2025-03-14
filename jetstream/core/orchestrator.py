@@ -103,6 +103,7 @@ from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
 
 log_level = os.getenv("LOG_LEVEL", "WARNING").upper()
+logger = log_config.get_logger(name=__name__, log_level=logging.WARN)
 
 logger = logging.getLogger("JetstreamLogger")
 logger.propagate = False
@@ -119,7 +120,6 @@ logger.addHandler(handler)
 
 def ThreadDebugLog(thread_name: str, message: str) -> None:
   logger.debug("[%s] %s", thread_name, message)
-
 
 @dataclasses.dataclass
 class ActiveRequestMetadata:
@@ -688,6 +688,11 @@ class Driver:
       # The prefill thread can just sleep until it has work to do.
       request = self._prefill_backlog.get(block=True)
 
+      if _slot_preallocation_enabled:
+        # Preallocate a slot
+        slot = my_slots.get(block=True)
+        request.slot_id = slot
+
       if request is None:
         break
       request.metadata.prefill_dequeue_time = time.perf_counter()
@@ -699,7 +704,7 @@ class Driver:
           f" is_bos: {is_bos}",
       )
       # Tokenize and padding the text or token input.
-      padded_tokens, true_length = self._process_prefill_content(
+      padded_tokens, true_length, _ = self._process_prefill_content(
           request,
           tokenizer,
           is_bos,
@@ -935,6 +940,12 @@ class Driver:
             thread_name,
             f"Got a new ActiveRequest from generate backlog {idx}.",
         )
+        if _slot_preallocation_enabled:
+          slot = new_request.slot_id
+          assert (
+              slot is not None and 0 <= slot < max_concurrent_decodes
+          ), f"Invalid slot value, got {slot}"
+
         new_request.metadata.generate_dequeue_time = time.perf_counter()
         if (
             self._metrics_collector
@@ -1330,6 +1341,7 @@ class Driver:
         else:
           for slot, request in my_live_requests.items():
             if request is not None:
+              assert request.slot_id == slot
               results, complete = token_utils.process_result_tokens(
                   tokenizer=tokenizer,
                   slots=slot,

@@ -31,6 +31,18 @@ from jetstream.engine import mock_utils
 from jetstream.engine import tokenizer_api
 from jetstream.engine import tokenizer_pb2
 from jetstream.external_tokenizers.llama3 import llama3_tokenizer
+import sys
+
+# Create a logger
+_LOG_LEVEL = logging.WARN
+logger = logging.getLogger("TokenUtils")
+logger.propagate = False
+logger.setLevel(_LOG_LEVEL)
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(_LOG_LEVEL)
+logger.addHandler(handler)
+
+
 
 # ResultToken class to store tokens ids.
 ResultTokens = Any
