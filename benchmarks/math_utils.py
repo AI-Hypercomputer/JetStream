@@ -28,16 +28,16 @@ def extract_numbers(string):
   sentence = string.split(" ")
   if len(sentence) > 1:
     for word in sentence:
-      if re.match("[+\-*/\d]+", word):
+      if re.match(r"[+\-*/\d]+", word):
         return word
   return string
 
 
 def fix_sqrt(string):
   # Fix sqrtxx -> sqrt{xx}
-  _string = re.sub(r"\\sqrt(-?[0-9.a-zA-Z]+)", r"\\sqrt{\1}", string)
-  _string = re.sub(r"\\sqrt\s+(\w+)$", r"\\sqrt{\1}", _string)
-  return _string
+  string = re.sub(r"\\sqrt(-?[0-9.a-zA-Z]+)", r"\\sqrt{\1}", string)
+  string = re.sub(r"\\sqrt\s+(\w+)$", r"\\sqrt{\1}", string)
+  return string
 
 
 def fix_a_slash_b(string):
@@ -51,17 +51,17 @@ def fix_a_slash_b(string):
       a = int(a)
     if "sqrt" not in b:
       b = int(b)
-    assert string == "{}/{}".format(a, b)
+    assert string == f"{a}/{b}"
     new_string = "\\frac{" + str(a) + "}{" + str(b) + "}"
     return new_string
-  except:
+  except Exception as e:
     return string
 
 
 def fix_tan(string):
-  _string = re.sub(r"\\tan(-?[0-9.a-zA-Z]+)", r"\\tan{\1}", string)
-  _string = re.sub(r"\\tan\s+(\w+)$", r"\\tan{\1}", _string)
-  return _string
+  string = re.sub(r"\\tan(-?[0-9.a-zA-Z]+)", r"\\tan{\1}", string)
+  string = re.sub(r"\\tan\s+(\w+)$", r"\\tan{\1}", string)
+  return string
 
 
 def fix_fracs(string):
@@ -144,7 +144,7 @@ def remove_commas_from_numbers(string):
 
 
 def convert_leading_zero(string):
-  # " 0." equivalent to " ." and "{0." equivalent to "{." Alternatively, add "0" if "." is the start of the string
+  # Add "0" if "." is the start of the string
   string = string.replace(" .", " 0.")
   string = string.replace("{.", "{0.")
   return string
@@ -152,10 +152,10 @@ def convert_leading_zero(string):
 
 def trim_general_unit(string):
   # Remove unit: miles, dollars if after is not none
-  _string = re.sub(r"\\text{.*?}$", "", string).strip()
-  if _string != "" and _string != string:
-    print("Warning: unit not removed: '{}' -> '{}'".format(string, _string))
-    string = _string
+  new_string = re.sub(r"\\text{.*?}$", "", string).strip()
+  if new_string != "" and new_string != string:
+    print(f"Warning: unit not removed: '{string}' -> '{new_string}'")
+    string = new_string
   string = re.sub(r"\{(c|m)?m\}(\^(2|3))?", "", string).strip()
   string = re.sub(r"miles(\^(2|3))?", "", string).strip()
   string = re.sub(r"p\.m\.$", "", string).strip()
@@ -236,10 +236,10 @@ def sympify_set(text_set):
       if "frac" in element:
         try:
           element = parse_latex(element)
-        except Exception as e:
+        except Exception:
           pass
       sympified_set.add(sympify(element).evalf())
-    except Exception as e:
+    except Exception:
       sympified_set.add(element)
   return sympified_set
 

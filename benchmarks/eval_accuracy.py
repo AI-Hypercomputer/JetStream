@@ -21,7 +21,7 @@ import json
 import re
 
 import numpy as np
-from math_utils import extract_numbers, post_processing_math_ans, sympify_set
+from benchmarks.math_utils import extract_numbers, post_processing_math_ans, sympify_set
 
 
 def extract_boxed_answers(text):
@@ -64,7 +64,7 @@ def extract_answer(pred_str, exhaust=False):
     tmp = pred_str.split("final answer is $", 1)[1]
     pred = [tmp.split("$. I hope", 1)[0].strip()]
   else:  # use the last number
-    pattern = "-?\d*\.?\d+"
+    pattern = r"-?\d*\.?\d+"
     ans = re.findall(pattern, pred_str.replace(",", ""))
     if len(ans) >= 1:
       ans = ans[-1]
@@ -73,7 +73,7 @@ def extract_answer(pred_str, exhaust=False):
     if ans:
       pred.append(ans)
   # multiple line
-  _pred = []
+  pred_list = []
   for ans in pred:
     ans = ans.replace("<|end_of_text|>", "")
     ans = ans.strip().split("\n")[0]
@@ -82,11 +82,11 @@ def extract_answer(pred_str, exhaust=False):
     ans = ans.rstrip("$")
     ans = ans.rstrip(".")
     ans = ans.rstrip("/")
-    _pred.append(ans)
+    pred_list.append(ans)
   if exhaust:
-    return _pred
+    return pred_list
   else:
-    return _pred[-1] if _pred else ""
+    return pred_list[-1] if pred_list else ""
 
 
 def postprocess_text(preds, targets):
