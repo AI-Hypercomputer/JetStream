@@ -15,7 +15,9 @@
 """Evaluate accuracy of JetStream online serving."""
 import re
 
-from sympy import sympify, Matrix
+from sympy import sympify
+from sympy.core.sympify import SympifyError
+from sympy.parsing.latex.errors import LaTeXParsingError
 from sympy.parsing.latex import parse_latex
 
 
@@ -54,7 +56,7 @@ def fix_a_slash_b(string):
     assert string == f"{a}/{b}"
     new_string = "\\frac{" + str(a) + "}{" + str(b) + "}"
     return new_string
-  except Exception as e:
+  except ValueError:
     return string
 
 
@@ -222,7 +224,7 @@ def latex_matrix_to_list(latex_string):
         cols = row.split("&")
         matrix_list.append([col.strip() for col in cols])
       return matrix_list
-    except Exception as e:
+    except ValueError as e:
       print(f"Error parsing LaTeX matrix: {e}")
       return None
 
@@ -236,10 +238,10 @@ def sympify_set(text_set):
       if "frac" in element:
         try:
           element = parse_latex(element)
-        except Exception:
+        except LaTeXParsingError:
           pass
       sympified_set.add(sympify(element).evalf())
-    except Exception:
+    except (SympifyError, AttributeError, TypeError):
       sympified_set.add(element)
   return sympified_set
 
@@ -280,7 +282,7 @@ def special_handling(string):
   # Convert LaTex format to sympy format
   try:
     string_set = parse_latex(string_set)
-  except Exception as e:
+  except (LaTeXParsingError, AttributeError):
     pass
 
   return string_set
