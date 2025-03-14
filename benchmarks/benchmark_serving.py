@@ -630,6 +630,9 @@ async def send_request(
 ) -> RequestFuncOutput:
   """Send the request to JetStream server."""
   # Tokenize on client side following MLPerf standard.
+  # print(f'----- wyzhangd: send request -----')
+  # print(input_request)
+
   token_ids = tokenizer.encode(input_request.prompt)
 
   # Send the request
@@ -650,6 +653,9 @@ async def send_request(
       out_token_cnt,
   )
   req_complete_cnt.increment()
+
+  out_str = tokenizer.decode(out_tokens)
+  print(f"wyzhangd: receive resp {out_str}")
 
   # Collect per-request output and metrics.
   output = RequestFuncOutput()

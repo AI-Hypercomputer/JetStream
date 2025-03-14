@@ -1,0 +1,15 @@
+export dataset_path=open_orca_gpt4_tokenized_llama.calibration_1000.pkl
+
+python3 benchmarks/benchmark_serving.py \
+  --tokenizer /mnt/github/maxtext/assets/tokenizer.llama2 \
+  --warmup-mode sampled \
+  --save-result \
+  --save-request-outputs \
+  --request-outputs-file-path outputs.json \
+  --request-rate 1 \
+  --num-prompts 10 \
+  --max-output-length 16 \
+  --dataset openorca \
+  --dataset-path ${dataset_path} \
+  --server=0.0.0.0
+
