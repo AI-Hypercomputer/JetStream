@@ -15,6 +15,7 @@ parameterized
 shortuuid
 fastapi
 uvicorn
+sympy
 nltk
 evaluate
 transformers

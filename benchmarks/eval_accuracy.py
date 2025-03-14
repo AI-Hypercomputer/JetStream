@@ -18,35 +18,75 @@ import argparse
 import nltk
 import evaluate
 import json
+import re
 
 import numpy as np
+from benchmarks.math_utils import extract_numbers, post_processing_math_ans, sympify_set
 
 
 def extract_boxed_answers(text):
   pieces = text.split("boxed{")
   if len(pieces) == 1:
-    return ""
+    return [""]
   piece = pieces[1]
-  n = 0
-  for i in range(len(piece)):
-    if piece[i] == "{":
-      n += 1
-    elif piece[i] == "}":
-      n -= 1
-      if n < 0:
-        if i + 1 < len(piece) and piece[i + 1] == "%":
-          return piece[: i + 1]
-        else:
-          return piece[:i]
-  return ""
+  ans = []
+  for piece in pieces[1:]:
+    n = 0
+    for i in range(len(piece)):
+      if piece[i] == "{":
+        n += 1
+      elif piece[i] == "}":
+        n -= 1
+        if n < 0:
+          if i + 1 < len(piece) and piece[i + 1] == "%":
+            ans.append(piece[: i + 1])
+            break
+          else:
+            ans.append(piece[:i])
+            break
+  if ans:
+    return ans
+  else:
+    return [""]
 
 
-def replace_space_answers(text):
-  return text.replace(" ", "")
-
-
-def special_handling(text):
-  return text.replace("\\dfrac", "\\frac")
+def extract_answer(pred_str, exhaust=False):
+  pred = []
+  if "boxed{" in pred_str:
+    pred = extract_boxed_answers(pred_str)
+  elif "Answer:" in pred_str:
+    matches = re.findall(r"Answer:[\*]*\s+(\S*.*)", pred_str)
+    if matches:
+      pred = [extract_numbers(matches[-1])]
+  elif "the answer is" in pred_str:
+    pred = [extract_numbers(pred_str.split("the answer is")[-1].strip())]
+  elif "final answer is $" in pred_str and "$. I hope" in pred_str:
+    tmp = pred_str.split("final answer is $", 1)[1]
+    pred = [tmp.split("$. I hope", 1)[0].strip()]
+  else:  # use the last number
+    pattern = r"-?\d*\.?\d+"
+    ans = re.findall(pattern, pred_str.replace(",", ""))
+    if len(ans) >= 1:
+      ans = ans[-1]
+    else:
+      ans = ""
+    if ans:
+      pred.append(ans)
+  # multiple line
+  pred_list = []
+  for ans in pred:
+    ans = ans.replace("<|end_of_text|>", "")
+    ans = ans.strip().split("\n")[0]
+    ans = ans.lstrip(":")
+    ans = ans.lstrip("$")
+    ans = ans.rstrip("$")
+    ans = ans.rstrip(".")
+    ans = ans.rstrip("/")
+    pred_list.append(ans)
+  if exhaust:
+    return pred_list
+  else:
+    return pred_list[-1] if pred_list else ""
 
 
 def postprocess_text(preds, targets):
@@ -71,11 +111,15 @@ def eval_accuracy(request_outputs_dict, match_type):
     correct_ans = 0
     wrong_ans = 0
     for p, t in zip(preds, targets):
-      ans = extract_boxed_answers(p)
-      ans = replace_space_answers(ans)
-      ans = special_handling(ans)
-      tt = replace_space_answers(t)
-      if tt == ans:
+
+      p = extract_answer(p)
+      ans_set = post_processing_math_ans(p)
+      sympified_ans_set = sympify_set(ans_set)
+
+      target_set = post_processing_math_ans(t)
+      sympified_target_set = sympify_set(target_set)
+
+      if sympified_target_set == sympified_ans_set:
         correct_ans += 1
         continue
       wrong_ans += 1
