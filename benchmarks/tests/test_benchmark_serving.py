@@ -27,6 +27,7 @@ class TestBenchmarkServing(unittest.IsolatedAsyncioTestCase):
   async def test_benchmark(self):
     api_url = "test_url"
     tokenizer = mock.MagicMock()
+    use_chat_template = False
     tokenizer.encode = mock.MagicMock(return_value=[1, 2, 3])
     tokenizer.decode = mock.MagicMock(return_value="test_decode")
     input_requests = [
@@ -78,6 +79,7 @@ class TestBenchmarkServing(unittest.IsolatedAsyncioTestCase):
       metrics, outputs = await benchmark_serving.benchmark(
           api_url,
           tokenizer,
+          use_chat_template,
           input_requests,
           request_rate,
           disable_tqdm,

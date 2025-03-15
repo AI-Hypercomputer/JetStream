@@ -208,6 +208,7 @@ def get_tokenizer(
     model_id: str,
     tokenizer_name: str,
     use_hf_tokenizer: bool,
+    access_token: str | None = None,
 ) -> Any:
   """Return a tokenizer or a tokenizer placholder."""
   if tokenizer_name == "test":
@@ -218,7 +219,7 @@ def get_tokenizer(
     # follow up instructions below to set up access token
     # https://huggingface.co/docs/transformers.js/en/guides/private
     print(f"Using HuggingFace tokenizer: {tokenizer_name}")
-    return AutoTokenizer.from_pretrained(tokenizer_name)
+    return AutoTokenizer.from_pretrained(tokenizer_name, token=access_token)
   elif model_id == "llama-3":
     # Llama 3 uses a tiktoken tokenizer.
     print(f"Using llama-3 tokenizer: {tokenizer_name}")
@@ -386,11 +387,9 @@ def load_math500_dataset(dataset_path: str) -> list[tuple[Any, Any]]:
 
 
 def tokenize_dataset(
-    dataset: list[tuple[Any, Any, Any]],
-    tokenizer: Any,
+    dataset: list[tuple[Any, Any, Any]], tokenizer: Any, use_chat_template: bool
 ) -> list[tuple[str, Any, str, int, int, int]]:
   tokenized_dataset = []
-
   for prompt, output, idx in dataset:
     if isinstance(output, tuple):
       output_len = len(tokenizer.encode(output[0]))
@@ -399,7 +398,12 @@ def tokenize_dataset(
       output_len = len(tokenizer.encode(output))
       output_tokens = output
 
-    prompt_tokens = tokenizer.encode(prompt)
+    if use_chat_template:
+      prompt_tokens = tokenizer.apply_chat_template(
+          [{"role": "user", "content": prompt}], add_generation_prompt=True
+      )
+    else:
+      prompt_tokens = tokenizer.encode(prompt)
 
     tokenized_data = (
         prompt,
@@ -470,6 +474,7 @@ def filter_dataset(
 def sample_requests(
     dataset: list[tuple[Any, Any]],
     tokenizer: Any,
+    use_chat_template: bool,
     num_requests: int,
     dataset_type: str,
     max_output_length: int = 0,
@@ -508,7 +513,9 @@ def sample_requests(
     sampled_data = dataset[i] + (dataset_indices[i],)
     sampled_dataset.append(sampled_data)
 
-  tokenized_dataset = tokenize_dataset(sampled_dataset, tokenizer)
+  tokenized_dataset = tokenize_dataset(
+      sampled_dataset, tokenizer, use_chat_template
+  )
 
   input_requests = filter_dataset(
       tokenized_dataset,
@@ -636,6 +643,7 @@ async def grpc_async_request(
 async def send_request(
     api_url: str,
     tokenizer: Any,
+    use_chat_template: bool,
     input_request: InputRequest,
     prefill_quota: AsyncCounter,
     active_req_quota: AsyncCounter,
@@ -645,7 +653,13 @@ async def send_request(
 ) -> RequestFuncOutput:
   """Send the request to JetStream server."""
   # Tokenize on client side following MLPerf standard.
-  token_ids = tokenizer.encode(input_request.prompt)
+  if use_chat_template:
+    token_ids = tokenizer.apply_chat_template(
+        [{"role": "user", "content": input_request.prompt}],
+        add_generation_prompt=True,
+    )
+  else:
+    token_ids = tokenizer.encode(input_request.prompt)
 
   # Send the request
   request = jetstream_pb2.DecodeRequest(
@@ -691,6 +705,7 @@ async def send_request(
 async def benchmark(
     api_url: str,
     tokenizer: Any,
+    use_chat_template: bool,
     input_requests: list[InputRequest],
     request_rate: float,
     disable_tqdm: bool,
@@ -734,6 +749,7 @@ async def benchmark(
             send_request(
                 api_url=api_url,
                 tokenizer=tokenizer,
+                use_chat_template=use_chat_template,
                 input_request=request,
                 prefill_quota=prefill_quota,
                 active_req_quota=active_req_quota,
@@ -890,6 +906,23 @@ def parse_args() -> argparse.Namespace:
       help=(
           "Whether to use tokenizer from HuggingFace. If so, set this flag"
           " to True, and provide name of the tokenizer in the tokenizer flag."
+      ),
+  )
+  parser.add_argument(
+      "--hf-access-token",
+      type=str,
+      default="",
+      help=(
+          "Access token used to load a tokenizer from an API (i.e. HuggingFace)"
+      ),
+  )
+  parser.add_argument(
+      "--use-chat-template",
+      type=str2bool,
+      default=False,
+      help=(
+          "Whether the tokenizer should be applying a chat template "
+          "(used for instruction-tuned models)."
       ),
   )
   parser.add_argument(
@@ -1051,13 +1084,16 @@ def main(args: argparse.Namespace):
   model_id = args.model
   tokenizer_id = args.tokenizer
   use_hf_tokenizer = args.use_hf_tokenizer
+  hf_access_token = args.hf_access_token
+  use_chat_template = args.use_chat_template
 
   prefill_quota = AsyncCounter(init_value=3)
   active_req_quota = AsyncCounter(init_value=450)
 
   api_url = f"{args.server}:{args.port}"
-
-  tokenizer = get_tokenizer(model_id, tokenizer_id, use_hf_tokenizer)
+  tokenizer = get_tokenizer(
+      model_id, tokenizer_id, use_hf_tokenizer, hf_access_token
+  )
   if tokenizer == "test" or args.dataset == "test":
     input_requests = mock_requests(
         args.total_mock_requests
@@ -1094,6 +1130,7 @@ def main(args: argparse.Namespace):
     input_requests = sample_requests(
         dataset=dataset,
         tokenizer=tokenizer,
+        use_chat_template=use_chat_template,
         num_requests=args.num_prompts,
         dataset_type=args.dataset,
         max_output_length=args.max_output_length,
@@ -1116,6 +1153,7 @@ def main(args: argparse.Namespace):
         benchmark(
             api_url=api_url,
             tokenizer=tokenizer,
+            use_chat_template=use_chat_template,
             input_requests=warmup_requests,
             request_rate=args.request_rate,
             disable_tqdm=args.disable_tqdm,
@@ -1134,6 +1172,7 @@ def main(args: argparse.Namespace):
       benchmark(
           api_url=api_url,
           tokenizer=tokenizer,
+          use_chat_template=use_chat_template,
           input_requests=input_requests,
           request_rate=args.request_rate,
           disable_tqdm=args.disable_tqdm,
