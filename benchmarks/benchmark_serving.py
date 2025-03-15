@@ -279,6 +279,21 @@ def load_openorca_dataset_pkl(
   return [(prompt, output) for prompt, output in zip(prompts, outputs)]
 
 
+def load_longcontext_dataset_pkl(
+    dataset_path: str,
+) -> list[tuple[Any, Any]]:
+  assert os.path.isfile(dataset_path)
+
+  # read pickle file
+  data = pandas.read_pickle(dataset_path)
+
+  samples = []
+  for _, row in data.iterrows():
+    samples.append((row["input"], row["ref_output"]))
+
+  return samples
+
+
 def load_mmlu_dataset_csv(dataset_path: str) -> tuple[Any, dict[str, str]]:
   assert dataset_path != ""
   dataset = []
@@ -837,7 +852,14 @@ def parse_args() -> argparse.Namespace:
       "--dataset",
       type=str,
       default="test",
-      choices=["test", "sharegpt", "openorca", "mmlu", "math500"],
+      choices=[
+          "test",
+          "sharegpt",
+          "openorca",
+          "mmlu",
+          "math500",
+          "longcontext",
+      ],
       help="The dataset name.",
   )
   parser.add_argument("--dataset-path", type=str, help="Path to the dataset.")
@@ -1055,6 +1077,10 @@ def main(args: argparse.Namespace):
       )
     elif args.dataset == "math500":
       dataset = load_math500_dataset(
+          args.dataset_path,
+      )
+    elif args.dataset == "longcontext":
+      dataset = load_longcontext_dataset_pkl(
           args.dataset_path,
       )
     else:

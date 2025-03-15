@@ -501,11 +501,6 @@ class TestEngine(engine_api.Engine):
     return self._use_chunked_prefill
 
   @property
-  def chunk_size(self) -> bool:
-    """Maximum prefill length."""
-    return 2
-
-  @property
   def prefill_chunk_size(self) -> int:
     """Maximum prefill length."""
     return 64
