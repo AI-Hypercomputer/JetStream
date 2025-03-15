@@ -87,11 +87,12 @@ class AdapterTensorStore:
   model to server multiple different LoRA adapters in a single batch.
 
   Args:
+    engine: Engine corresponding to the adapter tensorstore
+    adapters_dir_path: GCS path storing all the adapters
     hbm_memory_budget (int): The maximum amount of HBM (in bytes) to use for
         storing LoRA adapter weights.
     cpu_memory_budget (int): The maximum amount of CPU RAM (in bytes) to use
         for storing LoRA adapter weights.
-    total_slots: Number of generate slots. This is also equals to max_concurrent_decodes.
   """
 
   def __init__(self,
@@ -111,7 +112,7 @@ class AdapterTensorStore:
     self.current_cpu_usage: int = 0
     self.running_requests: int = 0    # Number of async tasks which are in "loading" state
     self.decoding_adapters_cache: Dict[str, Any] = {}
-    self.total_slots = total_slots
+    self.total_slots = engine.max_concurrent_decodes
     self.lock = asyncio.Lock()        # Use an asyncio Lock for thread safety
 
 
