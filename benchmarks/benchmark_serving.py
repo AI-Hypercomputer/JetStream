@@ -208,6 +208,7 @@ def get_tokenizer(
     model_id: str,
     tokenizer_name: str,
     use_hf_tokenizer: bool,
+    access_token: str = None,
 ) -> Any:
   """Return a tokenizer or a tokenizer placholder."""
   if tokenizer_name == "test":
@@ -218,7 +219,7 @@ def get_tokenizer(
     # follow up instructions below to set up access token
     # https://huggingface.co/docs/transformers.js/en/guides/private
     print(f"Using HuggingFace tokenizer: {tokenizer_name}")
-    return AutoTokenizer.from_pretrained(tokenizer_name)
+    return AutoTokenizer.from_pretrained(tokenizer_name, token=access_token)
   elif model_id == "llama-3":
     # Llama 3 uses a tiktoken tokenizer.
     print(f"Using llama-3 tokenizer: {tokenizer_name}")
@@ -871,6 +872,14 @@ def parse_args() -> argparse.Namespace:
       ),
   )
   parser.add_argument(
+    "--tokenizer-access-token",
+    type=str,
+    default="",
+    help=(
+      "Access token used to load a tokenizer from an API (i.e. HuggingFace)"
+    )
+  )
+  parser.add_argument(
       "--num-prompts",
       type=int,
       default=1000,
@@ -1029,13 +1038,15 @@ def main(args: argparse.Namespace):
   model_id = args.model
   tokenizer_id = args.tokenizer
   use_hf_tokenizer = args.use_hf_tokenizer
+  tokenizer_access_token = args.tokenizer_access_token
 
   prefill_quota = AsyncCounter(init_value=3)
   active_req_quota = AsyncCounter(init_value=450)
 
   api_url = f"{args.server}:{args.port}"
 
-  tokenizer = get_tokenizer(model_id, tokenizer_id, use_hf_tokenizer)
+  tokenizer = get_tokenizer(model_id, tokenizer_id, use_hf_tokenizer,
+                            tokenizer_access_token)
   if tokenizer == "test" or args.dataset == "test":
     input_requests = mock_requests(
         args.total_mock_requests

@@ -18,6 +18,7 @@ from bisect import bisect_left
 import logging
 from typing import Any, Iterable, List, Optional, Tuple, Union
 
+from transformers import AutoTokenizer
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -200,7 +201,7 @@ def pad_tokens(
     tokens: Tokens.
     bos_id: Bos ID.
     pad_id: Pad ID.
-    is_bos: Add a beginning of sequence token if this is ture.
+    is_bos: Add a beginning of sequence token if this is true.
     prefill_lengths: Buckets to pad the sequence to for static compilation.
     max_prefill_length: Maximum bucket to use.
     jax_padding: convert to JAX padded tokens if True.
@@ -506,3 +507,62 @@ class TikToken(tokenizer_api.Tokenizer):
   def bos_id(self) -> int:
     """ID of the BOS token."""
     return self.tokenizer.bos_id
+
+class HuggingFaceTokenizer(tokenizer_api.Tokenizer):
+  # Please create a similar class for HuggingFace, using TikToken class for inspiration.
+  """Tokenizer to convert strings to token ids and vice-versa."""
+
+  def __init__(self, metadata: tokenizer_pb2.TokenizerParameters):
+    self.tokenizer = AutoTokenizer.from_pretrained(metadata.path, token=metadata.access_token)
+
+  def encode(
+      self, s: str, **kwargs
+  ) -> Tuple[Union[jax.Array, np.ndarray], int]:
+    """Tokenize a string.
+    Args:
+        s: String to tokenize.
+        **kwargs: Additional keyword arguments
+    Returns:
+        tokens: Tokenized into integers.
+        true_length: Actual length of the non-padded sequence
+          if padding is used.
+    """
+    is_bos = kwargs.pop("is_bos", True)
+    prefill_lengths = kwargs.pop("prefill_lengths", None)
+    max_prefill_length = kwargs.pop("max_prefill_length", None)
+    jax_padding = kwargs.pop("jax_padding", True)
+
+    tokens = self.tokenizer(s, add_special_tokens=False, return_tensors="np")["input_ids"].squeeze()
+
+    tokens, true_length = pad_tokens(
+        tokens,
+        self.bos_id,
+        self.pad_id,
+        is_bos=is_bos,
+        prefill_lengths=prefill_lengths,
+        max_prefill_length=max_prefill_length,
+        jax_padding=jax_padding,
+    )
+    return tokens, true_length
+
+  def decode(self, token_ids: list[int]) -> str:
+    """Processess input token ids to generate a string.
+    Args:
+      token_ids: List of token ids.
+    Returns:
+      str: String generated from the token ids.
+    """
+    return self.tokenizer.decode(token_ids, skip_special_tokens=True)
+
+  @property
+  def pad_id(self) -> int:
+    """ID of the pad token."""
+    return self.tokenizer.pad_token_id
+
+  @property
+  def eos_id(self) -> int:
+    return self.tokenizer.eos_token_id
+
+  @property
+  def bos_id(self) -> int:
+    return self.tokenizer.bos_token_id

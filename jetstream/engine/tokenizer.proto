@@ -20,5 +20,13 @@ option java_multiple_files = true;
 
 message TokenizerParameters {
   string path = 1;
-  int32 extra_ids = 2;
+  TokenizerType tokenizer_type = 2;
+  string access_token = 3;
+  int32 extra_ids = 4;
+}
+
+enum TokenizerType {
+  tiktoken = 0;
+  sentencepiece = 1;
+  huggingface = 2;
 }
