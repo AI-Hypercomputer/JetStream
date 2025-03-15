@@ -108,9 +108,9 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
         max_tokens=3,
     )
     iterator = client.Decode(request)
-    # chr of [266, 332, 415].
-    expected_text = ["B", "R", "g", ""]
-    expected_token_ids = [66, 82, 103, None]
+    # chr of [135, 168, 210].
+    expected_text = ["\x87", "¨", "Ò", ""]
+    expected_token_ids = [135, 168, 210, None]
     counter = 0
     async for resp in iterator:
       output_text = resp.stream_content.samples[0].text
