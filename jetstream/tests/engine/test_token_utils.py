@@ -22,8 +22,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from sentencepiece import SentencePieceProcessor
+import subprocess
 from jetstream.engine import tokenizer_pb2, token_utils
 from jetstream.engine import engine_api
+from transformers import AutoTokenizer
 
 
 class SPTokenizer:
@@ -73,6 +75,23 @@ class TokenUtilsTest(unittest.TestCase):
     assert os.path.isfile(
         self.tokenizer_path
     ), f"file not found tokenizer_path: {self.tokenizer_path}"
+
+  def setup_hftoken(self):
+    
+    # Download the tokenizer.
+    remote_path = "gs://maxtext-dataset/hf/deepseek_v2_lite_chat"
+    current_dir = os.path.dirname(__file__)
+    tokenizer_dir = os.path.join(current_dir, "external_tokenizers")
+    command = ["gsutil", "cp", "-r", remote_path, tokenizer_dir]
+    exit_code = subprocess.call(command)
+    if exit_code != 0:
+        raise ValueError(f"{command} failed with exit code: {exit_code}")
+
+    self.tokenizer_path = os.path.join(tokenizer_dir, "deepseek_v2_lite_chat")
+    print(f"model_path: {self.tokenizer_path}")
+    assert os.path.exists(
+        self.tokenizer_path
+    ), f"did not find tokenizer_path: {self.tokenizer_path}"
 
   def test_decode_vs_piece(self):
     self.setup_sentencepiece()
@@ -641,3 +660,53 @@ class TokenUtilsTest(unittest.TestCase):
         )
         == "你好�\n�hello"
     )
+
+  def test_hf_decode(self):
+    self.setup_hftoken()
+    metadata = tokenizer_pb2.TokenizerParameters(path=self.tokenizer_path)
+    tokenizer = token_utils.HuggingFaceTokenizer(metadata)
+    # Check that special bos & padding tokens are not emitted.
+    tokens = [100000, 82253, 10728,   945,   274,  2203,     0]
+    expected_hf_output = 'Lets tokenize an example!'
+    hf_output = tokenizer.decode(tokens)
+    self.assertEqual(hf_output, expected_hf_output)
+
+    # Write me unit tests for the HuggingFaceTokenizer to check the encode functionality. I want complete test coverage of HuggingFaceTokenizer.encode(). Use "Lets tokenize an example!" as the input data.
+  def test_hf_encode_use_chat_template(self):
+    self.setup_hftoken()
+    metadata = tokenizer_pb2.TokenizerParameters(path=self.tokenizer_path, use_chat_template=True)
+    tokenizer = token_utils.HuggingFaceTokenizer(metadata)
+    s = "Lets tokenize an example!"
+    tokens, true_length = tokenizer.encode(s)
+    expected_padded_tokens = np.array(
+        [100000,   5726,     25,  63923,  10728,    945,    274,   2203,
+            0,    185,    185,  77398,     25]
+    )
+    expected_true_length = 13
+    self.assertTrue(np.array_equal(tokens[:true_length], expected_padded_tokens))
+    self.assertEqual(true_length, expected_true_length)
+    self.assertTrue(np.all(tokens[true_length:] == tokenizer.pad_id))
+
+  def test_hf_encode_bos(self):
+    self.setup_hftoken()
+    metadata = tokenizer_pb2.TokenizerParameters(path=self.tokenizer_path)
+    tokenizer = token_utils.HuggingFaceTokenizer(metadata)
+    s = "Lets tokenize an example!"
+    tokens, true_length = tokenizer.encode(s, is_bos=True)
+    expected_padded_tokens = np.array(
+        [100000, 82253, 10728,   945,   274,  2203,     0])
+    self.assertTrue(np.array_equal(tokens[:true_length], expected_padded_tokens))
+    self.assertEqual(true_length, 7)
+    self.assertTrue(np.all(tokens[true_length:] == tokenizer.pad_id))
+    
+  def test_hf_encode_no_bos(self):
+    self.setup_hftoken()
+    metadata = tokenizer_pb2.TokenizerParameters(path=self.tokenizer_path)
+    tokenizer = token_utils.HuggingFaceTokenizer(metadata)
+    s = "Lets tokenize an example!"
+    tokens, true_length = tokenizer.encode(s, is_bos=False)
+    expected_padded_tokens = np.array(
+        [82253, 10728,   945,   274,  2203,     0])
+    self.assertTrue(np.array_equal(tokens[:true_length], expected_padded_tokens))
+    self.assertEqual(true_length, 6)
+    self.assertTrue(np.all(tokens[true_length:] == tokenizer.pad_id))
