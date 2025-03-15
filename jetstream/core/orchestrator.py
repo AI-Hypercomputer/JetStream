@@ -553,7 +553,8 @@ class Driver:
     if self._metrics_collector:
       for idx, engine in enumerate(self._generate_engines):
         max_loras += engine.max_concurrent_decodes
-        if self._generate_adapterstore and idx < len(self._generate_adapterstore):
+        if (self._generate_adapterstore and
+            idx < len(self._generate_adapterstore)):
           adapters_list_str += asyncio.run(
               self._generate_adapterstore[idx].get_hbm_loaded_adapters())
 
@@ -899,6 +900,10 @@ class Driver:
     # Check if there are any free my_slots. We don't want to block here since
     # we can still generate if we can't insert. We do this in a while loop to
     # insert as many sequences as possible.
+    adapter_tensorstore = None
+    if self._generate_adapterstore:
+      adapter_tensorstore = self._generate_adapterstore[idx]
+
     while True:
       my_slots_size = my_slots.qsize()
 
@@ -969,6 +974,11 @@ class Driver:
           slot=slot,
           #request_id=new_request.request_id,
       )
+
+      if adapter_tensorstore:
+        adapter_tensorstore.insert_adapter_in_cache(
+            new_request.adapter_id, slot)
+
       ThreadDebugLog(
           thread_name,
           f"Generate slice {idx} filled slot {slot} at step "
@@ -1108,6 +1118,10 @@ class Driver:
     my_generate_backlog = self._generate_backlogs[idx]
     my_detokenize_backlog = self._detokenize_backlogs[idx]
 
+    adapter_tensorstore = None
+    if self._generate_adapterstore and idx < len(self._generate_adapterstore):
+      adapter_tensorstore = self._generate_adapterstore[idx]
+
     # Keep track of what step tokens were generated at.
     generate_timestep = 0
     # State to store things like running kv cache in.
@@ -1173,9 +1187,14 @@ class Driver:
           my_slots.qsize() < max_concurrent_decodes
       ), "At this point we must have some requests inserted into the slots."
 
+      decoding_adapters_cache = None
+
+      if adapter_tensorstore:
+        decoding_adapters_cache = adapter_tensorstore.decoding_adapters_cache
+
       # Now we actually take a generate step on requests in the slots.
       decode_state, sampled_tokens = generate_engine.generate(
-          generate_params, decode_state
+          generate_params, decode_state, decoding_adapters_cache
       )
       sampled_tokens.copy_to_host_async()
       # Respond to detokenization backpressure.
