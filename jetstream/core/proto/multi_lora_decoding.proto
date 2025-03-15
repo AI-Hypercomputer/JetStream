@@ -1,0 +1,67 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// NOTICE: run `make generate-protos` if making changes to this file
+
+syntax = "proto3";
+
+service v1 {
+  // Lists all the currently loaded LoRA adapters
+  rpc models (ListAdaptersRequest) returns (ListAdaptersResponse) {}
+
+  // Loads a new LoRA adapter.
+  rpc load_lora_adapter (LoadAdapterRequest) returns (LoadAdapterResponse) {}
+
+  // Unloads a LoRA adapter
+  rpc unload_lora_adapter (UnloadAdapterRequest) returns (UnloadAdapterResponse) {}
+}
+
+
+message ListAdaptersRequest {}
+
+message ListAdaptersResponse {
+  bool success = 1;				// True if successful, False otherwise
+  string error_message = 2;			// Error message if listing the adapters	
+  repeated AdapterInfo adapter_infos = 3;	// List of information about loaded adapters.
+}
+
+// Information about a single loaded LoRA adapter
+message AdapterInfo {
+  string adapter_id = 1;
+  int64 loading_cost = 2;
+  int64 size_hbm = 3;
+  int64 size_cpu = 4;
+  float last_accessed = 5;
+  string status = 6;
+}
+
+message LoadAdapterRequest {
+  string adapter_id = 1;			// Unique ID/name for the adapter
+  string adapter_path = 2;		// Path to the LoRA adapter (config & weights)
+}
+
+message LoadAdapterResponse {
+  bool success = 1;				// True if successful, false otherwise
+  string error_message = 2;			// Error message if loading failed
+}
+
+message UnloadAdapterRequest {
+  string adapter_id = 1;			// ID/Name of the adapter to unload
+}
+
+message UnloadAdapterResponse {
+  bool success = 1;				// True if successful, false otherwise
+  string error_message = 2;			// Error message if unloading failed
+}
+
