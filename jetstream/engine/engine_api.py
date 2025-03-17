@@ -446,11 +446,6 @@ class JetStreamEngine(Engine):
     return self._downstream_engine.use_chunked_prefill
 
   @property
-  def chunk_size(self) -> bool:
-    """Maximum prefill length."""
-    return self._downstream_engine.prefill_chunk_size
-
-  @property
   def prefill_chunk_size(self) -> int:
     """Maximum prefill length."""
     return self._downstream_engine.prefill_chunk_size

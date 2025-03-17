@@ -628,7 +628,7 @@ class Driver:
                   is_bos,
                   prefill_engine.max_prefill_length,
                   prefill_engine.use_chunked_prefill,
-                  prefill_engine.chunk_size,
+                  prefill_engine.prefill_chunk_size,
               )
           )
           prefill_result = None
@@ -649,7 +649,7 @@ class Driver:
             t_l_array = jnp.expand_dims(
                 jnp.arange(
                     0,
-                    chunk_num * prefill_engine.chunk_size
+                    chunk_num * prefill_engine.prefill_chunk_size
                     + true_lengths_of_chunks[chunk_num],
                 ),
                 1,
