@@ -247,14 +247,14 @@ class JetstreamMetricsCollector:
 
     self._num_requests_waiting = Gauge(
         name="num_requests_waiting",
-        documentation="Number of requests waiting to be processed for inference.",
+        documentation="Requests count waiting to be processed for inference.",
         labelnames=universal_label_names,
         multiprocess_mode="sum",
     )
 
     self._kv_cache_utilization = Gauge(
         name="kv_cache_utilization_perc",
-        documentation="kv-cache utilization % by the requests under processing.",
+        documentation="kv-cache utilization by the requests under processing.",
         labelnames=universal_label_names,
         multiprocess_mode="sum",
     )

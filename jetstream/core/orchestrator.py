@@ -553,7 +553,8 @@ class Driver:
     if self._metrics_collector:
       for idx, engine in enumerate(self._generate_engines):
         max_loras += engine.max_concurrent_decodes
-        if self._generate_adapterstore and idx < len(self._generate_adapterstore):
+        if (self._generate_adapterstore and
+            idx < len(self._generate_adapterstore)):
           adapters_list_str += asyncio.run(
               self._generate_adapterstore[idx].get_hbm_loaded_adapters())
 
