@@ -245,29 +245,29 @@ class JetstreamMetricsCollector:
         ],
     )
 
-  _num_requests_waiting = Gauge(
-      name="num_requests_waiting",
-      documentation="Number of requests waiting to be processed for inference.",
-      labelnames=universal_label_names,
-      multiprocess_mode="sum",
-  )
+    self._num_requests_waiting = Gauge(
+        name="num_requests_waiting",
+        documentation="Number of requests waiting to be processed for inference.",
+        labelnames=universal_label_names,
+        multiprocess_mode="sum",
+    )
 
-  _kv_cache_utilization = Gauge(
-      name="kv_cache_utilization_perc",
-      documentation="kv-cache utilization % by the requests under processing.",
-      labelnames=universal_label_names,
-      multiprocess_mode="sum",
-  )
+    self._kv_cache_utilization = Gauge(
+        name="kv_cache_utilization_perc",
+        documentation="kv-cache utilization % by the requests under processing.",
+        labelnames=universal_label_names,
+        multiprocess_mode="sum",
+    )
 
-  _lora_request_info = Gauge(
-      name="lora_request_info",
-      documentation="LoRA adapters loaded into HBM for processing requests.",
-      labelnames=universal_label_names + [
-        "max_lora",
-        "running_lora_adapters",
-      ],
-      multiprocess_mode="livemostrecent",
-  )
+    self._lora_request_info = Gauge(
+        name="lora_request_info",
+        documentation="LoRA adapters loaded into HBM for processing requests.",
+        labelnames=universal_label_names + [
+          "max_lora",
+          "running_lora_adapters",
+        ],
+        multiprocess_mode="livemostrecent",
+    )
 
   def get_prefill_backlog_metric(self):
     return self._prefill_backlog.labels(**self.universal_labels)
