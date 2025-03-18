@@ -157,11 +157,17 @@ class Engine(abc.ABC):
       self,
       *,
       params: Params,
-      existing_prefix: Optional[Prefix] = None,
+      existing_prefix: Optional[jax.Array] = None,
       padded_tokens: jax.Array,
       true_length: int,
-      sampler: Optional[Callable[[Any], Any]] = None,
-      request_id: Optional[uuid.UUID] = None,
+      sampler: Optional[Callable[[Any], Any]] = None,  # pylint: disable=unused-argument
+      rng: Optional[PRNGKeyType] = None,
+      complete_prompt_true_length: Optional[int] = None,
+      complete_padded_prompt: Optional[jax.Array] = None,
+      positions: Optional[jax.Array] = None,
+      previous_chunk: Optional[Any] = None,
+      request_id: Optional[uuid.UUID] = None,  # pylint: disable=unused-argument
+      slot: Optional[int] = None,
   ) -> Tuple[Prefix, ResultTokens]:
     """Computes a kv-cache for a set of tokens conditional on existing cache.
 
