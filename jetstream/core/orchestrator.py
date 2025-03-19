@@ -696,7 +696,14 @@ class Driver:
       # full.
       if _allocate_slot_for_prefill:
         assert request.slot_id is not None # Just to make slot is preallocated.
-      my_transfer_backlog.put(request, block=True)
+        assert self._interleaved_mode
+        # To avoid race condition in allocate_slot_for_prefill mode, we move request
+        # to generate backlog directly. In this way, the entire server is either in 
+        # prefill thread or prefill has at least finished something and added to 
+        # generate backlog, so empty batch would not occur.
+        my_generate_backlog.put(request, block=True)
+      else:
+        my_transfer_backlog.put(request, block=True)
       ThreadDebugLog(
           thread_name,
           f"Placed request on transfer backlog {idx}. "
@@ -797,11 +804,8 @@ class Driver:
     # we can still generate if we can't insert. We do this in a while loop to
     # insert as many sequences as possible.
     while True:
-      block = False
       slot = None
-      if _allocate_slot_for_prefill:
-        ThreadDebugLog(thread_name, "Use preallocated slot.")
-      else:
+      if not _allocate_slot_for_prefill:
         my_slots_size = my_slots.qsize()
 
         try:
@@ -818,7 +822,9 @@ class Driver:
         # prefilled request to insert. We add timeout for the block to handle
         # the case when the prefill backlog is cancelled and we end up with no
         # more useful prefill work to do.
-        block = my_slots_size == max_concurrent_decodes
+      else:
+        ThreadDebugLog(thread_name, "Use preallocated slot.")
+      block = my_slots_size == max_concurrent_decodes        
       if self._interleaved_mode:
         # For interleaved mode, we also blocks when prefill backlog
         # is not empty or there are transfer work to do.
