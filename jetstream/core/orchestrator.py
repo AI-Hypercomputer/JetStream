@@ -296,6 +296,7 @@ class Driver:
     # Stage 1
     # At first, a request is placed here in order to get prefilled.
     self._prefill_backlog = queue.Queue()
+    self._prefill_slot_queue = queue.Queue()
     if self._metrics_collector:
       self._metrics_collector.get_prefill_backlog_metric().set_function(
           lambda: float(self._prefill_backlog.qsize())
@@ -598,9 +599,10 @@ class Driver:
 
     while self.live:
       my_transfer_backlog = self._transfer_backlogs[idx]
-
+      my_generate_backlog = self._generate_backlogs[idx]
       if _allocate_slot_for_prefill:
         slot = my_slots.get(block=True) # Preallocate generate slot
+        self._prefill_slot_queue.put(slot)
         request = self._prefill_backlog.get(block=True) # Get prefill request
         request.slot_id = slot
       else:
@@ -608,6 +610,7 @@ class Driver:
         request = self._prefill_backlog.get(block=True)
 
       if request is None:
+        self._prefill_slot_queue.get()
         break
       request.metadata.prefill_dequeue_time = time.perf_counter()
       is_bos = True
@@ -682,7 +685,6 @@ class Driver:
           )
       request.prefill_result = prefill_result
       request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
-
       # put first token to detokenize queue
       my_detokenize_backlog = self._detokenize_backlogs[idx]
       request.metadata.transfer_enqueue_time = time.perf_counter()
@@ -701,6 +703,7 @@ class Driver:
         # to generate backlog directly. In this way, the entire server is either in 
         # prefill thread or prefill has at least finished something and added to 
         # generate backlog, so empty batch would not occur.
+        self._prefill_slot_queue.get(block=True)
         my_generate_backlog.put(request, block=True)
       else:
         my_transfer_backlog.put(request, block=True)
@@ -799,15 +802,15 @@ class Driver:
       my_generate_backlog,
       generate_engine,
       my_detokenize_backlog,
+      prefill_slot_queue, 
   ):
     # Check if there are any free my_slots. We don't want to block here since
     # we can still generate if we can't insert. We do this in a while loop to
     # insert as many sequences as possible.
     while True:
       slot = None
+      my_slots_size = my_slots.qsize()
       if not _allocate_slot_for_prefill:
-        my_slots_size = my_slots.qsize()
-
         try:
           slot = my_slots.get(block=False)
           # Found a slot, now see if we can fill it.
@@ -824,7 +827,7 @@ class Driver:
         # more useful prefill work to do.
       else:
         ThreadDebugLog(thread_name, "Use preallocated slot.")
-      block = my_slots_size == max_concurrent_decodes        
+      block = my_slots_size + prefill_slot_queue.qsize() == max_concurrent_decodes        
       if self._interleaved_mode:
         # For interleaved mode, we also blocks when prefill backlog
         # is not empty or there are transfer work to do.
@@ -862,12 +865,13 @@ class Driver:
         # Got free slot and new request, use them.
       except queue.Empty:
         # No new requests, we can't insert, so put back slot.
-        my_slots.put(slot, block=False)
-        ThreadDebugLog(
-            thread_name,
-            f"No new ActiveRequest from generate backlog {idx}. "
-            f"Put back the slot.",
-        )
+        if not _allocate_slot_for_prefill:
+          my_slots.put(slot, block=False)
+          ThreadDebugLog(
+              thread_name,
+              f"No new ActiveRequest from generate backlog {idx}. "
+              f"Put back the slot.",
+          )
         # If we were blocking and hit the timeout, then retry the loop.
         # Otherwise, we can exit and proceed to generation.
         if block:
@@ -1072,6 +1076,7 @@ class Driver:
             my_generate_backlog,
             generate_engine,
             my_detokenize_backlog,
+            self._prefill_slot_queue,
         )
       if decode_state is None:
         break
