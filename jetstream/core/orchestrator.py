@@ -150,8 +150,6 @@ class ActiveRequest:
   """Current state of the driver."""
 
   #################### Information relevant for generation #####################
-  # The unique id for the activeRequest, used for tracking the request's status
-  request_id: uuid.UUID
   max_tokens: int
   # We keep prefill and decode information together in the same object so that
   # there is less indirection about where this return channel is.
@@ -163,6 +161,10 @@ class ActiveRequest:
   prefill_result: Any = None
   # The number of responses for one request.
   num_samples: int = 1
+  # The unique id for the activeRequest, used for tracking the request's status
+  # TODO(wyzhang): Figure out how to set request uuid without potentially
+  #                causing jax.jit re-compilation for engine api implementation.
+  request_id: Optional[uuid.UUID] = None
   #################### Information relevant for prefill ########################
   prefill_content: Optional[str | list[int]] = None
   ################## Information relevant for detokenization ###################
@@ -1342,7 +1344,6 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     )
     # Wrap request as an ActiveRequest.
     active_request = ActiveRequest(
-        request_id=uuid.uuid4(),
         max_tokens=request.max_tokens,
         prefill_content=prefill_content,
         is_client_side_tokenization=is_client_side_tokenization,
