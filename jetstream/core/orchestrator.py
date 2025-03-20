@@ -846,7 +846,7 @@ class Driver:
           new_request.prefill_result,
           decode_state,
           slot=slot,
-          request_id=new_request.request_id,
+          # request_id=new_request.request_id,
       )
       ThreadDebugLog(
           thread_name,

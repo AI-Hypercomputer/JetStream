@@ -161,7 +161,7 @@ class Engine(abc.ABC):
       padded_tokens: jax.Array,
       true_length: int,
       sampler: Optional[Callable[[Any], Any]] = None,
-      request_id: Optional[uuid.UUID] = None,
+      # request_id: Optional[uuid.UUID] = None,
   ) -> Tuple[Prefix, ResultTokens]:
     """Computes a kv-cache for a set of tokens conditional on existing cache.
 
@@ -218,7 +218,7 @@ class Engine(abc.ABC):
       prefix: Prefix,
       decode_state: DecodeState,
       slot: int,
-      request_id: Optional[uuid.UUID] = None,
+      # request_id: Optional[uuid.UUID] = None,
   ) -> DecodeState:
     """Adds `new_request` into `caches` at 'slot'.
 
@@ -367,14 +367,14 @@ class JetStreamEngine(Engine):
       prefix: Prefix,
       decode_state: DecodeState,
       slot: int,
-      request_id: Optional[uuid.UUID] = None,
+      # request_id: Optional[uuid.UUID] = None,
   ) -> DecodeState:
 
     decode_state = self._downstream_engine.insert(
         prefix=prefix,
         decode_state=decode_state,
         slot=slot,
-        request_id=request_id,
+        # request_id=request_id,
     )
     return decode_state
 

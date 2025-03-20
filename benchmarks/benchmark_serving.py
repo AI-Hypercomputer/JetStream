@@ -784,17 +784,17 @@ async def benchmark(
 
     # Calculate one rate for each 10 sec window. Adjusts the window size if
     # needed to use csv output below for plotting the rate over time.
-    window_size_sec = 10
-    print(
-        f"----- Request complete rate time series "
-        f"(window_size = {window_size_sec} sec) -----"
-    )
-    print(f"{req_complete_cnt.rate_over_window_to_csv(window_size_sec)}")
-    print(
-        f"----- Output token rate time series "
-        f"(window_size = {window_size_sec} sec) -----"
-    )
-    print(f"{out_token_cnt.rate_over_window_to_csv(window_size_sec)}")
+    # window_size_sec = 10
+    # print(
+    #     f"----- Request complete rate time series "
+    #     f"(window_size = {window_size_sec} sec) -----"
+    # )
+    # print(f"{req_complete_cnt.rate_over_window_to_csv(window_size_sec)}")
+    # print(
+    #     f"----- Output token rate time series "
+    #     f"(window_size = {window_size_sec} sec) -----"
+    # )
+    # print(f"{out_token_cnt.rate_over_window_to_csv(window_size_sec)}")
 
     output_metrics = {
         "duration": benchmark_duration,
