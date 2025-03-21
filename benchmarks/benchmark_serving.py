@@ -71,6 +71,7 @@ from typing import Any, AsyncGenerator, Optional
 
 from benchmarks.eval_accuracy import eval_accuracy
 from benchmarks.eval_accuracy_mmlu import eval_accuracy_mmlu
+from benchmarks.eval_accuracy_longcontext import eval_accuracy_longcontext
 from benchmarks.metrics import CounterMetric, EventMetric
 import grpc
 from jetstream.core.proto import jetstream_pb2
@@ -166,6 +167,7 @@ class InputRequest:
   output: str = ""
   output_len: int = 0
   sample_idx: int = -1
+  metric: str = ""
 
 
 @dataclass
@@ -187,6 +189,7 @@ class RequestFuncOutput:
       prompt = self.input_request.prompt
       original_output = self.input_request.output
       sample_idx = self.input_request.sample_idx
+      metric = self.input_request.metric
     else:
       prompt = None
       original_output = None
@@ -201,6 +204,7 @@ class RequestFuncOutput:
         "ttst_sec": self.ttst_sec,
         "prompt_len": self.prompt_len,
         "sample_idx": sample_idx,
+        "metric": metric,
     }
 
 
@@ -281,17 +285,19 @@ def load_openorca_dataset_pkl(
 
 def load_longcontext_dataset_pkl(
     dataset_path: str,
-) -> list[tuple[Any, Any]]:
+) -> tuple[list[tuple[Any, Any]], list]:
   assert os.path.isfile(dataset_path)
 
   # read pickle file
   data = pandas.read_pickle(dataset_path)
 
   samples = []
+  metrics = []
   for _, row in data.iterrows():
-    samples.append((row["input"], row["ref_output"]))
+    samples.append((row["input"], row["gt_output"]))
+    metrics.append(row["metric"])
 
-  return samples
+  return samples, metrics
 
 
 def load_mmlu_dataset_csv(dataset_path: str) -> tuple[Any, dict[str, str]]:
@@ -417,7 +423,6 @@ def filter_dataset(
     tokenized_dataset: list[tuple[str, Any, str, int, int, int]],
     dataset_type: str,
     max_output_length: int = 0,
-    run_mmlu_dataset: bool = False,
     min_input_length: int = 4,
     max_input_length: int = 0,
     max_target_length: int = 0,
@@ -439,7 +444,8 @@ def filter_dataset(
       sample_idx,
   ) in tokenized_dataset:
     if prompt_len < min_input_length or (
-        not (run_mmlu_dataset or dataset_type == "math500") and output_len < 4
+        not (dataset_type == "mmlu" or dataset_type == "math500")
+        and output_len < 4
     ):
       # Prune too short sequences.
       # This is because TGI causes errors when the input or output length
@@ -474,11 +480,11 @@ def sample_requests(
     dataset_type: str,
     max_output_length: int = 0,
     oversample_multiplier: float = 1.2,
-    run_mmlu_dataset: bool = False,
     min_input_length: int = 4,
     max_input_length: int = 0,
     max_target_length: int = 0,
     max_output_multiplier: int = 0,
+    metrics: Optional[list[str]] = None,
 ) -> list[InputRequest]:
 
   # Original dataset size
@@ -514,12 +520,15 @@ def sample_requests(
       tokenized_dataset,
       dataset_type,
       max_output_length,
-      run_mmlu_dataset,
       min_input_length,
       max_input_length,
       max_target_length,
       max_output_multiplier,
   )
+
+  if metrics is not None:
+    for request in input_requests:
+      request.metric = metrics[request.sample_idx]
 
   # Sample the requests.
   if len(input_requests) > num_requests:
@@ -1035,11 +1044,6 @@ def parse_args() -> argparse.Namespace:
       choices=["HELM", "Harness", ""],
       help="mmlu method/format to generate shots",
   )
-  parser.add_argument(
-      "--run-mmlu-dataset",
-      action="store_true",
-      help="specify if it's for mmlu dataset",
-  )
   return parser.parse_args()
 
 
@@ -1058,6 +1062,7 @@ def main(args: argparse.Namespace):
   api_url = f"{args.server}:{args.port}"
 
   tokenizer = get_tokenizer(model_id, tokenizer_id, use_hf_tokenizer)
+  metrics = None
   if tokenizer == "test" or args.dataset == "test":
     input_requests = mock_requests(
         args.total_mock_requests
@@ -1080,7 +1085,7 @@ def main(args: argparse.Namespace):
           args.dataset_path,
       )
     elif args.dataset == "longcontext":
-      dataset = load_longcontext_dataset_pkl(
+      dataset, metrics = load_longcontext_dataset_pkl(
           args.dataset_path,
       )
     else:
@@ -1097,11 +1102,11 @@ def main(args: argparse.Namespace):
         num_requests=args.num_prompts,
         dataset_type=args.dataset,
         max_output_length=args.max_output_length,
-        run_mmlu_dataset=args.run_mmlu_dataset,
         min_input_length=args.min_input_length,
         max_input_length=args.max_input_length,
         max_target_length=args.max_target_length,
         max_output_multiplier=args.max_output_multiplier,
+        metrics=metrics,
     )
 
   warmup_requests = None
@@ -1145,8 +1150,10 @@ def main(args: argparse.Namespace):
   # Process output
   output = [output.to_dict() for output in request_outputs]
   if args.run_eval:
-    if args.run_mmlu_dataset:
+    if args.dataset == "mmlu":
       eval_json = eval_accuracy_mmlu(output)
+    elif args.dataset == "longcontext":
+      eval_json = eval_accuracy_longcontext(output)
     else:
       eval_json = eval_accuracy(output, args.dataset[:4])
 
