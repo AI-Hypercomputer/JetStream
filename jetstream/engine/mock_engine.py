@@ -450,7 +450,9 @@ class TestEngine(engine_api.Engine):
 
   def get_tokenizer(self) -> tokenizer_pb2.TokenizerParameters:
     """Return a protobuf of tokenizer info, callable from Py or C++."""
-    return tokenizer_pb2.TokenizerParameters(path="test", extra_ids=0)
+    return tokenizer_pb2.TokenizerParameters(path="test", 
+              tokenizer_type=tokenizer_pb2.TokenizerType.sentencepiece,
+              extra_ids=0)
 
   def init_decode_state(self) -> DecodeState:
     """Initialises any state which a generation step transforms."""
