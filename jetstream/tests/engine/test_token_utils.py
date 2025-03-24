@@ -74,6 +74,20 @@ class TokenUtilsTest(unittest.TestCase):
         self.tokenizer_path
     ), f"file not found tokenizer_path: {self.tokenizer_path}"
 
+  def setup_hftoken(self):
+
+    # Download the tokenizer.
+    current_dir = os.path.dirname(__file__)
+    self.tokenizer_path = (
+        "external_tokenizers/gpt2/snapshots/"
+        "607a30d783dfa663caf39e06633721c8d4cfcd7e/"
+    )
+    self.tokenizer_path = os.path.join(current_dir, self.tokenizer_path)
+    print(f"model_path: {self.tokenizer_path}")
+    assert os.path.exists(
+        self.tokenizer_path
+    ), f"did not find tokenizer_path: {self.tokenizer_path}"
+
   def test_decode_vs_piece(self):
     self.setup_sentencepiece()
     tokens = [304, 13, 2266, 526, 777, 9590, 2020, 29901]
@@ -641,3 +655,104 @@ class TokenUtilsTest(unittest.TestCase):
         )
         == "你好�\n�hello"
     )
+
+  def test_hf_decode(self):
+    self.setup_hftoken()
+    metadata = tokenizer_pb2.TokenizerParameters(path=self.tokenizer_path)
+    tokenizer_model = token_utils.HuggingFaceTokenizer(metadata)
+    tokenizer_model.tokenizer.pad_token = tokenizer_model.tokenizer.eos_token
+    # Check that special bos & padding tokens are not emitted.
+    tokens = [50256, 43, 1039, 11241, 1096, 281, 1672, 0, 50256, 50256]
+    expected_hf_output = "Lets tokenize an example!"
+    hf_output = tokenizer_model.decode(tokens)
+    self.assertEqual(hf_output, expected_hf_output)
+
+  def test_hf_encode_use_chat_template(self):
+    self.setup_hftoken()
+    metadata = tokenizer_pb2.TokenizerParameters(
+        path=self.tokenizer_path, use_chat_template=True
+    )
+    tokenizer_model = token_utils.HuggingFaceTokenizer(metadata)
+    tokenizer_model.tokenizer.pad_token = tokenizer_model.tokenizer.eos_token
+    # Make this string 80 characters per line.
+    tokenizer_model.tokenizer.chat_template = (
+        "{{ bos_token }}{% for message in messages %}"
+        "{% if message['role'] == 'system' %}"
+        "{{ '<|system|>\n' + message['content'] + '\n' }}"
+        "{% elif message['role'] == 'user' %}"
+        "{{ '<|user|>\n' + message['content'] + '\n' }}"
+        "{% elif message['role'] == 'assistant' %}"
+        "{% if not loop.last %}"
+        "{{ '<|assistant|>\n'  + message['content'] + eos_token + '\n' }}"
+        "{% else %}"
+        "{{ '<|assistant|>\n'  + message['content'] + eos_token }}"
+        "{% endif %}"
+        "{% endif %}"
+        "{% if loop.last and add_generation_prompt %}"
+        "{{ '<|assistant|>\n' }}{% endif %}{% endfor %}"
+    )
+
+    s = "Lets tokenize an example!"
+    tokens, true_length = tokenizer_model.encode(s)
+    expected_padded_tokens = np.array(
+        [
+            50256,
+            27,
+            91,
+            7220,
+            91,
+            29,
+            198,
+            43,
+            1039,
+            11241,
+            1096,
+            281,
+            1672,
+            0,
+            198,
+            27,
+            91,
+            562,
+            10167,
+            91,
+            29,
+            198,
+        ]
+    )
+    expected_true_length = 22
+    self.assertTrue(
+        np.array_equal(tokens[:true_length], expected_padded_tokens)
+    )
+    self.assertEqual(true_length, expected_true_length)
+    self.assertTrue(np.all(tokens[true_length:] == tokenizer_model.pad_id))
+
+  def test_hf_encode_bos(self):
+    self.setup_hftoken()
+    metadata = tokenizer_pb2.TokenizerParameters(path=self.tokenizer_path)
+    tokenizer_model = token_utils.HuggingFaceTokenizer(metadata)
+    tokenizer_model.tokenizer.pad_token = tokenizer_model.tokenizer.eos_token
+    s = "Lets tokenize an example!"
+    tokens, true_length = tokenizer_model.encode(s, is_bos=True)
+    expected_padded_tokens = np.array(
+        [50256, 43, 1039, 11241, 1096, 281, 1672, 0]
+    )
+    self.assertTrue(
+        np.array_equal(tokens[:true_length], expected_padded_tokens)
+    )
+    self.assertEqual(true_length, 8)
+    self.assertTrue(np.all(tokens[true_length:] == tokenizer_model.pad_id))
+
+  def test_hf_encode_no_bos(self):
+    self.setup_hftoken()
+    metadata = tokenizer_pb2.TokenizerParameters(path=self.tokenizer_path)
+    tokenizer_model = token_utils.HuggingFaceTokenizer(metadata)
+    tokenizer_model.tokenizer.pad_token = tokenizer_model.tokenizer.eos_token
+    s = "Lets tokenize an example!"
+    tokens, true_length = tokenizer_model.encode(s, is_bos=False)
+    expected_padded_tokens = np.array([43, 1039, 11241, 1096, 281, 1672, 0])
+    self.assertTrue(
+        np.array_equal(tokens[:true_length], expected_padded_tokens)
+    )
+    self.assertEqual(true_length, 7)
+    self.assertTrue(np.all(tokens[true_length:] == tokenizer_model.pad_id))
