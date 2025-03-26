@@ -161,6 +161,10 @@ class Engine(abc.ABC):
       padded_tokens: jax.Array,
       true_length: int,
       sampler: Optional[Callable[[Any], Any]] = None,
+      complete_prompt_true_length: Optional[int] = None,
+      complete_padded_prompt: Optional[jax.Array] = None,
+      positions: Optional[jax.Array] = None,
+      previous_chunk: Optional[Any] = None,
       request_id: Optional[uuid.UUID] = None,
   ) -> Tuple[Prefix, ResultTokens]:
     """Computes a kv-cache for a set of tokens conditional on existing cache.
@@ -310,6 +314,16 @@ class Engine(abc.ABC):
   def colocated_cpus(self) -> Union[list[CpuDevices], None]:
     """CPU devices colocated with the engine's accelerators."""
 
+  @property
+  @abc.abstractmethod
+  def use_chunked_prefill(self) -> bool:
+    """Whether to use chunked prefill."""
+
+  @property
+  @abc.abstractmethod
+  def prefill_chunk_size(self) -> int:
+    """Prefill chunk size."""
+
 
 class JetStreamEngine(Engine):
   """A wrapper engine of the Engine class.
@@ -447,5 +461,4 @@ class JetStreamEngine(Engine):
 
   @property
   def prefill_chunk_size(self) -> int:
-    """Maximum prefill length."""
     return self._downstream_engine.prefill_chunk_size

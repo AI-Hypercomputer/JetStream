@@ -152,8 +152,8 @@ class TokenUtilsTest(unittest.TestCase):
 
   def test_chunk_and_pad_tokens(self):
     jax.config.update("jax_platform_name", "cpu")
-    tokens = jnp.arange(0, 65, dtype=jnp.int32)
-    _, true_lengths, _ = token_utils.chunk_and_pad_tokens(
+    tokens = np.arange(100, 166, dtype=np.int32)
+    padding_tokens, true_lengths, positions = token_utils.chunk_and_pad_tokens(
         tokens,
         bos_id=1,
         pad_id=0,
@@ -163,13 +163,30 @@ class TokenUtilsTest(unittest.TestCase):
         max_prefill_length=128,
         jax_padding=True,
     )
+    expected_padding_tokens = [
+        jnp.concat([jnp.array([1]), jnp.arange(100, 115)]),
+        jnp.arange(115, 131),
+        jnp.arange(131, 147),
+        jnp.arange(147, 163),
+        jnp.array([163, 164, 165, 0]),  # fit bucket 4 and padding 0
+    ]
+    expected_positions = [
+        jnp.expand_dims(jnp.arange(0, 16), 0),
+        jnp.expand_dims(jnp.arange(16, 32), 0),
+        jnp.expand_dims(jnp.arange(32, 48), 0),
+        jnp.expand_dims(jnp.arange(48, 64), 0),
+        jnp.expand_dims(jnp.arange(64, 68), 0),
+    ]
+    print("padding_tokens ", padding_tokens)
     print("true_lengths ", true_lengths)
-    assert len(true_lengths) == 5
-    assert true_lengths[0] == 17
-    assert true_lengths[1] == 16
-    assert true_lengths[2] == 16
-    assert true_lengths[3] == 16
-    assert true_lengths[4] == 1
+    print("positions ", positions)
+    assert jax.tree.all(
+        jax.tree.map(jnp.array_equal, padding_tokens, expected_padding_tokens)
+    )
+    assert true_lengths == [16, 16, 16, 16, 3]
+    assert jax.tree.all(
+        jax.tree.map(jnp.array_equal, positions, expected_positions)
+    )
 
   def test_tokenize_and_pad(self):
     jax.config.update("jax_platform_name", "cpu")

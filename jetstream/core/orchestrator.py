@@ -525,7 +525,18 @@ class Driver:
       max_prefill_length: int,
       chunked_prefill: bool = False,
       chunk_size: Optional[int] = None,
-  ) -> Tuple[jax.Array | np.ndarray, jax.Array, jax.Array | np.ndarray]:
+  ) -> (
+      Tuple[(jax.Array | np.ndarray), int, jax.Array]
+      | Tuple[
+          list[jax.Array | np.ndarray],
+          list[int],
+          list[jax.Array],
+      ]
+  ):
+    assert (chunked_prefill and chunk_size is not None) or (
+        not chunked_prefill
+    ), "Set chunk_size when chunked_prefill is True to use chunked prefill"
+
     content = request.prefill_content
     if isinstance(content, str):
       # If it's text input, tokenize and pad the input.
@@ -539,12 +550,14 @@ class Driver:
           jnp.arange(0, len(tokens), dtype=jnp.int32), 0
       )
 
-      if chunked_prefill:
+      if chunked_prefill and chunk_size is not None:
+        # tokenizer.encode handle the is_bos already,
+        # set is_bos to False while chunking
         return token_utils.chunk_and_pad_tokens(
             tokens[:true_length],
             tokenizer.bos_id,
             tokenizer.pad_id,
-            is_bos=is_bos,
+            is_bos=False,
             max_prefill_length=max_prefill_length,
             chunk_size=chunk_size,
             jax_padding=self._jax_padding,
@@ -552,7 +565,7 @@ class Driver:
       return tokens, true_length, positions
 
     else:
-      if chunked_prefill:
+      if chunked_prefill and chunk_size is not None:
         return token_utils.chunk_and_pad_tokens(
             content,
             tokenizer.bos_id,
@@ -654,7 +667,7 @@ class Driver:
                     chunk_num * prefill_engine.prefill_chunk_size
                     + true_lengths_of_chunks[chunk_num],
                 ),
-                1,
+                0,
             )
             prefill_result["true_length_array"] = t_l_array
         else:
