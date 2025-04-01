@@ -152,8 +152,6 @@ class ActiveRequest:
   """Current state of the driver."""
 
   #################### Information relevant for generation #####################
-  # The unique id for the activeRequest, used for tracking the request's status
-  request_id: uuid.UUID
   max_tokens: int
   # We keep prefill and decode information together in the same object so that
   # there is less indirection about where this return channel is.
@@ -165,6 +163,10 @@ class ActiveRequest:
   prefill_result: Any = None
   # The number of responses for one request.
   num_samples: int = 1
+  # The unique id for the activeRequest, used for tracking the request's status
+  # TODO(wyzhang): Figure out how to set request uuid without potentially
+  #                causing jax.jit re-compilation for engine api implementation.
+  request_id: Optional[uuid.UUID] = None
   #################### Information relevant for prefill ########################
   prefill_content: Optional[str | list[int]] = None
   ################## Information relevant for detokenization ###################
@@ -586,7 +588,18 @@ class Driver:
       max_prefill_length: int,
       chunked_prefill: bool = False,
       chunk_size: Optional[int] = None,
-  ) -> Tuple[jax.Array | np.ndarray, jax.Array, jax.Array | np.ndarray]:
+  ) -> (
+      Tuple[(jax.Array | np.ndarray), int, jax.Array]
+      | Tuple[
+          list[jax.Array | np.ndarray],
+          list[int],
+          list[jax.Array],
+      ]
+  ):
+    assert (chunked_prefill and chunk_size is not None) or (
+        not chunked_prefill
+    ), "Set chunk_size when chunked_prefill is True to use chunked prefill"
+
     content = request.prefill_content
     if isinstance(content, str):
       # If it's text input, tokenize and pad the input.
@@ -600,12 +613,14 @@ class Driver:
           jnp.arange(0, len(tokens), dtype=jnp.int32), 0
       )
 
-      if chunked_prefill:
+      if chunked_prefill and chunk_size is not None:
+        # tokenizer.encode handle the is_bos already,
+        # set is_bos to False while chunking
         return token_utils.chunk_and_pad_tokens(
             tokens[:true_length],
             tokenizer.bos_id,
             tokenizer.pad_id,
-            is_bos=is_bos,
+            is_bos=False,
             max_prefill_length=max_prefill_length,
             chunk_size=chunk_size,
             jax_padding=self._jax_padding,
@@ -613,7 +628,7 @@ class Driver:
       return tokens, true_length, positions
 
     else:
-      if chunked_prefill:
+      if chunked_prefill and chunk_size is not None:
         return token_utils.chunk_and_pad_tokens(
             content,
             tokenizer.bos_id,
@@ -727,7 +742,7 @@ class Driver:
                   is_bos,
                   prefill_engine.max_prefill_length,
                   prefill_engine.use_chunked_prefill,
-                  prefill_engine.chunk_size,
+                  prefill_engine.prefill_chunk_size,
               )
           )
           prefill_result = None
@@ -748,10 +763,10 @@ class Driver:
             t_l_array = jnp.expand_dims(
                 jnp.arange(
                     0,
-                    chunk_num * prefill_engine.chunk_size
+                    chunk_num * prefill_engine.prefill_chunk_size
                     + true_lengths_of_chunks[chunk_num],
                 ),
-                1,
+                0,
             )
             prefill_result["true_length_array"] = t_l_array
         else:
@@ -1573,7 +1588,6 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     )
     # Wrap request as an ActiveRequest.
     active_request = ActiveRequest(
-        request_id=uuid.uuid4(),
         max_tokens=request.max_tokens,
         prefill_content=prefill_content,
         is_client_side_tokenization=is_client_side_tokenization,
@@ -1616,8 +1630,8 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
       if ttft == 0:
         ttft = time.perf_counter() - request_start_time
         if ttft > 2.0:
-          logging.info(
-              datetime.now(),
+          logger.info(  # pylint: disable=logging-fstring-interpolation
+              f"{datetime.now()}: "
               f"Slow TTFT: {ttft:.2f}s,"
               f" stats={active_request.metadata.stats()},"
               f" prefill_qsize={self._driver.prefill_backlog_size()}",
