@@ -12,17 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Initialization for any Engine implementation."""
+"""Tests for initializing jetstream.engine module."""
 
-import jax
+import unittest
+from unittest import mock
 
-try:
-  import pathwaysutils
 
-  pathwaysutils.initialize()
-except ImportError as e:
-  print(
-      "Running JetStream without Pathways. "
-      "Module pathwaysutils is not imported."
-  )
-  pass
+class InitTest(unittest.TestCase):
+
+  def test_init(self):
+    orig_import = __import__
+    p_mock = mock.Mock()
+
+    def import_mock(name, *args):
+      if name == "pathwaysutils":
+        return p_mock
+      return orig_import(name, *args)
+
+    with mock.patch("builtins.__import__", side_effect=import_mock):
+      from jetstream import engine  # pylint: disable=import-outside-toplevel,unused-import
+
+      p_mock.initialize.assert_called_once()
