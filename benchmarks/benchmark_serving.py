@@ -938,7 +938,7 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument(
       "--num-prompts",
       type=int,
-      default=1000,
+      default=-1,
       help=(
           "Number of prompts to process. (number of sample requests we randomly"
           " collect from dataset)"
