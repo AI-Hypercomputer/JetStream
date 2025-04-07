@@ -53,7 +53,7 @@ class JetStreamServer:
       threads: int,
       port,
       credentials,
-      enable_llm_inference_pool = False
+      enable_llm_inference_pool=False,
   ):
     self._executor = futures.ThreadPoolExecutor(max_workers=threads)
 
@@ -82,7 +82,7 @@ class JetStreamServer:
 
       multi_lora_decoding_pb2_grpc.add_v1Servicer_to_server(
           multi_lora_inference.MultiLoraManager(driver=self._driver),
-          self._grpc_server
+          self._grpc_server,
       )
 
     self._grpc_server.add_secure_port(f"{_HOST}:{port}", credentials)
@@ -121,7 +121,7 @@ def create_driver(
     metrics_collector: JetstreamMetricsCollector | None = None,
     enable_model_warmup: bool = False,
     multi_sampling: bool = False,
-    lora_input_adapters_path: str | None = None
+    lora_input_adapters_path: str | None = None,
 ):
   """Creates a driver with a specified config.
 
@@ -158,29 +158,32 @@ def create_driver(
     for pe in engines.prefill_engines:
       prefill_adapterstore.append(
           adapterstore.AdapterTensorStore(
-            engine=pe,
-            adapters_dir_path=lora_input_adapters_path,
-            hbm_memory_budget=20 * (1024 ** 3),       # 20 GB HBM
-            cpu_memory_budget=100 * (1024 ** 3)      # 100 GB RAM
-            ))
+              engine=pe,
+              adapters_dir_path=lora_input_adapters_path,
+              hbm_memory_budget=20 * (1024**3),  # 20 GB HBM
+              cpu_memory_budget=100 * (1024**3),  # 100 GB RAM
+          )
+      )
     # TODO: Make hbm_memory_budget and cpu_memory_budget configurable
     for ge in engines.generate_engines:
       generate_adapterstore.append(
           adapterstore.AdapterTensorStore(
-            engine=ge,
-            adapters_dir_path=lora_input_adapters_path,
-            hbm_memory_budget=20 * (1024 ** 3),       # 20 GB HBM
-            cpu_memory_budget=100 * (1024 ** 3)      # 100 GB RAM
-            ))
+              engine=ge,
+              adapters_dir_path=lora_input_adapters_path,
+              hbm_memory_budget=20 * (1024**3),  # 20 GB HBM
+              cpu_memory_budget=100 * (1024**3),  # 100 GB RAM
+          )
+      )
 
     for ie in engines.interleaved_engines:
       shared_adapterstore.append(
           adapterstore.AdapterTensorStore(
-            engine=ie,
-            adapters_dir_path=lora_input_adapters_path,
-            hbm_memory_budget=20 * (1024 ** 3),       # 20 GB HBM
-            cpu_memory_budget=100 * (1024 ** 3)      # 100 GB RAM
-            ))
+              engine=ie,
+              adapters_dir_path=lora_input_adapters_path,
+              hbm_memory_budget=20 * (1024**3),  # 20 GB HBM
+              cpu_memory_budget=100 * (1024**3),  # 100 GB RAM
+          )
+      )
 
   prefill_engines = engines.prefill_engines + engines.interleaved_engines
   generate_engines = engines.generate_engines + engines.interleaved_engines
@@ -290,7 +293,7 @@ def run(
       metrics_collector,
       enable_model_warmup,
       multi_sampling,
-      lora_input_adapters_path
+      lora_input_adapters_path,
   )
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.
@@ -298,8 +301,9 @@ def run(
   enable_llm_inference_pool = False
   if lora_input_adapters_path:
     enable_llm_inference_pool = True
-  jetstream_server = JetStreamServer(driver, threads, port,
-      credentials, enable_llm_inference_pool)
+  jetstream_server = JetStreamServer(
+      driver, threads, port, credentials, enable_llm_inference_pool
+  )
   logging.info("Starting server on port %d with %d threads", port, threads)
 
   # Tweak gc config.

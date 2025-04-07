@@ -268,9 +268,11 @@ class Driver:
       prefill_params: Optional[list[Any]] = None,
       generate_params: Optional[list[Any]] = None,
       prefill_adapterstore: Optional[
-        list[adapterstore.AdapterTensorStore]] = None,
+          list[adapterstore.AdapterTensorStore]
+      ] = None,
       generate_adapterstore: Optional[
-        list[adapterstore.AdapterTensorStore]] = None,
+          list[adapterstore.AdapterTensorStore]
+      ] = None,
       interleaved_mode: bool = False,
       jax_padding: bool = True,
       metrics_collector: JetstreamMetricsCollector | None = None,
@@ -457,9 +459,11 @@ class Driver:
 
     if self._metrics_collector:
       self._metrics_collector.get_num_requests_waiting_metric().set_function(
-          self._get_total_requests_waiting_decode)
+          self._get_total_requests_waiting_decode
+      )
       self._metrics_collector.get_kv_cache_utilization_metric().set_function(
-          self._get_kv_cache_utilization)
+          self._get_kv_cache_utilization
+      )
 
     # Start all threads
     for t in self._all_threads:
@@ -554,13 +558,16 @@ class Driver:
     if self._metrics_collector:
       for idx, engine in enumerate(self._generate_engines):
         max_loras += engine.max_concurrent_decodes
-        if (self._generate_adapterstore and
-            idx < len(self._generate_adapterstore)):
+        if self._generate_adapterstore and idx < len(
+            self._generate_adapterstore
+        ):
           adapters_list_str += asyncio.run(
-              self._generate_adapterstore[idx].get_hbm_loaded_adapters())
+              self._generate_adapterstore[idx].get_hbm_loaded_adapters()
+          )
 
-      self._metrics_collector.get_lora_request_info_metric(max_loras,
-          adapters_list_str).set_to_current_time()
+      self._metrics_collector.get_lora_request_info_metric(
+          max_loras, adapters_list_str
+      ).set_to_current_time()
 
   def get_total_concurrent_requests(self) -> int:
     """Gets the total number of concurrent requests the driver can handle."""
@@ -710,20 +717,24 @@ class Driver:
       final_prefill_params = prefill_params
       if adapter_id and adapter_tensorstore is not None:
         try:
-          lora_params = asyncio.run(adapter_tensorstore.get_lora_weights(
-            adapter_id=adapter_id, load_if_not_loaded=True))
-          lora_config = asyncio.run(adapter_tensorstore.get_lora_config(
-            adapter_id=adapter_id, load_if_not_loaded=True))
+          lora_params = asyncio.run(
+              adapter_tensorstore.get_lora_weights(
+                  adapter_id=adapter_id, load_if_not_loaded=True
+              )
+          )
+          lora_config = asyncio.run(
+              adapter_tensorstore.get_lora_config(
+                  adapter_id=adapter_id, load_if_not_loaded=True
+              )
+          )
           prefill_engine.apply_adapter(
-	            final_prefill_params,
-	            lora_config,
-	            lora_params)
-        except Exception as e:          # pylint: disable=broad-exception-caught
+              final_prefill_params, lora_config, lora_params
+          )
+        except Exception as e:  # pylint: disable=broad-exception-caught
           request.num_samples = 1
           request.complete = np.zeros((request.num_samples,), np.bool_)
           error_message = f"An error occurred: {type(e).__name__} - {str(e)}"
-          error_result = ReturnSample(text=[error_message],
-              token_ids=[])
+          error_result = ReturnSample(text=[error_message], token_ids=[])
           request.enqueue_samples([error_result])
           request.return_channel.close()
           continue
@@ -760,20 +771,20 @@ class Driver:
 
       if adapter_id and adapter_tensorstore is not None:
         try:
-          lora_params = asyncio.run(adapter_tensorstore.get_lora_weights(
-            adapter_id))
-          lora_config = asyncio.run(adapter_tensorstore.get_lora_config(
-            adapter_id))
+          lora_params = asyncio.run(
+              adapter_tensorstore.get_lora_weights(adapter_id)
+          )
+          lora_config = asyncio.run(
+              adapter_tensorstore.get_lora_config(adapter_id)
+          )
           prefill_engine.unapply_adapter(
-	            final_prefill_params,
-	            lora_config,
-	            lora_params)
-        except Exception as e:          # pylint: disable=broad-exception-caught
+              final_prefill_params, lora_config, lora_params
+          )
+        except Exception as e:  # pylint: disable=broad-exception-caught
           request.num_samples = 1
           request.complete = np.zeros((request.num_samples,), np.bool_)
           error_message = f"An error occurred: {type(e).__name__} - {str(e)}"
-          error_result = ReturnSample(text=[error_message],
-              token_ids=[])
+          error_result = ReturnSample(text=[error_message], token_ids=[])
           request.enqueue_samples([error_result])
           request.return_channel.close()
           continue
@@ -960,7 +971,7 @@ class Driver:
           new_request.prefill_result,
           decode_state,
           slot=slot,
-          #request_id=new_request.request_id,
+          # request_id=new_request.request_id,
       )
       ThreadDebugLog(
           thread_name,
@@ -1360,34 +1371,31 @@ class Driver:
 
     logger.info("Detokenize thread %d stopped.", idx)
 
-
   async def load_adapter_to_tensorstore(
-          self,
-          adapter_id: str,
-          adapter_path: str):
+      self, adapter_id: str, adapter_path: str
+  ):
     """Load the adapter to adapter_tensorstore for each engine."""
-    logger.info("Loading adapter_id=%s from %s.",
-        adapter_id, adapter_path)
+    logger.info("Loading adapter_id=%s from %s.", adapter_id, adapter_path)
 
     for idx, tensorstore in enumerate(self._prefill_adapterstore):
       try:
         engine = self._prefill_engines[idx]
         adapter_params, adapter_config = engine.load_single_adapter(
-            adapter_path)
+            adapter_path
+        )
 
         if not adapter_params or not adapter_config:
           raise ValueError(
-              f"Failed to load adapter={adapter_id} from {adapter_path}.")
+              f"Failed to load adapter={adapter_id} from {adapter_path}."
+          )
 
         await tensorstore.register_adapter(
-            adapter_id,
-            adapter_path,
-            adapter_config)
+            adapter_id, adapter_path, adapter_config
+        )
 
         await tensorstore.load_adapter(adapter_id, adapter_params, True)
 
-        logger.info("Successfully loaded '%s' in engine_%d.",
-            adapter_id, idx)
+        logger.info("Successfully loaded '%s' in engine_%d.", adapter_id, idx)
         engine.print_stats(f"After loading '{adapter_id}' in engine_{idx}")
 
       except Exception as e:
@@ -1398,31 +1406,28 @@ class Driver:
       try:
         engine = self._generate_engines[idx]
         adapter_params, adapter_config = engine.load_single_adapter(
-            adapter_path)
+            adapter_path
+        )
 
         if not adapter_params or not adapter_config:
           raise ValueError(
-              f"Failed to load adapter={adapter_id} from {adapter_path}.")
+              f"Failed to load adapter={adapter_id} from {adapter_path}."
+          )
 
         await tensorstore.register_adapter(
-            adapter_id,
-            adapter_path,
-            adapter_config)
+            adapter_id, adapter_path, adapter_config
+        )
 
         await tensorstore.load_adapter(adapter_id, adapter_params, True)
 
-        logger.info("Successfully loaded '%s' in engine_%d.",
-            adapter_id, idx)
+        logger.info("Successfully loaded '%s' in engine_%d.", adapter_id, idx)
         engine.print_stats(f"After loading '{adapter_id}' in engine_{idx}")
 
       except Exception as e:
         logger.info("Adapter loading failed with error: %s", str(e))
         raise e
 
-
-  async def unload_adapter_from_tensorstore(
-          self,
-          adapter_id: str):
+  async def unload_adapter_from_tensorstore(self, adapter_id: str):
     """Unload the adapter from adapter_tensorstore of each engine."""
     logger.info("Unloading adapter_id=%s", adapter_id)
 
@@ -1431,8 +1436,7 @@ class Driver:
         engine = self._prefill_engines[idx]
         await tensorstore.unload_adapter(adapter_id)
 
-        logger.info("Successfully unloaded '%s' in engine_%d.",
-            adapter_id, idx)
+        logger.info("Successfully unloaded '%s' in engine_%d.", adapter_id, idx)
         engine.print_stats(f"After unloading '{adapter_id}' in engine_{idx}")
 
       except Exception as e:
@@ -1444,14 +1448,12 @@ class Driver:
         engine = self._generate_engines[idx]
         await tensorstore.unload_adapter(adapter_id)
 
-        logger.info("Successfully unloaded '%s' in engine_%d.",
-            adapter_id, idx)
+        logger.info("Successfully unloaded '%s' in engine_%d.", adapter_id, idx)
         engine.print_stats(f"After unloading '{adapter_id}' in engine_{idx}")
 
       except Exception as e:
         logger.info("Adapter unloading failed with error: %s", str(e))
         raise e
-
 
   def list_adapters_from_tensorstore(self):
     """List all the adapters from the adapter_tensorstore of each engine."""

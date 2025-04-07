@@ -71,7 +71,7 @@ class MultiLoraManager(multi_lora_decoding_pb2_grpc.v1Servicer):
       return multi_lora_decoding_pb2.ListAdaptersResponse(
           success=True, adapter_infos=adapter_infos
       )
-    except Exception as e:    # pylint: disable=broad-exception-caught
+    except Exception as e:  # pylint: disable=broad-exception-caught
       logging.info("Listing of adapters failed with error: %s", str(e))
       return multi_lora_decoding_pb2.ListAdaptersResponse(
           success=False, error_message=str(e)
@@ -92,10 +92,11 @@ class MultiLoraManager(multi_lora_decoding_pb2_grpc.v1Servicer):
       )
 
       return multi_lora_decoding_pb2.LoadAdapterResponse(success=True)
-    except Exception as e:    # pylint: disable=broad-exception-caught
+    except Exception as e:  # pylint: disable=broad-exception-caught
       logging.info(
           "Loading of adapter_id=%s failed with error: %s",
-          request.adapter_id, str(e)
+          request.adapter_id,
+          str(e),
       )
       return multi_lora_decoding_pb2.LoadAdapterResponse(
           success=False, error_message=str(e)
@@ -114,10 +115,11 @@ class MultiLoraManager(multi_lora_decoding_pb2_grpc.v1Servicer):
       )
 
       return multi_lora_decoding_pb2.UnloadAdapterResponse(success=True)
-    except Exception as e:    # pylint: disable=broad-exception-caught
+    except Exception as e:  # pylint: disable=broad-exception-caught
       logging.info(
           "Loading of adapter_id=%s failed with error: %s",
-          request.adapter_id, str(e)
+          request.adapter_id,
+          str(e),
       )
       return multi_lora_decoding_pb2.UnloadAdapterResponse(
           success=False, error_message=str(e)

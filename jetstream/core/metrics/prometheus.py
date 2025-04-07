@@ -262,9 +262,10 @@ class JetstreamMetricsCollector:
     self._lora_request_info = Gauge(
         name="lora_request_info",
         documentation="LoRA adapters loaded into HBM for processing requests.",
-        labelnames=universal_label_names + [
-          "max_lora",
-          "running_lora_adapters",
+        labelnames=universal_label_names
+        + [
+            "max_lora",
+            "running_lora_adapters",
         ],
         multiprocess_mode="livemostrecent",
     )
@@ -321,5 +322,8 @@ class JetstreamMetricsCollector:
     return self._kv_cache_utilization.labels(**self.universal_labels)
 
   def get_lora_request_info_metric(self, max_lora: int, loaded_adapters: str):
-    return self._lora_request_info.labels(**self.universal_labels,
-        max_lora=max_lora, running_lora_adapters=loaded_adapters)
+    return self._lora_request_info.labels(
+        **self.universal_labels,
+        max_lora=max_lora,
+        running_lora_adapters=loaded_adapters
+    )

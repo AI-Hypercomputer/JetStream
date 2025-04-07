@@ -48,7 +48,8 @@ _LORA_ADAPTER_ID = flags.DEFINE_string(
     "lora_adapter_id",
     "",
     "ID of the adapter for this decode request.",
-    required=False)
+    required=False,
+)
 
 
 def _GetResponseAsync(

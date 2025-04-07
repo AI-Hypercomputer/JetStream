@@ -110,35 +110,33 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
     prefill_adapterstore = adapterstore.AdapterTensorStore(
         engine=prefill_engine,
         adapters_dir_path="/tmp/",
-        hbm_memory_budget=20 * (1024 ** 3),       # 20 GB HBM
-        cpu_memory_budget=100 * (1024 ** 3)      # 100 GB RAM
-      )
+        hbm_memory_budget=20 * (1024**3),  # 20 GB HBM
+        cpu_memory_budget=100 * (1024**3),  # 100 GB RAM
+    )
 
     generate_adapterstore = adapterstore.AdapterTensorStore(
         engine=generate_engine,
         adapters_dir_path="/tmp/",
-        hbm_memory_budget=20 * (1024 ** 3),       # 20 GB HBM
-        cpu_memory_budget=100 * (1024 ** 3)      # 100 GB RAM
-      )
+        hbm_memory_budget=20 * (1024**3),  # 20 GB HBM
+        cpu_memory_budget=100 * (1024**3),  # 100 GB RAM
+    )
 
     await prefill_adapterstore.register_adapter(
-        adapter_id="test_adapter_1",
-        adapter_config={"r": 4, "alpha": 32})
+        adapter_id="test_adapter_1", adapter_config={"r": 4, "alpha": 32}
+    )
 
     adapter_params = jnp.array([3.0], dtype=jnp.float32)
     await prefill_adapterstore.load_adapter(
-        adapter_id="test_adapter_1",
-        adapter_weights=adapter_params,
-        to_hbm=True)
+        adapter_id="test_adapter_1", adapter_weights=adapter_params, to_hbm=True
+    )
 
     await generate_adapterstore.register_adapter(
-        adapter_id="test_adapter_1",
-        adapter_config={"r": 4, "alpha": 32})
+        adapter_id="test_adapter_1", adapter_config={"r": 4, "alpha": 32}
+    )
 
     await generate_adapterstore.load_adapter(
-        adapter_id="test_adapter_1",
-        adapter_weights=adapter_params,
-        to_hbm=True)
+        adapter_id="test_adapter_1", adapter_weights=adapter_params, to_hbm=True
+    )
 
     driver = orchestrator.Driver(
         prefill_engines=[prefill_engine],
@@ -373,7 +371,7 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
         lora_adapter_id="test_adapter_2",
     )
 
-    #results = asyncio.run(_consume_decode_iterator(client, request))
+    # results = asyncio.run(_consume_decode_iterator(client, request))
     iterator = client.Decode(request)
     # chr of [266, 332, 415].
     expected_text = ["Ċ", "Ō", "Ɵ", ""]
@@ -393,8 +391,10 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
     assert "test_adapter_2" in adapters
 
     metadata = adapters["test_adapter_2"]
-    assert metadata.status in (adapterstore.AdapterStatus.LOADED_HBM,
-        adapterstore.AdapterStatus.LOADED_CPU)
+    assert metadata.status in (
+        adapterstore.AdapterStatus.LOADED_HBM,
+        adapterstore.AdapterStatus.LOADED_CPU,
+    )
 
     await driver.unload_adapter_from_tensorstore("test_adapter_2")
 
@@ -408,7 +408,6 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
     driver.stop()
     print("Orchestrator driver stopped.")
 
-
   async def test_drivers_with_none_engine_and_params(self):
     """Test should raise error when driver is init with none engine/driver."""
     prefill_engine = mock_engine.TestEngine(
@@ -420,8 +419,7 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
         batch_size=4, cache_length=32, weight=4.0
     )
 
-    with self.assertRaisesRegex(ValueError,
-        "No prefill engine provided."):
+    with self.assertRaisesRegex(ValueError, "No prefill engine provided."):
       driver = orchestrator.Driver(
           generate_engines=[generate_engine],
           prefill_params=[prefill_engine.load_params()],
@@ -429,8 +427,7 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
       )
       del driver
 
-    with self.assertRaisesRegex(ValueError,
-        "No generate engine provided."):
+    with self.assertRaisesRegex(ValueError, "No generate engine provided."):
       driver = orchestrator.Driver(
           prefill_engines=[prefill_engine],
           prefill_params=[prefill_engine.load_params()],
@@ -438,8 +435,7 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
       )
       del driver
 
-    with self.assertRaisesRegex(ValueError,
-        "No prefill parameter provided."):
+    with self.assertRaisesRegex(ValueError, "No prefill parameter provided."):
       driver = orchestrator.Driver(
           generate_engines=[generate_engine],
           prefill_engines=[prefill_engine],
@@ -447,8 +443,7 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
       )
       del driver
 
-    with self.assertRaisesRegex(ValueError,
-        "No generate parameter provided."):
+    with self.assertRaisesRegex(ValueError, "No generate parameter provided."):
       driver = orchestrator.Driver(
           generate_engines=[generate_engine],
           prefill_engines=[prefill_engine],
@@ -456,9 +451,7 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
       )
       del driver
 
-  async def test_adapterstores_exceptions(
-      self, interleaved_mode: bool = True
-  ):
+  async def test_adapterstores_exceptions(self, interleaved_mode: bool = True):
     driver = await self._setup_driver_with_adapterstore(interleaved_mode)
 
     client = orchestrator.LLMOrchestrator(driver=driver)
@@ -483,4 +476,3 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
     self.assertIn(expected_text, output_text)
     driver.stop()
     print("Orchestrator driver stopped.")
-
