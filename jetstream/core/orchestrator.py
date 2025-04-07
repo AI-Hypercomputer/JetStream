@@ -701,14 +701,10 @@ class Driver:
       final_prefill_params = prefill_params
       if adapter_id:
         try:
-          if adapter_tensorstore is None:
-            raise ValueError(
-                f"adapter_tensorstore is None for prefill_engine_id={idx}")
-
-          lora_params = adapter_tensorstore.get_lora_weights(
-              adapter_id=adapter_id, load_if_not_loaded=True)
-          lora_config = adapter_tensorstore.get_lora_config(
-              adapter_id=adapter_id, load_if_not_loaded=True)
+          lora_params = asyncio.run(adapter_tensorstore.get_lora_weights(
+            adapter_id=adapter_id, load_if_not_loaded=True))
+          lora_config = asyncio.run(adapter_tensorstore.get_lora_config(
+            adapter_id=adapter_id, load_if_not_loaded=True))
           prefill_engine.apply_adapter(
 	            final_prefill_params,
 	            lora_config,
@@ -779,12 +775,10 @@ class Driver:
 
       if adapter_id:
         try:
-          if adapter_tensorstore is None:
-            raise ValueError(
-                f"adapter_tensorstore is None for prefill_engine_id={idx}")
-
-          lora_params = adapter_tensorstore.get_lora_weights(adapter_id)
-          lora_config = adapter_tensorstore.get_lora_config(adapter_id)
+          lora_params = asyncio.run(adapter_tensorstore.get_lora_weights(
+            adapter_id))
+          lora_config = asyncio.run(adapter_tensorstore.get_lora_config(
+            adapter_id))
           prefill_engine.unapply_adapter(
 	            final_prefill_params,
 	            lora_config,
@@ -1384,7 +1378,7 @@ class Driver:
     logger.info("Detokenize thread %d stopped.", idx)
 
 
-  def load_adapter_to_tensorstore(
+  async def load_adapter_to_tensorstore(
           self,
           adapter_id: str,
           adapter_path: str):
@@ -1402,12 +1396,12 @@ class Driver:
           raise ValueError(
               f"Failed to load adapter={adapter_id} from {adapter_path}.")
 
-        tensorstore.register_adapter(
+        await tensorstore.register_adapter(
             adapter_id,
             adapter_path,
             adapter_config)
 
-        asyncio.run(tensorstore.load_adapter(adapter_id, adapter_params, True))
+        await tensorstore.load_adapter(adapter_id, adapter_params, True)
 
         logger.info("Successfully loaded '%s' in engine_%d.",
             adapter_id, idx)
@@ -1427,12 +1421,12 @@ class Driver:
           raise ValueError(
               f"Failed to load adapter={adapter_id} from {adapter_path}.")
 
-        tensorstore.register_adapter(
+        await tensorstore.register_adapter(
             adapter_id,
             adapter_path,
             adapter_config)
 
-        asyncio.run(tensorstore.load_adapter(adapter_id, adapter_params, True))
+        await tensorstore.load_adapter(adapter_id, adapter_params, True)
 
         logger.info("Successfully loaded '%s' in engine_%d.",
             adapter_id, idx)
@@ -1443,7 +1437,7 @@ class Driver:
         raise e
 
 
-  def unload_adapter_from_tensorstore(
+  async def unload_adapter_from_tensorstore(
           self,
           adapter_id: str):
     """Unload the adapter from adapter_tensorstore of each engine."""
@@ -1452,7 +1446,7 @@ class Driver:
     for idx, tensorstore in enumerate(self._prefill_adapterstore):
       try:
         engine = self._prefill_engines[idx]
-        asyncio.run(tensorstore.unload_adapter(adapter_id))
+        await tensorstore.unload_adapter(adapter_id)
 
         logger.info("Successfully unloaded '%s' in engine_%d.",
             adapter_id, idx)
@@ -1465,7 +1459,7 @@ class Driver:
     for idx, tensorstore in enumerate(self._generate_adapterstore):
       try:
         engine = self._generate_engines[idx]
-        asyncio.run(tensorstore.unload_adapter(adapter_id))
+        await tensorstore.unload_adapter(adapter_id)
 
         logger.info("Successfully unloaded '%s' in engine_%d.",
             adapter_id, idx)

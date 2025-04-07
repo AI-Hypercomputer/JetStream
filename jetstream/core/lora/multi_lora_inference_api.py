@@ -17,6 +17,7 @@
 
 import logging
 import grpc
+import asyncio
 
 from typing import Optional
 from jetstream.core import orchestrator
@@ -77,7 +78,8 @@ class MultiLoraManager(multi_lora_decoding_pb2_grpc.v1Servicer):
     """Load a LoRA adapter as mentioned in the request."""
 
     try:
-      self._driver.load_adapter_to_tensorstore(request.adapter_id, request.adapter_path)
+      asyncio.run(self._driver.load_adapter_to_tensorstore(
+        request.adapter_id, request.adapter_path))
 
       return multi_lora_decoding_pb2.LoadAdapterResponse(success=True)
     except Exception as e:
@@ -93,7 +95,9 @@ class MultiLoraManager(multi_lora_decoding_pb2_grpc.v1Servicer):
     """Unload a LoRA adapter as mentioned in the request."""
     
     try:
-      self._driver.unload_adapter_from_tensorstore(request.adapter_id)
+      asyncio.run(self._driver.unload_adapter_from_tensorstore(
+        request.adapter_id))
+
       return multi_lora_decoding_pb2.UnloadAdapterResponse(success=True)
     except Exception as e:
       logging.info(f"Loading of adapter_id={request.adapter_id} failed with error: {str(e)}")
