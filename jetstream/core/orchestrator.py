@@ -92,7 +92,6 @@ from typing import Any, AsyncIterator, Optional, Tuple, cast, List
 
 import grpc
 import jax
-import jax.numpy as jnp
 from jetstream.core.lora import adapter_tensorstore as adapterstore
 
 from jetstream.core.proto import jetstream_pb2
