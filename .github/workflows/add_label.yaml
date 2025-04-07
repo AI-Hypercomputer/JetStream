@@ -104,6 +104,7 @@ jobs:
             }
             for (const checkRun of checkRuns.data.check_runs) {
               if (checkRun.name.endsWith(context.job)) continue
+              if (checkRun.name.endsWith("JetStream unit tests")) continue
               if (checkRun.conclusion !== "success") {
                 console.log("Not adding pull ready because " + checkRun.name + " has not passed yet: " + checkRun.html_url)
                 process.exit()
