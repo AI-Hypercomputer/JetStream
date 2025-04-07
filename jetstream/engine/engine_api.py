@@ -48,6 +48,12 @@ PRNGKeyType = Any
 
 
 @struct.dataclass
+class ExistingPrefix:
+  cache: Any
+  common_prefix_tokens: jax.Array
+
+
+@struct.dataclass
 class SlotData:
   """Class to store slot data."""
 
@@ -157,14 +163,10 @@ class Engine(abc.ABC):
       self,
       *,
       params: Params,
-      existing_prefix: Optional[Prefix] = None,
+      existing_prefix: Optional[ExistingPrefix] = None,
       padded_tokens: jax.Array,
       true_length: int,
       sampler: Optional[Callable[[Any], Any]] = None,
-      complete_prompt_true_length: Optional[int] = None,
-      complete_padded_prompt: Optional[jax.Array] = None,
-      positions: Optional[jax.Array] = None,
-      previous_chunk: Optional[Any] = None,
       request_id: Optional[uuid.UUID] = None,
   ) -> Tuple[Prefix, ResultTokens]:
     """Computes a kv-cache for a set of tokens conditional on existing cache.

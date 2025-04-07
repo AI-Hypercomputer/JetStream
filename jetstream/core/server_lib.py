@@ -163,7 +163,7 @@ def create_driver(
             hbm_memory_budget=20 * (1024 ** 3),       # 20 GB HBM
             cpu_memory_budget=100 * (1024 ** 3)      # 100 GB RAM
             ))
-
+    # TODO: Make hbm_memory_budget and cpu_memory_budget configurable
     for ge in engines.generate_engines:
       generate_adapterstore.append(
           adapterstore.AdapterTensorStore(
