@@ -699,7 +699,7 @@ class Driver:
       # in parallel and sharing the same params. Issue arrise because prefill
       # uses pre-merged weights and generate uses only base weights.
       final_prefill_params = prefill_params
-      if adapter_id:
+      if adapter_id and adapter_tensorstore is not None:
         try:
           lora_params = asyncio.run(adapter_tensorstore.get_lora_weights(
             adapter_id=adapter_id, load_if_not_loaded=True))
@@ -773,7 +773,7 @@ class Driver:
               true_length=true_length,
           )
 
-      if adapter_id:
+      if adapter_id and adapter_tensorstore is not None:
         try:
           lora_params = asyncio.run(adapter_tensorstore.get_lora_weights(
             adapter_id))

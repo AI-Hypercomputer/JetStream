@@ -92,7 +92,7 @@ class AdapterTensorStoreTest(parameterized.TestCase, unittest.IsolatedAsyncioTes
     self.mock_size_hbm_b = _get_size_of_pytree(_as_jnp_array(self.mock_weights_b))
     self.mock_size_cpu_b = _get_size_of_pytree(self.mock_weights_b)
 
-    self.mock_weights_c = create_mock_weights(0.5) # Smaller adapter
+    self.mock_weights_c = create_mock_weights(4)
     self.mock_config_c = get_mock_config(rank=12)
     self.mock_size_hbm_c = _get_size_of_pytree(_as_jnp_array(self.mock_weights_c))
     self.mock_size_cpu_c = _get_size_of_pytree(self.mock_weights_c)
@@ -891,7 +891,7 @@ class AdapterTensorStoreTest(parameterized.TestCase, unittest.IsolatedAsyncioTes
 
     with self.assertRaisesRegex(ValueError,
         f"Adapter '{adapter_id}' not loaded in CPU RAM."):
-      await self.store._unsafe_transfer_to_hbm(adapter_id)
+      self.store._unsafe_transfer_to_hbm(adapter_id)
 
   async def test_unsafe_transfer_to_hbm_with_evict_failure(self):
     """Test eviction failure during transfer_to_hbm."""
@@ -901,7 +901,7 @@ class AdapterTensorStoreTest(parameterized.TestCase, unittest.IsolatedAsyncioTes
 
     with self.assertRaisesRegex(RuntimeError,
         "Not enough HBM to transfer adapter, and HBM eviction failed."):
-      await self.store._unsafe_transfer_to_hbm(adapter_id)
+      self.store._unsafe_transfer_to_hbm(adapter_id)
 
   async def test_unsafe_transfer_to_cpu_with_valueerror(self):
     """Test raises error in transfer_to_cpu if adapter not in hbm."""
@@ -910,7 +910,7 @@ class AdapterTensorStoreTest(parameterized.TestCase, unittest.IsolatedAsyncioTes
 
     with self.assertRaisesRegex(ValueError,
         f"Adapter '{adapter_id}' not loaded in HBM."):
-      await self.store._unsafe_transfer_to_cpu(adapter_id)
+      self.store._unsafe_transfer_to_cpu(adapter_id)
 
   async def test_unsafe_transfer_to_cpu_with_evict_failure(self):
     """Test eviction failure during transfer_to_cpu."""
@@ -920,7 +920,7 @@ class AdapterTensorStoreTest(parameterized.TestCase, unittest.IsolatedAsyncioTes
 
     with self.assertRaisesRegex(RuntimeError,
         "Not enough CPU RAM to transfer adapter, and CPU eviction failed."):
-      await self.store._unsafe_transfer_to_cpu(adapter_id)
+      self.store._unsafe_transfer_to_cpu(adapter_id)
 
   async def test_unsafe_unload_adapter_with_unregistered_adapter(self):
     """Test failure with unregistered adapterd during unload_adapter."""
@@ -928,7 +928,7 @@ class AdapterTensorStoreTest(parameterized.TestCase, unittest.IsolatedAsyncioTes
 
     with self.assertRaisesRegex(ValueError,
         f"Adapter with ID '{adapter_id}' not found."):
-      await self.store._unsafe_unload_adapter(adapter_id)
+      self.store._unsafe_unload_adapter(adapter_id)
 
   async def test_register_adapter_with_concurrent_registrations(self):
     """Test register adapter scenario with concurrent registrations."""

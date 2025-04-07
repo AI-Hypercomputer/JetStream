@@ -100,6 +100,7 @@ class TestEngine(engine_api.Engine):
     self._use_chunked_prefill = use_chunked_prefill
 
   def print_stats(self, label: str):
+    del label
     print("print_stats() is not yet supported in TestEngine")
 
   def load_params(self) -> Params:
@@ -115,11 +116,13 @@ class TestEngine(engine_api.Engine):
   def apply_adapter(self, base_params, adapter_config, adapter_params):
     """Apply the adapter to the base params."""
 
+    del adapter_config
     base_params = jnp.add(base_params, adapter_params)
 
   def unapply_adapter(self, base_params, adapter_config, adapter_params):
     """Unapply the adapter to the base params."""
 
+    del adapter_config
     base_params = jnp.subtract(base_params, adapter_params)
 
   def load_single_adapter(self, adapter_path):

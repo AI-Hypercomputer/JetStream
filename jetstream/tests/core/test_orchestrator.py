@@ -41,11 +41,9 @@ decoded (these are the ascii chars at those indices which is what the test
 tokenizer returns).
 """
 
-import asyncio
 import unittest
 import jax.numpy as jnp
 from parameterized import parameterized
-from typing import List
 from jetstream.core import orchestrator
 from jetstream.core.lora import adapter_tensorstore as adapterstore
 from jetstream.core.proto import jetstream_pb2
@@ -429,6 +427,7 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
           prefill_params=[prefill_engine.load_params()],
           generate_params=[generate_engine.load_params()],
       )
+      del driver
 
     with self.assertRaisesRegex(ValueError,
         "No generate engine provided."):
@@ -437,6 +436,7 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
           prefill_params=[prefill_engine.load_params()],
           generate_params=[generate_engine.load_params()],
       )
+      del driver
 
     with self.assertRaisesRegex(ValueError,
         "No prefill parameter provided."):
@@ -445,6 +445,7 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
           prefill_engines=[prefill_engine],
           generate_params=[generate_engine.load_params()],
       )
+      del driver
 
     with self.assertRaisesRegex(ValueError,
         "No generate parameter provided."):
@@ -453,6 +454,7 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
           prefill_engines=[prefill_engine],
           prefill_params=[prefill_engine.load_params()],
       )
+      del driver
 
   async def test_adapterstores_exceptions(
       self, interleaved_mode: bool = True
@@ -474,12 +476,11 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
 
     # chr of [266, 332, 415].
     expected_text = "An error occurred"
-    counter = 0
     output_text = ""
     async for resp in iterator:
       output_text += resp.stream_content.samples[0].text
 
-    self.assertIn("An error occurred", output_text)
+    self.assertIn(expected_text, output_text)
     driver.stop()
     print("Orchestrator driver stopped.")
 

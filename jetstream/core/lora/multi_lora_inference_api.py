@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Manages the list of fine-tuned adapters loaded on top of the base model for serving.
+"""Manages the list of fine-tuned adapters loaded on top of
+the base model for serving.
 """
 
 import logging
@@ -26,7 +27,9 @@ from jetstream.core.proto import multi_lora_decoding_pb2
 
 
 class MultiLoraManager(multi_lora_decoding_pb2_grpc.v1Servicer):
-  """Manages the parameters of multiple lora requests and their status/lifetimes."""
+  """Manages the parameters of multiple lora requests and their
+  status/lifetimes.
+  """
 
   _driver: orchestrator.Driver
 
@@ -35,8 +38,8 @@ class MultiLoraManager(multi_lora_decoding_pb2_grpc.v1Servicer):
 
   def models(
       self,
-	    request: multi_lora_decoding_pb2.ListAdaptersRequest,
-	    context: Optional[grpc.aio.ServicerContext] = None,
+      request: multi_lora_decoding_pb2.ListAdaptersRequest,
+      context: Optional[grpc.aio.ServicerContext] = None,
   ) -> multi_lora_decoding_pb2.ListAdaptersResponse:
     """ListAdapters all loaded LoRA adapters."""
 
@@ -60,15 +63,19 @@ class MultiLoraManager(multi_lora_decoding_pb2_grpc.v1Servicer):
             size_hbm=adapter_data.size_hbm,
             size_cpu=adapter_data.size_cpu,
             last_accessed=adapter_data.last_accessed,
-            status=adapter_data.status)
+            status=adapter_data.status,
+        )
 
         adapter_infos.append(adapter_info)
 
-      return multi_lora_decoding_pb2.ListAdaptersResponse(success=True, adapter_infos=adapter_infos)
-    except Exception as e:
-      logging.info(f"Listing of adapters failed with error: {str(e)}")
-      return multi_lora_decoding_pb2.ListAdaptersResponse(success=False, error_message=str(e))
-
+      return multi_lora_decoding_pb2.ListAdaptersResponse(
+          success=True, adapter_infos=adapter_infos
+      )
+    except Exception as e:    # pylint: disable=broad-exception-caught
+      logging.info("Listing of adapters failed with error: %s", str(e))
+      return multi_lora_decoding_pb2.ListAdaptersResponse(
+          success=False, error_message=str(e)
+      )
 
   def load_lora_adapter(
       self,
@@ -78,14 +85,21 @@ class MultiLoraManager(multi_lora_decoding_pb2_grpc.v1Servicer):
     """Load a LoRA adapter as mentioned in the request."""
 
     try:
-      asyncio.run(self._driver.load_adapter_to_tensorstore(
-        request.adapter_id, request.adapter_path))
+      asyncio.run(
+          self._driver.load_adapter_to_tensorstore(
+              request.adapter_id, request.adapter_path
+          )
+      )
 
       return multi_lora_decoding_pb2.LoadAdapterResponse(success=True)
-    except Exception as e:
-      logging.info(f"Loading of adapter_id={request.adapter_id} failed with error: {str(e)}")
-      return multi_lora_decoding_pb2.LoadAdapterResponse(success=False, error_message=str(e))
-
+    except Exception as e:    # pylint: disable=broad-exception-caught
+      logging.info(
+          "Loading of adapter_id=%s failed with error: %s",
+          request.adapter_id, str(e)
+      )
+      return multi_lora_decoding_pb2.LoadAdapterResponse(
+          success=False, error_message=str(e)
+      )
 
   def unload_lora_adapter(
       self,
@@ -93,13 +107,18 @@ class MultiLoraManager(multi_lora_decoding_pb2_grpc.v1Servicer):
       context: Optional[grpc.aio.ServicerContext] = None,
   ) -> multi_lora_decoding_pb2.UnloadAdapterResponse:
     """Unload a LoRA adapter as mentioned in the request."""
-    
+
     try:
-      asyncio.run(self._driver.unload_adapter_from_tensorstore(
-        request.adapter_id))
+      asyncio.run(
+          self._driver.unload_adapter_from_tensorstore(request.adapter_id)
+      )
 
       return multi_lora_decoding_pb2.UnloadAdapterResponse(success=True)
-    except Exception as e:
-      logging.info(f"Loading of adapter_id={request.adapter_id} failed with error: {str(e)}")
-      return multi_lora_decoding_pb2.UnloadAdapterResponse(success=False, error_message=str(e))
-
+    except Exception as e:    # pylint: disable=broad-exception-caught
+      logging.info(
+          "Loading of adapter_id=%s failed with error: %s",
+          request.adapter_id, str(e)
+      )
+      return multi_lora_decoding_pb2.UnloadAdapterResponse(
+          success=False, error_message=str(e)
+      )
