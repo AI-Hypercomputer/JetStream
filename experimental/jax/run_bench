@@ -1,0 +1,4 @@
+export PYTHONPATH=$(pwd)
+export JAX_COMPILATION_CACHE_DIR="/tmp/jax_cache"
+export HF_HOME=/mnt/.cache
+python inference/entrypoint/mini_offline_benchmarking.py

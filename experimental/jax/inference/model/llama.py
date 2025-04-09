@@ -198,7 +198,7 @@ class _LlamaDecoderLayer(nn.Module):
     mesh = parallel_config.mesh
 
     if parallel.platform() == "tpu":
-      enable_collective_matmul = True
+      enable_collective_matmul = False
     else:
       enable_collective_matmul = False
 

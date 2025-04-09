@@ -6,7 +6,7 @@ torch==2.3.0+cpu
 torchvision==0.18.0+cpu
 jax[tpu]==0.4.33
 huggingface_hub[cli]
-transformers
+transformers==4.48.0
 pandas
 fastapi
 uvicorn
