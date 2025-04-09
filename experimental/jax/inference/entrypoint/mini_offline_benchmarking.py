@@ -28,8 +28,8 @@ def _load_openorca_dataset(size: int, shuffle: bool) -> list[str]:
   # Read pickle file
   current_dir = os.path.dirname(__file__)
   samples = pandas.read_pickle(
-      # f"{current_dir}/open_orca_gpt4_tokenized_llama.calibration_1000.pkl"
-      f"{current_dir}/open_orca_gpt4_tokenized_llama.sampled_24576.pkl"
+      f"{current_dir}/open_orca_gpt4_tokenized_llama.calibration_1000.pkl"
+      # f"{current_dir}/open_orca_gpt4_tokenized_llama.sampled_24576.pkl"
   )
   data = [row["input"] for _, row in samples.iterrows()]
 
@@ -45,14 +45,16 @@ def _load_openorca_dataset(size: int, shuffle: bool) -> list[str]:
   else:
     return data[:size]
 
-
 def benchmark():
   size = 24_000
+  # size = 100
   dataset = _load_openorca_dataset(size=size, shuffle=True)
   assert len(dataset) == size
 
+  # dataset = process_dataset(dataset, 256)
   inference = offline_inference.OfflineInference(
-      model_id=ModelId.llama_2_7b_chat_hf,
+      # model_id=ModelId.llama_2_7b_chat_hf,
+      model_id=ModelId.llama_2_70b_chat_hf,
       num_engines=1,
       enable_multiprocessing=False,
   )

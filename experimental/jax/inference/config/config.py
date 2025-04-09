@@ -46,12 +46,12 @@ class Config:
       ),
       ModelId.llama_2_70b_chat_hf: InferenceParams(
           model_id=ModelId.llama_2_70b_chat_hf,
-          batch_size=100,
-          max_seq_length=2048,
-          max_input_length=1024,
-          prefill_chunk_sizes=[128, 256, 512, 1024],
+          batch_size=512,
+          max_seq_length=512,
+          max_input_length=256,
+          prefill_chunk_sizes=[256],
           page_size=128,
-          hbm_utilization=0.875,
+          hbm_utilization=0.95,
       ),
   }
 

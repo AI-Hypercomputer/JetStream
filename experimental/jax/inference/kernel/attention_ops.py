@@ -120,7 +120,8 @@ def decode_attention(q, cache_k, cache_v, pos, page_table, accelerator="tpu"):
   if accelerator == "tpu":
     # Heuristically set the pages per compute block.
     # TODO: tune the setup.
-    pages_per_compute_block = 8
+    # pages_per_compute_block = 8
+    pages_per_compute_block = 4
     _, _, _, head_dim = cache_k.shape
     q = q / jnp.sqrt(head_dim)
     seq_len = pos + 1

@@ -29,7 +29,7 @@ gcloud alpha compute tpus queued-resources create ${QR_NAME} \
     --project ${PROJECT_ID} \
     --zone ${ZONE} \
     --accelerator-type v5litepod-8 \
-    --runtime-version v2-alpha-tpuv5-lite 
+    --runtime-version v2-alpha-tpuv5-lite
 ```
 
 For more [information](https://cloud.google.com/tpu/docs/queued-resources)
@@ -51,12 +51,19 @@ git clone https://github.com/AI-Hypercomputer/JetStream.git
 cd JetStream/experimental/jax
 
 pip install -r requirements.txt
+
+sudo apt update && sudo apt install git-lfs
+git lfs install
+git lfs pull
+
 ```
 
 Log in to the Hugging Face (make sure your account has the permission to access `meta-llama/Llama-2-7b-chat-hf`)
 
 ```
 huggingface-cli login
+export HF_HOME=/path/you/can/write/.cache/huggingface if you don't have access to /mnt/.cache
+
 ```
 
 
