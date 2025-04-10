@@ -45,10 +45,13 @@ linter-check:
 
 
 # Testing related targets
-tests: unit-tests check-test-coverage
+tests: unit-tests py-tests check-test-coverage
 
 unit-tests:
 	coverage run -m unittest -v
+
+py-tests:
+	coverage run -m pytest jetstream/tests
 
 check-test-coverage:
 	coverage report -m --omit="jetstream/tests/*,jetstream/core/proto/*,jetstream/engine/tokenizer_pb2.py,jetstream/external_tokenizers/*,benchmarks/benchmark_serving.py,benchmarks/eval_accuracy.py,benchmarks/eval_accuracy_mmlu.py,benchmarks/eval_accuracy_longcontext.py,benchmarks/math_utils.py,benchmarks/tests/*" --fail-under=90
