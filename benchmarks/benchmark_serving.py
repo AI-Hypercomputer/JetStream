@@ -625,29 +625,37 @@ async def grpc_async_request(
 ) -> tuple[list[int], float, float, float]:
   """Send grpc synchronous request since the current grpc server is sync."""
   options = [("grpc.keepalive_timeout_ms", 10000)]
-  async with grpc.aio.insecure_channel(api_url, options=options) as channel:
-    stub = jetstream_pb2_grpc.OrchestratorStub(channel)
-    request_start_time = time.perf_counter()
-    response = stub.Decode(request)
-    token_list = []
-    ttft = 0
-    ttst = 0
-    stream_resp_cnt = 0
-    async for resp in response:
-      stream_resp_cnt += 1
-      if stream_resp_cnt == 1:
-        await prefill_quota.inc()
-        ttft = time.perf_counter() - request_start_time
-        if ttft > 2.0:
-          print(datetime.now(), f"slow TTFT {ttft:.2f}", prefill_quota.value())
-      elif stream_resp_cnt == 2:
-        ttst = time.perf_counter() - request_start_time
-      resp_tokens = resp.stream_content.samples[0].token_ids
-      token_list.extend(resp_tokens)
-      out_token_cnt.increment(len(resp_tokens))
-    await active_req_quota.inc()
-    req_latency = time.perf_counter() - request_start_time
-    return token_list, ttft, ttst, req_latency
+  # Retry connection while server is not ready.
+  while True:
+    try:
+      async with grpc.aio.insecure_channel(api_url, options=options) as channel:
+        stub = jetstream_pb2_grpc.OrchestratorStub(channel)
+        request_start_time = time.perf_counter()
+        response = stub.Decode(request)
+        token_list = []
+        ttft = 0
+        ttst = 0
+        stream_resp_cnt = 0
+        async for resp in response:
+          stream_resp_cnt += 1
+          if stream_resp_cnt == 1:
+            await prefill_quota.inc()
+            ttft = time.perf_counter() - request_start_time
+            if ttft > 2.0:
+              print(
+                  datetime.now(), f"slow TTFT {ttft:.2f}", prefill_quota.value()
+              )
+          elif stream_resp_cnt == 2:
+            ttst = time.perf_counter() - request_start_time
+          resp_tokens = resp.stream_content.samples[0].token_ids
+          token_list.extend(resp_tokens)
+          out_token_cnt.increment(len(resp_tokens))
+        await active_req_quota.inc()
+        req_latency = time.perf_counter() - request_start_time
+        return token_list, ttft, ttst, req_latency
+    except grpc.aio.AioRpcError as e:
+      print(e)
+      await asyncio.sleep(10)
 
 
 async def send_request(
