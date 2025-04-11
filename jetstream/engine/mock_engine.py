@@ -99,6 +99,10 @@ class TestEngine(engine_api.Engine):
     self._prng_key = jax.random.PRNGKey(42)
     self._use_chunked_prefill = use_chunked_prefill
 
+  def print_stats(self, label: str):
+    del label
+    print("print_stats() is not yet supported in TestEngine")
+
   def load_params(self) -> Params:
     """Loads model weights."""
     # An integer, used to multiply inputs.
@@ -108,6 +112,29 @@ class TestEngine(engine_api.Engine):
     """Loads model weights."""
     # An integer, used to multiply inputs.
     return {"params": jnp.array([self.weight], dtype=jnp.float32)}
+
+  def apply_adapter(self, base_params, adapter_config, adapter_params):
+    """Apply the adapter to the base params."""
+
+    del adapter_config
+    base_params = jnp.add(base_params, adapter_params)
+
+  def unapply_adapter(self, base_params, adapter_config, adapter_params):
+    """Unapply the adapter to the base params."""
+
+    del adapter_config
+    base_params = jnp.subtract(base_params, adapter_params)
+
+  def load_single_adapter(self, adapter_path):
+    """Return adapter_params and adapter_config."""
+
+    if "fail" in adapter_path:
+      return None, None
+
+    adapter_params = jnp.array([3.0], dtype=jnp.float32)
+    adapter_config = {"r": 4, "alpha": 32}
+
+    return adapter_params, adapter_config
 
   @functools.partial(
       jax.jit,
