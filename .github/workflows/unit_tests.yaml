@@ -68,5 +68,7 @@ jobs:
       run: make install-deps
     - name: Run all unit tests in JetStream (jetstream/tests)
       run: make unit-tests
+    - name: Run all py tests in JetStream (jetstream/tests)
+      run: make py-tests
     - name: Create test coverage report
       run: make check-test-coverage
