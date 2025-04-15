@@ -14,14 +14,18 @@
 
 """Prefix Cache Test"""
 
-from jetstream.core import prefix_cache
-
 import unittest
+from unittest.mock import MagicMock
+
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from jax.experimental import mesh_utils
 from jax.sharding import Mesh, NamedSharding, PartitionSpec
+
+from jetstream.core import prefix_cache
+from jetstream.engine import engine_api
 
 
 def create_default_value(
@@ -764,7 +768,7 @@ class PrefixCacheTest(unittest.TestCase):
         hbm_bytes=max_bytes, dram_bytes=max_bytes
     )
     tokens = (1, 2, 3)
-    no_matched_key = prefix_cache_inst.fetch_longest_common_prefix_key(tokens)
+    no_matched_key = prefix_cache_inst.load(tokens)
     # first seen prefix will not match any key
     assert no_matched_key is None
     # Use dummy cache
@@ -800,12 +804,7 @@ class PrefixCacheTest(unittest.TestCase):
     prefix_cache_inst.save(tuple(tokens), saved_value)
 
     tokens_with_common_prefix = tokens + (4, 5, 6)
-    matched_key = prefix_cache_inst.fetch_longest_common_prefix_key(
-        tokens_with_common_prefix
-    )
-    assert matched_key is not None
-    assert matched_key == tokens
-    loaded_value = prefix_cache_inst.load(matched_key)
+    loaded_value = prefix_cache_inst.load(tokens_with_common_prefix)
     assert loaded_value == saved_value
 
   def test_clear_cache(self):
@@ -837,25 +836,6 @@ class PrefixCacheTest(unittest.TestCase):
     assert prefix_cache_inst.load(tokens1) == value1
     assert prefix_cache_inst.save(tokens3, value3) is True
     assert prefix_cache_inst.load(tokens2) is None
-
-  def test_fetch_longest_common_prefix_key_does_not_affect_lru(self):
-    tokens1 = (1,)
-    value1 = create_default_value(tokens=tokens1)
-    tokens2 = (2,)
-    value2 = create_default_value(tokens=tokens2)
-    tokens3 = (3,)
-    value3 = create_default_value(tokens=tokens3)
-    # cache with 2 values size, and will evict with LRU
-    max_bytes = value1.prefix_size_bytes * 2
-    prefix_cache_inst = prefix_cache.PrefixCache(
-        hbm_bytes=max_bytes, dram_bytes=max_bytes
-    )
-    assert prefix_cache_inst.save(tokens1, value1) is True
-    assert prefix_cache_inst.save(tokens2, value2) is True
-    assert prefix_cache_inst.fetch_longest_common_prefix_key(tokens1) == tokens1
-    assert prefix_cache_inst.save(tokens3, value3) is True
-    assert prefix_cache_inst.fetch_longest_common_prefix_key(tokens1) is None
-    assert prefix_cache_inst.load(tokens1) is None
 
   def test_evict_cache_until_feasible_to_new_cache(self):
     # value2 is double size of value1
@@ -903,42 +883,44 @@ class PrefixCacheTest(unittest.TestCase):
     assert prefix_cache_inst.load(key=(2,)) == value1
     assert prefix_cache_inst.load(key=(3,)) is None
 
-  def test_cannot_fetch_longest_common_prefix_key_while_fully_evicted_from_dram(
+  def test_cannot_load_while_fully_evicted_from_dram(
       self,
   ):
-    value = create_default_value()
+    value = create_default_value(tokens=(1,))
+    # the size to the value will not change using the same prefix
     max_bytes = value.prefix_size_bytes
     prefix_cache_inst = prefix_cache.PrefixCache(
         hbm_bytes=max_bytes, dram_bytes=max_bytes * 2
     )
     assert (
-        prefix_cache_inst.save(
-            (1, 2),
-            value,
-        )
+        prefix_cache_inst.save((1, 2), create_default_value(tokens=(1, 2)))
         is True
     )
     assert (
-        prefix_cache_inst.save(
-            (1, 3),
-            value,
-        )
+        prefix_cache_inst.save((1, 3), create_default_value(tokens=(1, 3)))
         is True
     )
     # (1,2,) is only in DRAM now
-    assert prefix_cache_inst.fetch_longest_common_prefix_key((1, 2, 3)) == (
+    loaded_value = prefix_cache_inst.load((1, 2, 3))
+    assert loaded_value is not None
+    assert loaded_value.tokens == (
         1,
         2,
     )
+    # load (1,3,) again to push (1,2,) to the DRAM with LRU
+    prefix_cache_inst.load((1, 3))
+
     assert (
         prefix_cache_inst.save(
             (2, 3),
-            value,
+            create_default_value(tokens=(2, 3)),
         )
         is True
     )
     # (1,2,) is fully evicted now
-    assert prefix_cache_inst.fetch_longest_common_prefix_key((1, 2, 3)) == (
+    loaded_value = prefix_cache_inst.load((1, 2, 3))
+    assert loaded_value is not None
+    assert loaded_value.tokens == (
         1,
         3,
     )
@@ -977,6 +959,22 @@ class PrefixCacheTest(unittest.TestCase):
     clear_bytes_in_use = get_byte_in_use()
     assert clear_bytes_in_use == del_loaded_bytes_in_use - prefix_bytes
     assert prefix_cache_inst.load(key) is None
+
+  def test_load_with_min_common_prefix_length(self):
+    value = create_default_value()
+    max_bytes = value.prefix_size_bytes
+    prefix_cache_inst = prefix_cache.PrefixCache(
+        hbm_bytes=max_bytes, dram_bytes=max_bytes * 2
+    )
+    assert prefix_cache_inst.save((1, 2, 3, 4, 5), value)
+    assert (
+        prefix_cache_inst.load((1, 2, 3), min_common_prefix_key_length=4)
+        is None
+    )
+    assert (
+        prefix_cache_inst.load((1, 2, 3), min_common_prefix_key_length=3)
+        is not None
+    )
 
   def test_cache_move_between_device_and_host_with_hierarchical_cache(self):
     value1 = create_default_value()
@@ -1027,6 +1025,222 @@ class PrefixCacheTest(unittest.TestCase):
     assert loaded_value is not None
     assert loaded_value.prefix.device == local_devices[1]
     assert loaded_value.device == local_devices[0]
+
+
+class PrefixCacheUtilsTest(unittest.TestCase):
+
+  def setUp(self):
+    # Mock KVCache structure
+    self.mock_kv_cache = {
+        "layer_0": {
+            "key": jnp.ones((1, 10)),
+            "value": jnp.ones((1, 10)),
+        }
+    }
+
+  # --- Tests for load_existing_prefix ---
+
+  def test_load_existing_prefix_cache_miss(self):
+    """Test load_existing_prefix when the cache returns None."""
+    mock_cache = MagicMock(spec=prefix_cache.PrefixCache)
+    mock_cache.load.return_value = None
+    tokens = (1, 2, 3, 4, 5, 6)
+    chunk_size = 4
+
+    result = prefix_cache.load_existing_prefix(mock_cache, tokens, chunk_size)
+
+    self.assertIsNone(result)
+    mock_cache.load.assert_called_once_with(
+        tokens, min_common_prefix_key_length=chunk_size
+    )
+
+  def test_load_existing_prefix_common_len_less_than_chunk(self):
+    """Test load_existing_prefix when common length is less than chunk_size."""
+    mock_value = MagicMock(spec=prefix_cache.Value)
+    mock_value.tokens = (1, 2, 3)  # Common prefix is 3
+    mock_value.prefix = self.mock_kv_cache
+    mock_cache = MagicMock(spec=prefix_cache.PrefixCache)
+    mock_cache.load.return_value = mock_value
+    tokens = (1, 2, 3, 4, 5, 6)  # Input tokens
+    chunk_size = 4  # Chunk size > common prefix length
+
+    result = prefix_cache.load_existing_prefix(mock_cache, tokens, chunk_size)
+
+    self.assertIsNone(result)
+    mock_cache.load.assert_called_once_with(
+        tokens, min_common_prefix_key_length=chunk_size
+    )
+
+  def test_load_existing_prefix_success_no_truncation_needed(self):
+    """Test successful load where common length is a multiple of chunk_size."""
+    cached_tokens = (1, 2, 3, 4)
+    mock_value = MagicMock(spec=prefix_cache.Value)
+    mock_value.tokens = cached_tokens
+    mock_value.prefix = self.mock_kv_cache
+    mock_cache = MagicMock(spec=prefix_cache.PrefixCache)
+    mock_cache.load.return_value = mock_value
+    tokens = (1, 2, 3, 4, 5, 6)  # Input tokens, common prefix is 4
+    chunk_size = 4
+
+    result = prefix_cache.load_existing_prefix(mock_cache, tokens, chunk_size)
+
+    self.assertIsNotNone(result)
+    assert result is not None
+    existing_prefix, common_prefix_len = result
+
+    self.assertEqual(common_prefix_len, 4)
+    self.assertIsInstance(existing_prefix, engine_api.ExistingPrefix)
+    self.assertEqual(existing_prefix.cache, self.mock_kv_cache)
+    np.testing.assert_array_equal(
+        existing_prefix.common_prefix_tokens, jnp.array([1, 2, 3, 4])
+    )
+    mock_cache.load.assert_called_once_with(
+        tokens, min_common_prefix_key_length=chunk_size
+    )
+
+  def test_load_existing_prefix_success_with_truncation(self):
+    """Test successful load where common length needs truncation."""
+    cached_tokens = (1, 2, 3, 4, 5, 6, 7)
+    mock_value = MagicMock(spec=prefix_cache.Value)
+    mock_value.tokens = cached_tokens
+    mock_value.prefix = self.mock_kv_cache
+    mock_cache = MagicMock(spec=prefix_cache.PrefixCache)
+    mock_cache.load.return_value = mock_value
+    tokens = (1, 2, 3, 4, 5, 6, 7, 8, 9)  # Input tokens, common prefix is 7
+    chunk_size = 4
+
+    result = prefix_cache.load_existing_prefix(mock_cache, tokens, chunk_size)
+
+    self.assertIsNotNone(result)
+    assert result is not None
+    existing_prefix, common_prefix_len = result
+
+    self.assertEqual(common_prefix_len, 7)  # Original common length
+    self.assertIsInstance(existing_prefix, engine_api.ExistingPrefix)
+    self.assertEqual(existing_prefix.cache, self.mock_kv_cache)
+    # Truncated length should be 4 (7 - (7 % 4))
+    np.testing.assert_array_equal(
+        existing_prefix.common_prefix_tokens, jnp.array([1, 2, 3, 4])
+    )
+    mock_cache.load.assert_called_once_with(
+        tokens, min_common_prefix_key_length=chunk_size
+    )
+
+  def test_load_existing_prefix_truncation_covers_all_reduce_chunk(self):
+    """Test load where truncation covers all tokens, requiring reduction."""
+    cached_tokens = (1, 2, 3, 4, 5, 6, 7, 8)
+    mock_value = MagicMock(spec=prefix_cache.Value)
+    mock_value.tokens = cached_tokens
+    mock_value.prefix = self.mock_kv_cache
+    mock_cache = MagicMock(spec=prefix_cache.PrefixCache)
+    mock_cache.load.return_value = mock_value
+    tokens = (
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+    )  # Input tokens match cached tokens exactly
+    chunk_size = 4
+
+    result = prefix_cache.load_existing_prefix(mock_cache, tokens, chunk_size)
+
+    self.assertIsNotNone(result)
+    assert result is not None
+    existing_prefix, common_prefix_len = result
+
+    self.assertEqual(common_prefix_len, 8)  # Original common length
+    self.assertIsInstance(existing_prefix, engine_api.ExistingPrefix)
+    self.assertEqual(existing_prefix.cache, self.mock_kv_cache)
+    # Truncated length initially 8, reduced by chunk_size to 4
+    np.testing.assert_array_equal(
+        existing_prefix.common_prefix_tokens, jnp.array([1, 2, 3, 4])
+    )
+    mock_cache.load.assert_called_once_with(
+        tokens, min_common_prefix_key_length=chunk_size
+    )
+
+  def test_load_existing_prefix_truncation_covers_all_reduce_makes_zero(self):
+    """Test load where reduction after full coverage makes length <= 0."""
+    cached_tokens = (1, 2, 3, 4)
+    mock_value = MagicMock(spec=prefix_cache.Value)
+    mock_value.tokens = cached_tokens
+    mock_value.prefix = self.mock_kv_cache
+    mock_cache = MagicMock(spec=prefix_cache.PrefixCache)
+    mock_cache.load.return_value = mock_value
+    tokens = (1, 2, 3, 4)  # Input tokens match cached tokens exactly
+    chunk_size = 4
+
+    result = prefix_cache.load_existing_prefix(mock_cache, tokens, chunk_size)
+
+    # Should return None because reducing by chunk_size makes length 0
+    self.assertIsNone(result)
+    mock_cache.load.assert_called_once_with(
+        tokens, min_common_prefix_key_length=chunk_size
+    )
+
+  # --- Tests for save_existing_prefix ---
+
+  def test_save_existing_prefix_len_less_than_chunk(self):
+    """Test save_existing_prefix when token length < chunk_size."""
+    mock_cache = MagicMock(spec=prefix_cache.PrefixCache)
+    tokens = (1, 2, 3)
+    chunk_size = 4
+    padded_length = 8
+
+    result = prefix_cache.save_existing_prefix(
+        mock_cache, tokens, self.mock_kv_cache, chunk_size, padded_length, False
+    )
+
+    self.assertFalse(result)
+    mock_cache.contains.assert_not_called()
+    mock_cache.save.assert_not_called()
+
+  def test_save_existing_prefix_already_contains(self):
+    """Test save_existing_prefix when the key already exists."""
+    mock_cache = MagicMock(spec=prefix_cache.PrefixCache)
+    mock_cache.contains.return_value = True
+    tokens = (1, 2, 3, 4, 5, 6, 7)
+    chunk_size = 4
+    padded_length = 8
+    save_len = 4  # 7 - (7 % 4)
+    truncated_tokens = tokens[:save_len]
+
+    result = prefix_cache.save_existing_prefix(
+        mock_cache, tokens, self.mock_kv_cache, chunk_size, padded_length, False
+    )
+
+    self.assertFalse(result)
+    mock_cache.contains.assert_called_once_with(truncated_tokens)
+    mock_cache.save.assert_not_called()
+
+  def test_save_existing_prefix_save_fails(self):
+    """Test save_existing_prefix when the underlying cache save fails."""
+    mock_cache = MagicMock(spec=prefix_cache.PrefixCache)
+    mock_cache.contains.return_value = False
+    mock_cache.save.return_value = False  # Simulate failed save
+    tokens = (1, 2, 3, 4, 5, 6, 7)
+    chunk_size = 4
+    padded_length = 8
+    copy_prefix = False
+    save_len = 4
+    truncated_tokens = tokens[:save_len]
+
+    result = prefix_cache.save_existing_prefix(
+        mock_cache,
+        tokens,
+        self.mock_kv_cache,
+        chunk_size,
+        padded_length,
+        copy_prefix,
+    )
+
+    self.assertFalse(result)
+    mock_cache.contains.assert_called_once_with(truncated_tokens)
+    mock_cache.save.assert_called_once()  # Still attempted to save
 
 
 if __name__ == "__main__":

@@ -87,6 +87,7 @@ class TestEngine(engine_api.Engine):
       weight: float,
       vocab_size: int = 1024,
       use_chunked_prefill: bool = False,
+      prefill_chunk_size: int = 64,
   ):
     self.prefill_cache_batch = batch_size
     self.generate_cache_batch = batch_size
@@ -98,6 +99,7 @@ class TestEngine(engine_api.Engine):
     )
     self._prng_key = jax.random.PRNGKey(42)
     self._use_chunked_prefill = use_chunked_prefill
+    self._prefill_chunk_size = prefill_chunk_size
 
   def print_stats(self, label: str):
     del label
@@ -146,7 +148,7 @@ class TestEngine(engine_api.Engine):
       self,
       *,
       params: Params,
-      existing_prefix: Optional[jax.Array] = None,
+      existing_prefix: Optional[engine_api.ExistingPrefix] = None,
       padded_tokens: jax.Array,
       true_length: int,
       request_id: Optional[uuid.UUID] = None,
@@ -167,15 +169,21 @@ class TestEngine(engine_api.Engine):
     Returns:
       kv_cache: For the resulting text.
     """
-    if existing_prefix is not None:
-      raise NotImplementedError
+
     assert padded_tokens.ndim == 1
 
+    start_pos = 0
     # Generate dummy prefill cache content
     if not self._use_chunked_prefill:
       prefill_cache = padded_tokens[None, :] * params
     else:
-      prefill_cache = padded_tokens[None, :]
+      prefill_cache = jnp.zeros((1, self.cache_length), dtype=jnp.float32)
+      if existing_prefix is not None:
+        prefill_cache = existing_prefix.cache
+        start_pos = len(existing_prefix.common_prefix_tokens)
+      prefill_cache = jax.lax.dynamic_update_index_in_dim(
+          prefill_cache, padded_tokens[None, :] * params["params"], start_pos, 1
+      )
 
     # Create a dummy first generated token.
     first_generated_token = (prefill_cache.sum(axis=-1).astype(jnp.int32))[
@@ -186,7 +194,7 @@ class TestEngine(engine_api.Engine):
       prefix = Prefix(
           logits=jax.random.normal(self._prng_key, (1, self.vocab_size)),
           cache=prefill_cache,
-          next_pos=jnp.full((1, 1), true_length, dtype=jnp.int32),
+          next_pos=jnp.full((1, 1), start_pos + true_length, dtype=jnp.int32),
           num_generated_tokens=jnp.zeros((1, 1), dtype=jnp.int32),
           first_token=first_generated_token,
       )
@@ -194,7 +202,9 @@ class TestEngine(engine_api.Engine):
       prefix = {
           "logits": jax.random.normal(self._prng_key, (1, self.vocab_size)),
           "cache": prefill_cache,
-          "next_pos": jnp.full((1, 1), true_length, dtype=jnp.int32),
+          "next_pos": jnp.full(
+              (1, 1), start_pos + true_length, dtype=jnp.int32
+          ),
           "generated_tokens": jnp.zeros((1, 1), dtype=jnp.int32),
           "tokens": first_generated_token,
           "first_token": first_generated_token,
@@ -534,4 +544,4 @@ class TestEngine(engine_api.Engine):
   @property
   def prefill_chunk_size(self) -> int:
     """Prefill chunk size."""
-    return 64
+    return self._prefill_chunk_size
