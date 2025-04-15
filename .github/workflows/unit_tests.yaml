@@ -31,7 +31,7 @@ jobs:
     name: "Python type/lint/format checks"
     strategy:
       matrix:
-        os: [ubuntu-20.04]
+        os: [ubuntu-24.04]
         python-version: ['3.10']
     runs-on: ${{ matrix.os }}
     steps:
@@ -54,7 +54,7 @@ jobs:
     name: "JetStream unit tests"
     strategy:
       matrix:
-        os: [ubuntu-20.04]
+        os: [ubuntu-24.04]
         python-version: ['3.10']
     runs-on: ${{ matrix.os }}
     steps:
@@ -68,5 +68,7 @@ jobs:
       run: make install-deps
     - name: Run all unit tests in JetStream (jetstream/tests)
       run: make unit-tests
+    - name: Run all py tests in JetStream (jetstream/tests)
+      run: make py-tests
     - name: Create test coverage report
       run: make check-test-coverage

@@ -89,6 +89,7 @@ class ServerTest(unittest.TestCase):
         )
         if metrics_enabled is True
         else None,
+        lora_input_adapters_path="/test/adapter/",
     )
     ###################### Requester side ######################################
 

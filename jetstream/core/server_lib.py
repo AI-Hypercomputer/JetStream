@@ -27,6 +27,7 @@ import sys
 import threading
 import time
 import traceback
+import importlib
 from typing import Any, Type
 
 
@@ -34,6 +35,7 @@ import grpc
 import jax
 from jetstream.core import config_lib
 from jetstream.core import orchestrator
+from jetstream.core.lora import adapter_tensorstore as adapterstore
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.engine import warmup_utils, engine_api
@@ -62,7 +64,12 @@ class JetStreamServer:
   """JetStream grpc server."""
 
   def __init__(
-      self, driver: orchestrator.Driver, threads: int, port, credentials
+      self,
+      driver: orchestrator.Driver,
+      threads: int,
+      port,
+      credentials,
+      enable_llm_inference_pool=False,
   ):
     self._executor = futures.ThreadPoolExecutor(max_workers=threads)
 
@@ -81,6 +88,19 @@ class JetStreamServer:
     jetstream_pb2_grpc.add_OrchestratorServicer_to_server(
         orchestrator.LLMOrchestrator(driver=self._driver), self._grpc_server
     )
+
+    if enable_llm_inference_pool:
+      module_name = "jetstream.core.lora.multi_lora_inference_api"
+      multi_lora_inference = importlib.import_module(module_name)
+
+      module_name = "jetstream.core.proto.multi_lora_decoding_pb2_grpc"
+      multi_lora_decoding_pb2_grpc = importlib.import_module(module_name)
+
+      multi_lora_decoding_pb2_grpc.add_v1Servicer_to_server(
+          multi_lora_inference.MultiLoraManager(driver=self._driver),
+          self._grpc_server,
+      )
+
     self._grpc_server.add_secure_port(f"{_HOST}:{port}", credentials)
 
   async def _async_start(self) -> None:
@@ -117,6 +137,7 @@ def create_driver(
     metrics_collector: JetstreamMetricsCollector | None = None,
     enable_model_warmup: bool = False,
     multi_sampling: bool = False,
+    lora_input_adapters_path: str | None = None,
 ):
   """Creates a driver with a specified config.
 
@@ -145,10 +166,47 @@ def create_driver(
       len(config.prefill_slices) + len(config.generate_slices) == 0
   )
 
+  prefill_adapterstore = []
+  generate_adapterstore = []
+  shared_adapterstore = []
+
+  if lora_input_adapters_path:
+    for pe in engines.prefill_engines:
+      prefill_adapterstore.append(
+          adapterstore.AdapterTensorStore(
+              engine=pe,
+              adapters_dir_path=lora_input_adapters_path,
+              hbm_memory_budget=20 * (1024**3),  # 20 GB HBM
+              cpu_memory_budget=100 * (1024**3),  # 100 GB RAM
+          )
+      )
+    # TODO: Make hbm_memory_budget and cpu_memory_budget configurable
+    for ge in engines.generate_engines:
+      generate_adapterstore.append(
+          adapterstore.AdapterTensorStore(
+              engine=ge,
+              adapters_dir_path=lora_input_adapters_path,
+              hbm_memory_budget=20 * (1024**3),  # 20 GB HBM
+              cpu_memory_budget=100 * (1024**3),  # 100 GB RAM
+          )
+      )
+
+    for ie in engines.interleaved_engines:
+      shared_adapterstore.append(
+          adapterstore.AdapterTensorStore(
+              engine=ie,
+              adapters_dir_path=lora_input_adapters_path,
+              hbm_memory_budget=20 * (1024**3),  # 20 GB HBM
+              cpu_memory_budget=100 * (1024**3),  # 100 GB RAM
+          )
+      )
+
   prefill_engines = engines.prefill_engines + engines.interleaved_engines
   generate_engines = engines.generate_engines + engines.interleaved_engines
   prefill_params = prefill_params + shared_params
   generate_params = generate_params + shared_params
+  prefill_adapterstore += shared_adapterstore
+  generate_adapterstore += shared_adapterstore
 
   if prefill_engines is None:
     prefill_engines = []  # pragma: no branch
@@ -183,6 +241,8 @@ def create_driver(
       generate_engines=generate_engines,
       prefill_params=prefill_params,
       generate_params=generate_params,
+      prefill_adapterstore=prefill_adapterstore,
+      generate_adapterstore=generate_adapterstore,
       interleaved_mode=interleaved_mode,
       jax_padding=jax_padding,
       metrics_collector=metrics_collector,
@@ -220,16 +280,11 @@ def run(
     jax_profiler_port: The port JAX profiler server (default to 9999).
     enable_model_warmup: The flag to enable model server warmup.
     multi_sampling: The flag to enable multi-sampling.
-    lora_input_adapters_path: Path to define the location of all lora adapters.
+    lora_input_adapters_path: Input path for all lora adapters.
 
   Returns:
     JetStreamServer that wraps the grpc server and orchestrator driver.
   """
-  # TODO: Deleting the lora_input_adapters_path for now.
-  # Planning to use it in next big PR. Currently accomodating it
-  # to fix the params mismatch between maxText and JetStream
-  del lora_input_adapters_path
-
   server_start_time = time.time()
   logger.info("Kicking off gRPC server.")
   # Setup Prometheus server
@@ -254,11 +309,18 @@ def run(
       metrics_collector,
       enable_model_warmup,
       multi_sampling,
+      lora_input_adapters_path,
   )
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.
   threads = threads or max(driver.get_total_concurrent_requests(), 64)
-  jetstream_server = JetStreamServer(driver, threads, port, credentials)
+  enable_llm_inference_pool = False
+  if lora_input_adapters_path:
+    enable_llm_inference_pool = True
+  jetstream_server = JetStreamServer(
+      driver, threads, port, credentials, enable_llm_inference_pool
+  )
+  logging.info("Starting server on port %d with %d threads", port, threads)
 
   # Tweak gc config.
   # Force a gen 2 collection here.

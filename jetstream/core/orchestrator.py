@@ -86,11 +86,13 @@ import sys
 import threading
 import time
 import traceback
+import asyncio
 import uuid
 from typing import Any, AsyncIterator, Optional, Tuple, cast, List
 
 import grpc
 import jax
+from jetstream.core.lora import adapter_tensorstore as adapterstore
 
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
@@ -174,6 +176,8 @@ class ActiveRequest:
   metadata: ActiveRequestMetadata = dataclasses.field(
       default_factory=ActiveRequestMetadata
   )
+  ################## Id of the adapter ###################
+  adapter_id: str = ""
 
   def enqueue_samples(self, generated_samples: list[ReturnSample]):
     """Adds the generated sample(s) to return channel for current step.
@@ -253,12 +257,22 @@ class Driver:
   # All metrics we want to monitor should be collected with this
   _metrics_collector: JetstreamMetricsCollector | None = None
 
+  # Store and manage the adapters for each prefill & generate Engine
+  _prefill_adapterstore: list[adapterstore.AdapterTensorStore] | None = None
+  _generate_adapterstore: list[adapterstore.AdapterTensorStore] | None = None
+
   def __init__(
       self,
       prefill_engines: Optional[list[engine_api.Engine]] = None,
       generate_engines: Optional[list[engine_api.Engine]] = None,
       prefill_params: Optional[list[Any]] = None,
       generate_params: Optional[list[Any]] = None,
+      prefill_adapterstore: Optional[
+          list[adapterstore.AdapterTensorStore]
+      ] = None,
+      generate_adapterstore: Optional[
+          list[adapterstore.AdapterTensorStore]
+      ] = None,
       interleaved_mode: bool = False,
       jax_padding: bool = True,
       metrics_collector: JetstreamMetricsCollector | None = None,
@@ -273,6 +287,9 @@ class Driver:
       raise ValueError("No prefill parameter provided.")
     if generate_params is None:
       raise ValueError("No generate parameter provided.")
+
+    self._prefill_adapterstore = prefill_adapterstore
+    self._generate_adapterstore = generate_adapterstore
 
     logger.info(
         "Initializing the driver with %d prefill engines and %d "
@@ -439,6 +456,15 @@ class Driver:
     )
     self.live = True
     self._is_ray_backend = is_ray_backend
+
+    if self._metrics_collector:
+      self._metrics_collector.get_num_requests_waiting_metric().set_function(
+          self._get_total_requests_waiting_decode
+      )
+      self._metrics_collector.get_kv_cache_utilization_metric().set_function(
+          self._get_kv_cache_utilization
+      )
+
     # Start all threads
     for t in self._all_threads:
       t.start()
@@ -498,6 +524,50 @@ class Driver:
       t.join()
 
     logger.info("Driver stopped.")
+
+  def _get_kv_cache_utilization(self):
+    """
+    Calculated the kv_cache utilization in percentage based on requests
+    being decoded.
+    """
+    total_slots = 0
+    empty_slots = 0
+    for idx, engine in enumerate(self._generate_engines):
+      total_slots += engine.max_concurrent_decodes
+      empty_slots += self._generate_slots[idx].qsize()
+
+    return (total_slots - empty_slots) * 100 / total_slots
+
+  def _get_total_requests_waiting_decode(self):
+    """Calculate the total size of all relevant queues."""
+    total_size = self._prefill_backlog.qsize()
+
+    for transfer_queue in self._transfer_backlogs:
+      total_size += transfer_queue.qsize()
+
+    for gen_queue in self._generate_backlogs.values():
+      total_size += gen_queue.qsize()
+
+    return float(total_size)
+
+  def _export_lora_request_info(self):
+    """Export the metric named `lora_request_info`."""
+
+    adapters_list_str = ""
+    max_loras = 0
+    if self._metrics_collector:
+      for idx, engine in enumerate(self._generate_engines):
+        max_loras += engine.max_concurrent_decodes
+        if self._generate_adapterstore and idx < len(
+            self._generate_adapterstore
+        ):
+          adapters_list_str += asyncio.run(
+              self._generate_adapterstore[idx].get_hbm_loaded_adapters()
+          )
+
+      self._metrics_collector.get_lora_request_info_metric(
+          max_loras, adapters_list_str
+      ).set_to_current_time()
 
   def get_total_concurrent_requests(self) -> int:
     """Gets the total number of concurrent requests the driver can handle."""
@@ -605,6 +675,9 @@ class Driver:
     logger.info("Spinning up prefill thread %d.", idx)
     prefill_engine = self._prefill_engines[idx]
     prefill_params = self._prefill_params[idx]
+    adapter_tensorstore = None
+    if self._prefill_adapterstore and idx < len(self._prefill_adapterstore):
+      adapter_tensorstore = self._prefill_adapterstore[idx]
     metadata = prefill_engine.get_tokenizer()
     tokenizer = prefill_engine.build_tokenizer(metadata)
     thread_name = f"Prefill thread {idx}"
@@ -633,10 +706,43 @@ class Driver:
           prefill_engine.max_prefill_length,
       )
 
+      adapter_id = request.adapter_id
+
+      # Here we are applying the LoRA adapter params to the base params and
+      # them. In the interleaved mode, the prefill and generate shares the
+      # same params. But as long as prefill and decode happens sequentially,
+      # there is no issues. Issue will arrise if prefill and decode is running
+      # in parallel and sharing the same params. Issue arrise because prefill
+      # uses pre-merged weights and generate uses only base weights.
+      final_prefill_params = prefill_params
+      if adapter_id and adapter_tensorstore is not None:
+        try:
+          lora_params = asyncio.run(
+              adapter_tensorstore.get_lora_weights(
+                  adapter_id=adapter_id, load_if_not_loaded=True
+              )
+          )
+          lora_config = asyncio.run(
+              adapter_tensorstore.get_lora_config(
+                  adapter_id=adapter_id, load_if_not_loaded=True
+              )
+          )
+          prefill_engine.apply_adapter(
+              final_prefill_params, lora_config, lora_params
+          )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+          request.num_samples = 1
+          request.complete = np.zeros((request.num_samples,), np.bool_)
+          error_message = f"An error occurred: {type(e).__name__} - {str(e)}"
+          error_result = ReturnSample(text=[error_message], token_ids=[])
+          request.enqueue_samples([error_result])
+          request.return_channel.close()
+          continue
+
       # Compute new kv cache for the prefill_content.
       if self._multi_sampling:
         prefill_result, first_token = prefill_engine.prefill_multisampling(
-            params=prefill_params,
+            params=final_prefill_params,
             padded_tokens=padded_tokens,
             true_length=true_length,
             num_samples=request.num_samples,
@@ -647,14 +753,14 @@ class Driver:
         if prefill_engine.use_chunked_prefill:
           prefill_result, first_token = self._do_chunked_prefill(
               prefill_engine,
-              prefill_params,
+              final_prefill_params,
               tokenizer,
               padded_tokens[:true_length],
           )
         else:
           # Compute new kv cache for the prefill_content.
           prefill_result, first_token = prefill_engine.prefill(
-              params=prefill_params,
+              params=final_prefill_params,
               padded_tokens=padded_tokens,
               true_length=true_length,
           )
@@ -663,6 +769,27 @@ class Driver:
             (prefill_engine.samples_per_slot,), np.bool_
         )
 
+      if adapter_id and adapter_tensorstore is not None:
+        try:
+          lora_params = asyncio.run(
+              adapter_tensorstore.get_lora_weights(adapter_id)
+          )
+          lora_config = asyncio.run(
+              adapter_tensorstore.get_lora_config(adapter_id)
+          )
+          prefill_engine.unapply_adapter(
+              final_prefill_params, lora_config, lora_params
+          )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+          request.num_samples = 1
+          request.complete = np.zeros((request.num_samples,), np.bool_)
+          error_message = f"An error occurred: {type(e).__name__} - {str(e)}"
+          error_result = ReturnSample(text=[error_message], token_ids=[])
+          request.enqueue_samples([error_result])
+          request.return_channel.close()
+          continue
+
+      del final_prefill_params
       request.prefill_result = prefill_result
 
       # put first token to detokenize queue
@@ -844,7 +971,7 @@ class Driver:
           new_request.prefill_result,
           decode_state,
           slot=slot,
-          request_id=new_request.request_id,
+          # request_id=new_request.request_id,
       )
       ThreadDebugLog(
           thread_name,
@@ -1038,8 +1165,12 @@ class Driver:
             generate_engine,
             my_detokenize_backlog,
         )
+
       if decode_state is None:
         break
+
+      # Export the lora_request_info metric
+      self._export_lora_request_info()
 
       # At this point, we know that we have at least some slots filled.
       assert (
@@ -1240,6 +1371,100 @@ class Driver:
 
     logger.info("Detokenize thread %d stopped.", idx)
 
+  async def load_adapter_to_tensorstore(
+      self, adapter_id: str, adapter_path: str
+  ):
+    """Load the adapter to adapter_tensorstore for each engine."""
+    logger.info("Loading adapter_id=%s from %s.", adapter_id, adapter_path)
+
+    for idx, tensorstore in enumerate(self._prefill_adapterstore):
+      try:
+        engine = self._prefill_engines[idx]
+        adapter_params, adapter_config = engine.load_single_adapter(
+            adapter_path
+        )
+
+        if not adapter_params or not adapter_config:
+          raise ValueError(
+              f"Failed to load adapter={adapter_id} from {adapter_path}."
+          )
+
+        await tensorstore.register_adapter(
+            adapter_id, adapter_path, adapter_config
+        )
+
+        await tensorstore.load_adapter(adapter_id, adapter_params, True)
+
+        logger.info("Successfully loaded '%s' in engine_%d.", adapter_id, idx)
+        engine.print_stats(f"After loading '{adapter_id}' in engine_{idx}")
+
+      except Exception as e:
+        logger.info("Adapter loading failed with error: %s", str(e))
+        raise e
+
+    for idx, tensorstore in enumerate(self._generate_adapterstore):
+      try:
+        engine = self._generate_engines[idx]
+        adapter_params, adapter_config = engine.load_single_adapter(
+            adapter_path
+        )
+
+        if not adapter_params or not adapter_config:
+          raise ValueError(
+              f"Failed to load adapter={adapter_id} from {adapter_path}."
+          )
+
+        await tensorstore.register_adapter(
+            adapter_id, adapter_path, adapter_config
+        )
+
+        await tensorstore.load_adapter(adapter_id, adapter_params, True)
+
+        logger.info("Successfully loaded '%s' in engine_%d.", adapter_id, idx)
+        engine.print_stats(f"After loading '{adapter_id}' in engine_{idx}")
+
+      except Exception as e:
+        logger.info("Adapter loading failed with error: %s", str(e))
+        raise e
+
+  async def unload_adapter_from_tensorstore(self, adapter_id: str):
+    """Unload the adapter from adapter_tensorstore of each engine."""
+    logger.info("Unloading adapter_id=%s", adapter_id)
+
+    for idx, tensorstore in enumerate(self._prefill_adapterstore):
+      try:
+        engine = self._prefill_engines[idx]
+        await tensorstore.unload_adapter(adapter_id)
+
+        logger.info("Successfully unloaded '%s' in engine_%d.", adapter_id, idx)
+        engine.print_stats(f"After unloading '{adapter_id}' in engine_{idx}")
+
+      except Exception as e:
+        logger.info("Adapter unloading failed with error: %s", str(e))
+        raise e
+
+    for idx, tensorstore in enumerate(self._generate_adapterstore):
+      try:
+        engine = self._generate_engines[idx]
+        await tensorstore.unload_adapter(adapter_id)
+
+        logger.info("Successfully unloaded '%s' in engine_%d.", adapter_id, idx)
+        engine.print_stats(f"After unloading '{adapter_id}' in engine_{idx}")
+
+      except Exception as e:
+        logger.info("Adapter unloading failed with error: %s", str(e))
+        raise e
+
+  def list_adapters_from_tensorstore(self):
+    """List all the adapters from the adapter_tensorstore of each engine."""
+    logger.info("Listing loaded adapters.")
+
+    listed_adapters = {}
+    for tensorstore in self._generate_adapterstore:
+      listed_adapters.update(tensorstore.adapter_registry)
+
+    return listed_adapters
+
 
 class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
   """Coordinates a set of prefill and generate slices for LLM decoding."""
@@ -1346,6 +1571,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
         prefill_content=prefill_content,
         is_client_side_tokenization=is_client_side_tokenization,
         return_channel=return_channel,
+        adapter_id=request.lora_adapter_id,
         metadata=ActiveRequestMetadata(
             start_time=request.metadata.start_time,
             prefill_enqueue_time=time.perf_counter(),
