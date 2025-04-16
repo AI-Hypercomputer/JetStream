@@ -42,7 +42,7 @@ jobs:
             } else if (context.payload.workflow_run !== undefined) {
               if (context.payload.workflow_run.pull_requests.length === 0) {
                 console.log("This workflow is NOT running within a PR's context")
-                process.exit()
+                process.exit(1)
               }
               console.log(context.payload.workflow_run.pull_requests)
               pull_number = context.payload.workflow_run.pull_requests[0].number
@@ -67,7 +67,7 @@ jobs:
 
             if (reviews.data.length === 0) {
               console.log("Not adding pull ready because the PR is not approved yet.")
-              process.exit()
+              process.exit(1)
             }
             let is_approved=false
             for (const review of reviews.data) {
@@ -78,7 +78,7 @@ jobs:
             }
             if (!is_approved) {
               console.log("Not adding pull ready because the PR is not approved yet by a code owner.")
-              process.exit()
+              process.exit(1)
             }
 
             const commits = await github.rest.pulls.listCommits({
@@ -89,8 +89,7 @@ jobs:
             })
             // Check that the number of commits in the PR is 1.
             if (commits.data.length !== 1) {
-              console.log("Not adding pull ready because the PR has more than one commit. Please squash your commits.")
-              process.exit(1)
+              console.log("The PR has more than one commit. Please squash your commits.")
             }
             const ref = commits.data.slice(-1)[0].sha
             const checkRuns = await github.rest.checks.listForRef({
@@ -100,13 +99,13 @@ jobs:
             })
             if (checkRuns.data.check_runs.length === 0) {
               console.log("Not adding pull ready because no check runs are associated with the last commit: " + ref)
-              process.exit()
+              process.exit(1)
             }
             for (const checkRun of checkRuns.data.check_runs) {
               if (checkRun.name.endsWith(context.job)) continue
               if (checkRun.conclusion !== "success") {
                 console.log("Not adding pull ready because " + checkRun.name + " has not passed yet: " + checkRun.html_url)
-                process.exit()
+                process.exit(1)
               }
             }
             console.log("Adding pull ready label because the PR is approved AND all the check runs have passed")
