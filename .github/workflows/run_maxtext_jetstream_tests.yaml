@@ -1,0 +1,68 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: Tests
+
+on:
+  # pull_request:
+  # push:
+  #   branches: [ "main" ]
+  workflow_dispatch:
+  schedule:
+    # Run the job every 4 hours
+    - cron:  '0 */1 * * *'
+
+jobs:
+  prelim:
+    runs-on: ["self-hosted", "tpu", "v6e-8"]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Test MOE Microbenchmarks
+      run: bash .github/workflows/test_moe_microbenchmarks.sh
+      # run: bash .github/workflows/test_moe_8x22b_microbenchmark.sh
+    # - name: Test MOE long context chunked prefill - 8k
+    #   run: bash .github/workflows/benchmark_chunked_prefill.sh
+  
+  notify:
+    name: Notify test build # creates an issue or modifies last open existing issue for failed build
+    needs: [prelim]
+    runs-on: ["self-hosted", "tpu", "v6e-8"]
+    steps:
+    - name: Check whether one of the jobs failed
+      if: ${{ failure() }}
+      uses: jayqi/failed-build-issue-action@1a893bbf43ef1c2a8705e2b115cd4f0fe3c5649b  # v1.2.0
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Log message if dependent job succeeded
+      if: ${{ ! (failure() && github.event.pull_request == null) }}
+      run: echo "Conditions for creating/updating issue not met. Skipping."
+    # - name: Send email
+    #   uses: dawidd6/action-send-mail@v3.6.0
+    #   with:
+    #     server_address: smtp.gmail.com
+    #     server_port: 465
+    #     username: ${{secrets.MAIL_USERNAME}}
+    #     password: ${{secrets.MAIL_PASSWORD}}
+    #     subject: Message from Inference Stable Stack Runs.
+    #     to: singhvijaya@google.com, yuyanpeng@google.com, vipannalla@google.com
+    #     from: InferenceStableStackRuns
+    #     secure: true
+    #     attachments: ~/test_dir/moe_8x7b_jetstream.txt
+    #     # attachments: ~/test_dir/moe_8x7b.txt,~/test_dir/moe_8x22b.txt,~/test_dir/moe_8x22b_long_context_8k_prefill.txt
+    #     body: workflow for ${{github.repository}} completed successfully!
+    - name: Cleanup
+      run: rm -rf ~/test_dir
