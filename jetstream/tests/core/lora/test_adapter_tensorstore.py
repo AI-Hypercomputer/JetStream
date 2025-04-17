@@ -1,16 +1,30 @@
+# Copyright 2024 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Unit tests for adapter_tensorstore.
+"""
 import asyncio
 import time
 import unittest
-from unittest.mock import patch, MagicMock, AsyncMock, call, ANY
-import dataclasses
+from unittest.mock import patch, MagicMock
 import logging
-import functools
-from typing import Dict, Optional, Any, List
+from typing import Dict
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-from absl.testing import absltest, parameterized  # Keep for parameterized tests
+from absl.testing import parameterized  # Keep for parameterized tests
 
 # Assuming the adapter_tensorstore code is in this path relative to the tests
 # NOTE: Adjust the import path based on your project structure
@@ -19,9 +33,9 @@ from jetstream.engine import engine_api  # For mocking engine type
 
 # --- Mocking Helpers ---
 # Use helpers directly from the module
-_get_size_of_pytree = adapter_tensorstore._get_size_of_pytree
-_as_np_array = adapter_tensorstore._as_np_array
-_as_jnp_array = adapter_tensorstore._as_jnp_array
+_get_size_of_pytree = adapter_tensorstore._get_size_of_pytree  # pylint: disable=protected-access
+_as_np_array = adapter_tensorstore._as_np_array  # pylint: disable=protected-access
+_as_jnp_array = adapter_tensorstore._as_jnp_array  # pylint: disable=protected-access
 AdapterStatus = adapter_tensorstore.AdapterStatus
 AdapterMetadata = adapter_tensorstore.AdapterMetadata
 
@@ -57,7 +71,7 @@ def get_mock_size(weights):
 # Mock function for engine's load_single_adapter
 def load_single_adapter_sync_mock(adapter_path, store_instance):
   """Synchronous mock loading function for run_in_executor."""
-  logging.info(f"SYNC MOCK: Loading from {adapter_path}")
+  logging.info("SYNC MOCK: Loading from %s", adapter_path)
   time.sleep(0.01)  # Simulate slight delay
   adapter_id = adapter_path.split("/")[-1]
   if adapter_id == "adapter_a":
@@ -281,7 +295,8 @@ class AdapterTensorStoreTest(
   ):
     """Test loading a new adapter successfully to HBM or CPU."""
     adapter_id = "adapter_a"
-    # Reset mocks as register_adapter might have been called implicitly if config was None
+    # Reset mocks as register_adapter might have been called implicitly
+    # if config was None
     self.mock_engine.load_single_adapter.reset_mock()
 
     # Patch the conversion functions to check they are called
@@ -292,7 +307,7 @@ class AdapterTensorStoreTest(
 
       await self.store.load_adapter(adapter_id, to_hbm=to_hbm)
 
-      mock_convert.assert_called_once()  # Verify the correct conversion was called
+      mock_convert.assert_called_once()  # Verify the correct conversion called
 
     # Verify engine load was called via executor
     self.mock_engine.load_single_adapter.assert_called_once_with(
@@ -341,7 +356,9 @@ class AdapterTensorStoreTest(
         adapter_id, adapter_weights=weights_np, to_hbm=True
     )
 
-    self.mock_engine.load_single_adapter.assert_not_called()  # Should not call engine
+    # Shouldn't call engine
+    self.mock_engine.load_single_adapter.assert_not_called()
+
     metadata = self.store.adapter_registry[adapter_id]
     self.assertEqual(metadata.status, AdapterStatus.LOADED_HBM)
     self.assertIn(adapter_id, self.store.loaded_adapters_hbm)
@@ -461,7 +478,7 @@ class AdapterTensorStoreTest(
     load_task_future = asyncio.Future()  # Future to control completion
 
     # This is our FAKE function that will replace the real 'run_in_executor'.
-    async def mock_run_in_executor(executor, func):
+    async def mock_run_in_executor(executor, func):  # pylint: disable=unused-argument
       # func is the actual loading function (self.engine.load_single_adapter)
       print(f"Test Executor: Fake background task started for {adapter_id}")
 
@@ -495,7 +512,8 @@ class AdapterTensorStoreTest(
       )
       self.assertEqual(self.store.running_requests, 1)
 
-    # Start task 2: Try to load the *same* adapter 'adapter_a' again while task 1 is "loading"
+    # Start task 2: Try to load the *same* adapter 'adapter_a' again
+    # while task 1 is "loading"
     task2 = asyncio.create_task(
         self.store.load_adapter(adapter_id, to_hbm=True)
     )
@@ -510,8 +528,10 @@ class AdapterTensorStoreTest(
     # Wait for both tasks to complete
     await asyncio.gather(task1, task2)
 
-    # Assertions
-    self.mock_engine.load_single_adapter.assert_called_once()  # Load from disk only once
+    ## ASSERTIONS
+    # Load from disk only once
+    self.mock_engine.load_single_adapter.assert_called_once()
+
     metadata = self.store.adapter_registry[adapter_id]
     self.assertEqual(metadata.status, AdapterStatus.LOADED_HBM)
     self.assertIn(adapter_id, self.store.loaded_adapters_hbm)
@@ -537,7 +557,7 @@ class AdapterTensorStoreTest(
     load_task_future = asyncio.Future()  # Future to control completion
 
     # This is our FAKE function that will replace the real 'run_in_executor'.
-    async def mock_run_in_executor(executor, func):
+    async def mock_run_in_executor(executor, func):  # pylint: disable=unused-argument
       # func is the actual loading function (self.engine.load_single_adapter)
       print(f"Test Executor: Fake background task started for {adapter_id}")
 
@@ -556,7 +576,7 @@ class AdapterTensorStoreTest(
 
     with self.assertRaisesRegex(
         RuntimeError,
-        f"Inconsistent state: Adapter {adapter_id} is LOADING but has no event.",
+        f"Inconsistent state: Adapter {adapter_id} is LOADING but has no event",
     ):
       task1 = asyncio.create_task(
           self.store.load_adapter(adapter_id, to_hbm=True)
@@ -565,7 +585,8 @@ class AdapterTensorStoreTest(
 
       self.store.adapter_registry[adapter_id].loading_event = None
 
-      # Start task 2: Try to load the *same* adapter 'adapter_a' again while task 1 is "loading"
+      # Start task 2: Try to load the *same* adapter 'adapter_a' again
+      # while task 1 is "loading"
       task2 = asyncio.create_task(
           self.store.load_adapter(adapter_id, to_hbm=True)
       )
@@ -597,7 +618,7 @@ class AdapterTensorStoreTest(
     event_load_finished = asyncio.Event()
 
     # Mock run_in_executor to control load duration
-    async def mock_executor(executor, func):
+    async def mock_executor(executor, func):  # pylint: disable=unused-argument
       print(f"Test Executor: Started load {adapter_id}")
       await event_load_finished.wait()
       print(f"Test Executor: Finishing load {adapter_id}")
@@ -624,7 +645,10 @@ class AdapterTensorStoreTest(
       await asyncio.gather(load_task)
 
     self.assertEqual(len(cm.output), 1)  # Expect exactly one warning message
-    expected_log = f"Load cancelled for {adapter_id}, status changed to {AdapterStatus.UNLOADED}"
+    expected_log = (
+        f"Load cancelled for {adapter_id}, "
+        f"status changed to AdapterStatus.UNLOADED"
+    )
     # Check if the expected message is present in the captured output lines
     self.assertIn(
         expected_log, cm.output[0]
@@ -647,11 +671,11 @@ class AdapterTensorStoreTest(
 
     # Patch the internal methods involved in eviction
     with patch.object(
-        self.store, "_evict", wraps=self.store._evict
+        self.store, "_evict", wraps=self.store._evict  # pylint: disable=protected-access
     ) as mock_evict, patch.object(
         self.store,
         "_unsafe_transfer_to_cpu",
-        wraps=self.store._unsafe_transfer_to_cpu,
+        wraps=self.store._unsafe_transfer_to_cpu,  # pylint: disable=protected-access
     ) as mock_transfer_cpu:
 
       await self.store.load_adapter(
@@ -701,11 +725,11 @@ class AdapterTensorStoreTest(
     self.advance_time(5)
 
     with patch.object(
-        self.store, "_evict", wraps=self.store._evict
+        self.store, "_evict", wraps=self.store._evict  # pylint: disable=protected-access
     ) as mock_evict, patch.object(
         self.store,
         "_unsafe_unload_adapter",
-        wraps=self.store._unsafe_unload_adapter,
+        wraps=self.store._unsafe_unload_adapter,  # pylint: disable=protected-access
     ) as mock_unload:
 
       await self.store.load_adapter(
@@ -828,7 +852,7 @@ class AdapterTensorStoreTest(
     with patch.object(
         self.store,
         "_unsafe_unload_adapter",
-        wraps=self.store._unsafe_unload_adapter,
+        wraps=self.store._unsafe_unload_adapter,  # pylint: disable=protected-access
     ) as mock_unsafe_unload:
       await self.store.unload_adapter(adapter_id)
       mock_unsafe_unload.assert_called_once_with(adapter_id)
@@ -861,7 +885,7 @@ class AdapterTensorStoreTest(
     with patch.object(
         self.store,
         "_unsafe_unload_adapter",
-        wraps=self.store._unsafe_unload_adapter,
+        wraps=self.store._unsafe_unload_adapter,  # pylint: disable=protected-access
     ) as mock_unsafe_unload:
       await self.store.unload_adapter(adapter_id)  # Should do nothing
       mock_unsafe_unload.assert_called_once_with(
@@ -878,7 +902,7 @@ class AdapterTensorStoreTest(
     event_load_finished = asyncio.Event()
 
     # Mock run_in_executor to control load duration
-    async def mock_executor(executor, func):
+    async def mock_executor(executor, func):  # pylint: disable=unused-argument
       print(f"Test Executor: Started load {adapter_id}")
       await event_load_finished.wait()
       print(f"Test Executor: Finishing load {adapter_id}")
@@ -988,7 +1012,9 @@ class AdapterTensorStoreTest(
         adapter_id, to_hbm=True, load_if_not_loaded=True
     )
 
-    self.mock_engine.load_single_adapter.assert_called_once()  # Load should be triggered
+    # Load should be triggered
+    self.mock_engine.load_single_adapter.assert_called_once()
+
     self.assertIsInstance(jax.tree_util.tree_leaves(weights)[0], jax.Array)
     self.assertEqual(
         self.store.adapter_registry[adapter_id].status, AdapterStatus.LOADED_HBM
@@ -1003,6 +1029,7 @@ class AdapterTensorStoreTest(
         ValueError, f"LoRA adapter with id={adapter_id} is not loaded."
     ):
       weights = await self.store.get_lora_weights(adapter_id, to_hbm=True)
+      del weights
 
   async def test_get_lora_weights_needs_load(self):
     """Test getting weights triggers loading."""
@@ -1013,7 +1040,9 @@ class AdapterTensorStoreTest(
 
     weights = await self.store.get_lora_weights(adapter_id, to_hbm=True)
 
-    self.mock_engine.load_single_adapter.assert_called_once()  # Load should be triggered
+    # Load should be triggered
+    self.mock_engine.load_single_adapter.assert_called_once()
+
     self.assertIsInstance(jax.tree_util.tree_leaves(weights)[0], jax.Array)
     self.assertEqual(
         self.store.adapter_registry[adapter_id].status, AdapterStatus.LOADED_HBM
@@ -1050,9 +1079,11 @@ class AdapterTensorStoreTest(
       weights = await self.store.get_lora_weights(
           adapter_id, to_hbm=to_hbm
       )  # Request HBM
-      # The call to _unsafe_transfer_to_hbm happens *inside* the load_adapter call triggered by get_lora_weights
+      # The call to _unsafe_transfer_to_hbm happens *inside* the load_adapter
+      # call triggered by get_lora_weights
       # We rely on the mocked asyncio.run to execute it.
       mock_transfer.assert_called_once_with(adapter_id)
+      del weights
 
     self.assertEqual(
         self.store.adapter_registry[adapter_id].status, final_status
@@ -1099,12 +1130,11 @@ class AdapterTensorStoreTest(
   async def test_unsafe_transfer_to_hbm_with_valueerror(self):
     """Test raises error in transfer_to_hbm if adapter not in CPU."""
     adapter_id = "adapter_not_in_cpu"
-    adapter_path = f"{self.adapters_dir_path}/{adapter_id}"
 
     with self.assertRaisesRegex(
         ValueError, f"Adapter '{adapter_id}' not loaded in CPU RAM."
     ):
-      self.store._unsafe_transfer_to_hbm(adapter_id)
+      self.store._unsafe_transfer_to_hbm(adapter_id)  # pylint: disable=protected-access
 
   async def test_unsafe_transfer_to_hbm_with_evict_failure(self):
     """Test eviction failure during transfer_to_hbm."""
@@ -1116,17 +1146,16 @@ class AdapterTensorStoreTest(
         RuntimeError,
         "Not enough HBM to transfer adapter, and HBM eviction failed.",
     ):
-      self.store._unsafe_transfer_to_hbm(adapter_id)
+      self.store._unsafe_transfer_to_hbm(adapter_id)  # pylint: disable=protected-access
 
   async def test_unsafe_transfer_to_cpu_with_valueerror(self):
     """Test raises error in transfer_to_cpu if adapter not in hbm."""
     adapter_id = "adapter_not_in_hbm"
-    adapter_path = f"{self.adapters_dir_path}/{adapter_id}"
 
     with self.assertRaisesRegex(
         ValueError, f"Adapter '{adapter_id}' not loaded in HBM."
     ):
-      self.store._unsafe_transfer_to_cpu(adapter_id)
+      self.store._unsafe_transfer_to_cpu(adapter_id)  # pylint: disable=protected-access
 
   async def test_unsafe_transfer_to_cpu_with_evict_failure(self):
     """Test eviction failure during transfer_to_cpu."""
@@ -1138,7 +1167,7 @@ class AdapterTensorStoreTest(
         RuntimeError,
         "Not enough CPU RAM to transfer adapter, and CPU eviction failed.",
     ):
-      self.store._unsafe_transfer_to_cpu(adapter_id)
+      self.store._unsafe_transfer_to_cpu(adapter_id)  # pylint: disable=protected-access
 
   async def test_unsafe_unload_adapter_with_unregistered_adapter(self):
     """Test failure with unregistered adapterd during unload_adapter."""
@@ -1147,7 +1176,7 @@ class AdapterTensorStoreTest(
     with self.assertRaisesRegex(
         ValueError, f"Adapter with ID '{adapter_id}' not found."
     ):
-      self.store._unsafe_unload_adapter(adapter_id)
+      self.store._unsafe_unload_adapter(adapter_id)  # pylint: disable=protected-access
 
   async def test_register_adapter_with_concurrent_registrations(self):
     """Test register adapter scenario with concurrent registrations."""
@@ -1158,7 +1187,7 @@ class AdapterTensorStoreTest(
     event_load_finished = asyncio.Event()
 
     # Mock run_in_executor to control load duration
-    async def mock_executor(executor, func):
+    async def mock_executor(executor, func):  # pylint: disable=unused-argument
       print(f"Test Executor: Started load {adapter_id}")
       await event_load_finished.wait()
       print(f"Test Executor: Finishing load {adapter_id}")

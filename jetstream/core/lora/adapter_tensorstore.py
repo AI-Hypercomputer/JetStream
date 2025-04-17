@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Manages the list of fine-tuned adapters loaded on top of the base model for serving.
+"""Manages the list of fine-tuned adapters loaded on top of the base model
+for serving.
 """
 
 import logging
@@ -20,7 +21,6 @@ import dataclasses
 
 import jax
 import jax.numpy as jnp
-from flax import struct
 import time
 import asyncio
 import functools
@@ -123,7 +123,10 @@ class AdapterTensorStore:
 
   # --- Unsafe Internal methods which assumes that lock is held ---
   def _unsafe_transfer_to_hbm(self, adapter_id: str):
-    """Internal: Transfers an adapter from CPU RAM to HBM. Assumes lock is held."""
+    """
+    Internal: Transfers an adapter from CPU RAM to HBM.
+    Assumes lock is held.
+    """
     if adapter_id not in self.loaded_adapters_cpu:
       raise ValueError(f"Adapter '{adapter_id}' not loaded in CPU RAM.")
 
@@ -137,7 +140,7 @@ class AdapterTensorStore:
         )
 
     # Move from CPU RAM to HBM
-    logging.info(f"Transferring {adapter_id} from CPU to HBM.")
+    logging.info("Transferring %s from CPU to HBM.", adapter_id)
     self.loaded_adapters_hbm[adapter_id] = _as_jnp_array(
         self.loaded_adapters_cpu[adapter_id]
     )  # Convert to JAX array
@@ -152,7 +155,9 @@ class AdapterTensorStore:
     metadata.last_accessed = time.time()  # Update time on transfer
 
   def _unsafe_transfer_to_cpu(self, adapter_id: str):
-    """Internal: Transfers an adapter from HBM to CPU RAM. Assumes lock is held."""
+    """
+    Internal: Transfers an adapter from HBM to CPU RAM. Assumes lock is held.
+    """
 
     if adapter_id not in self.loaded_adapters_hbm:
       raise ValueError(f"Adapter '{adapter_id}' not loaded in HBM.")
@@ -167,7 +172,7 @@ class AdapterTensorStore:
         )
 
     # Move from HBM to CPU RAM
-    logging.info(f"Transferring {adapter_id} from HBM to CPU.")
+    logging.info("Transferring %s from HBM to CPU.", adapter_id)
     self.loaded_adapters_cpu[adapter_id] = _as_np_array(
         self.loaded_adapters_hbm[adapter_id]
     )
@@ -189,7 +194,7 @@ class AdapterTensorStore:
     if metadata.status == AdapterStatus.UNLOADED:
       return
 
-    logging.info(f"Unloading adapter {adapter_id}.")
+    logging.info("Unloading adapter %s.", adapter_id)
     if metadata.status == AdapterStatus.LOADED_HBM:
       del self.loaded_adapters_hbm[adapter_id]
       self.current_hbm_usage -= metadata.size_hbm
@@ -210,14 +215,13 @@ class AdapterTensorStore:
       adapter_path: str | None = None,
       adapter_config: Dict[str, Any] | None = None,
   ):
-    """Registers a new LoRA adatper."""
     """
-    Registers a LoRA adapter with the TensorStore.  This also loads the adapter; 
+    Registers a LoRA adapter with the TensorStore.  This also loads the adapter;
     IF called without adapter_config. Because in this case, it needs
     to get adapter_config from the engine's load_single_adapter() call, which
     also provides the adapter_params. So in that case it is beneficial to load
-    the adapter to HBM. This call path is expected only from the direct inference
-    request.
+    the adapter to HBM. This call path is expected only from the direct
+    inference request.
     OTHERWISE, it simply adds metadata about the adapter to the registry.
 
     Args:
@@ -229,7 +233,7 @@ class AdapterTensorStore:
       ValueError: If an adapter with the same ID is already registered.
     """
     if adapter_id in self.adapter_registry:
-      logging.warning(f"Adapter with ID '{adapter_id}' already registered.")
+      logging.warning("Adapter with ID '%s' already registered.", adapter_id)
       return
 
     if adapter_path is None:
@@ -249,7 +253,7 @@ class AdapterTensorStore:
     async with self.lock:
       # Double check registration inside lock
       if adapter_id in self.adapter_registry:
-        logging.warning(f"Adapter '{adapter_id}' registered concurrently.")
+        logging.warning("Adapter '%s' registered concurrently.", adapter_id)
         return
 
       self.adapter_registry[adapter_id] = AdapterMetadata(
@@ -331,7 +335,8 @@ class AdapterTensorStore:
       if metadata.status == AdapterStatus.LOADING:
         # Wait untill loading is done.
         logging.info(
-            f"Adapter {adapter_id} is already loading by another task, waiting..."
+            "Adapter %s is already loading by another task, waiting...",
+            adapter_id,
         )
 
         # Get the event created by the first loading task
@@ -339,13 +344,14 @@ class AdapterTensorStore:
         if event_to_wait_on is None:
           # Should not happen if status is LOADING, indicates inconsistency
           raise RuntimeError(
-              f"Inconsistent state: Adapter {adapter_id} is LOADING but has no event."
+              f"Inconsistent state: Adapter {adapter_id} is LOADING "
+              f"but has no event."
           )
 
-        logging.info(f"Adapter {adapter_id} is loading, will wait.")
+        logging.info("Adapter %s is loading, will wait.", adapter_id)
 
       if metadata.status == AdapterStatus.UNLOADED:  # Check if it was UNLOADED
-        logging.info(f"Beginning load for adapter {adapter_id}...")
+        logging.info("Beginning load for adapter %s...", adapter_id)
 
         metadata.loading_event = (
             asyncio.Event()
@@ -357,8 +363,9 @@ class AdapterTensorStore:
     if event_to_wait_on:
       await event_to_wait_on.wait()
       # After waiting, the original loader finished (or failed).
-      # Re-call load_adapter to ensure desired state (HBM/CPU) and update timestamp.
-      logging.info(f"Finished waiting for {adapter_id}. Re-checking state.")
+      # Re-call load_adapter to ensure desired state (HBM/CPU) and
+      # update timestamp.
+      logging.info("Finished waiting for %s. Re-checking state.", adapter_id)
       await self.load_adapter(adapter_id, adapter_weights, to_hbm)
       return  # Recursive call handled the final state
 
@@ -370,7 +377,8 @@ class AdapterTensorStore:
 
         # TODO: Compare performance improvements
         # Option 1: Low performant (Run blocking I/O on main thread)
-        # adapter_weights, adapter_config = self.engine.load_single_adapter(adapter_path)
+        # adapter_weights, adapter_config = self.engine.load_single_adapter(
+        # adapter_path)
 
         # Option 2: Better performant
         # Run blocking I/O in executor
@@ -379,6 +387,7 @@ class AdapterTensorStore:
             None,
             functools.partial(self.engine.load_single_adapter, adapter_path),
         )
+        del adapter_config
 
       if adapter_weights is None:
         raise ValueError(f"Failed to load adapter_weights from {adapter_path}.")
@@ -395,14 +404,18 @@ class AdapterTensorStore:
         # If status changed while loading (e.g., unloaded), abort
         if metadata.status != AdapterStatus.LOADING:
           logging.warning(
-              f"Load cancelled for {adapter_id}, status changed to {metadata.status}"
+              "Load cancelled for %s, status changed to %s",
+              adapter_id,
+              metadata.status,
           )
           return
 
-        # Get size of unified_lora_params when they are saved in HBM as JAX array
+        # Get size of unified_lora_params when they are saved in
+        # HBM as JAX array
         adapter_size_hbm = _get_size_of_pytree(adapter_weights_as_jnp_array)
 
-        # Get size of unified_lora_params when they are saved in CPU RAM as NumPy array
+        # Get size of unified_lora_params when they are saved in
+        # CPU RAM as NumPy array
         adapter_size_cpu = _get_size_of_pytree(adapter_weights_as_np_array)
 
         metadata.size_hbm = adapter_size_hbm
@@ -445,7 +458,7 @@ class AdapterTensorStore:
         metadata.last_accessed = time.time()
         load_successful = True
 
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
       async with self.lock:
         metadata = self.adapter_registry[adapter_id]
         metadata.status = AdapterStatus.UNLOADED  # Mark as unloaded on error
@@ -515,18 +528,21 @@ class AdapterTensorStore:
       async with self.lock:
         self._unsafe_transfer_to_cpu(adapter_id)
 
-    # Now all required adapters should be loaded in correct memory (HBM or CPU), get them
+    # Now all required adapters should be loaded in correct memory (HBM or CPU),
+    # so get them
     adapter_params = None
     if to_hbm:
       if adapter_id not in self.loaded_adapters_hbm:
         raise RuntimeError(
-            f"Adapter {adapter_id} should be in HBM but wasn't found after loading."
+            f"Adapter {adapter_id} should be in HBM "
+            f"but wasn't found after loading."
         )
       adapter_params = self.loaded_adapters_hbm[adapter_id]
     else:
       if adapter_id not in self.loaded_adapters_cpu:
         raise RuntimeError(
-            f"Adapter {adapter_id} should be in CPU but wasn't found after loading."
+            f"Adapter {adapter_id} should be in CPU "
+            f"but wasn't found after loading."
         )
       adapter_params = self.loaded_adapters_cpu[adapter_id]
 
@@ -550,7 +566,8 @@ class AdapterTensorStore:
       metadata = self.adapter_registry[adapter_id]
       if metadata.status == AdapterStatus.LOADING:
         raise RuntimeError(
-            f"Inconsistent state: Adapter {adapter_id} is LOADING after just finishing one."
+            f"Inconsistent state: Adapter {adapter_id} is LOADING after "
+            f"just finishing one."
         )
 
       self._unsafe_unload_adapter(adapter_id)
