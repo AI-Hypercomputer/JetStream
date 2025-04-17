@@ -24,15 +24,15 @@ on:
   workflow_dispatch:
   schedule:
     # Run the job every 4 hours
-    - cron:  '0 */1 * * *'
+    - cron:  '0 */24 * * *'
 
 jobs:
   prelim:
     runs-on: ["self-hosted", "tpu", "v6e-8"]
     steps:
     - uses: actions/checkout@v4
-    - name: Test MOE Microbenchmarks
-      run: bash .github/workflows/test_moe_microbenchmarks.sh
+    - name: Test MOEBenchmarks
+      run: bash .github/workflows/test_moe_benchmarks.sh
       # run: bash .github/workflows/test_moe_8x22b_microbenchmark.sh
     # - name: Test MOE long context chunked prefill - 8k
     #   run: bash .github/workflows/benchmark_chunked_prefill.sh
@@ -50,19 +50,18 @@ jobs:
     - name: Log message if dependent job succeeded
       if: ${{ ! (failure() && github.event.pull_request == null) }}
       run: echo "Conditions for creating/updating issue not met. Skipping."
-    # - name: Send email
-    #   uses: dawidd6/action-send-mail@v3.6.0
-    #   with:
-    #     server_address: smtp.gmail.com
-    #     server_port: 465
-    #     username: ${{secrets.MAIL_USERNAME}}
-    #     password: ${{secrets.MAIL_PASSWORD}}
-    #     subject: Message from Inference Stable Stack Runs.
-    #     to: singhvijaya@google.com, yuyanpeng@google.com, vipannalla@google.com
-    #     from: InferenceStableStackRuns
-    #     secure: true
-    #     attachments: ~/test_dir/moe_8x7b_jetstream.txt
-    #     # attachments: ~/test_dir/moe_8x7b.txt,~/test_dir/moe_8x22b.txt,~/test_dir/moe_8x22b_long_context_8k_prefill.txt
-    #     body: workflow for ${{github.repository}} completed successfully!
+    - name: Send email
+      uses: dawidd6/action-send-mail@v3.6.0
+      with:
+        server_address: smtp.gmail.com
+        server_port: 465
+        username: ${{secrets.MAIL_USERNAME}}
+        password: ${{secrets.MAIL_PASSWORD}}
+        subject: Message from Inference Stable Stack Runs.
+        to: singhvijaya@google.com, yuyanpeng@google.com, vipannalla@google.com
+        from: JetStream Runs
+        secure: true
+        attachments: ~/test_dir/moe_8x7b.txt,~/test_dir/moe_8x22b.txt,~/test_dir/moe_8x22b_long_context_8k_prefill.txt,~/test_dir/moe_8x7b_jetstream.txt
+        body: workflow for ${{github.repository}} completed successfully!
     - name: Cleanup
       run: rm -rf ~/test_dir
