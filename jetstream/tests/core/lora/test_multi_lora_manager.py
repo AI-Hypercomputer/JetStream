@@ -1,17 +1,25 @@
-import asyncio
-import logging
+# Copyright 2024 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Unit tests for MultiLoraManager.
+"""
 import time
 import unittest
-from unittest.mock import patch, MagicMock, AsyncMock  # Use AsyncMock for async methods
-
-import grpc  # For mocking context if needed, often None suffices
-import numpy as np  # For dummy weights if needed by helpers
-import jax.numpy as jnp  # For dummy weights if needed by helpers
-
+from unittest.mock import MagicMock, AsyncMock  # Use AsyncMock for async methods
 
 # Assuming protos are generated and importable
 from jetstream.core.proto import multi_lora_decoding_pb2
-from jetstream.core.proto import multi_lora_decoding_pb2_grpc
 
 # Assuming the class under test and its dependencies are importable
 from jetstream.core.lora import multi_lora_inference_api  # Adjust import path
@@ -40,7 +48,7 @@ def create_mock_adapter_metadata(adapter_id, status, last_accessed_offset=0):
 
 
 async def mock_load_adapter_to_tensorstore(adapter_id: str, adapter_path: str):
-  print(f"Test Executor: Fake load_adapter_to_tensorstore")
+  print("Test Executor: Fake load_adapter_to_tensorstore")
   del adapter_id
   del adapter_path
 
