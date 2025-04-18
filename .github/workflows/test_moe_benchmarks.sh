@@ -41,14 +41,19 @@ tail -n5 ~/test_dir/moe_8x22b_long_context_8k_prefill.txt > ~/test_dir/moe_8x22b
 
 # moe 8x7B Maxtext Jetstream 
 
-LIBTPU_INIT_ARGS="--xla_tpu_enable_windowed_einsum_for_reduce_scatter=false --xla_jf_spmd_threshold_for_windowed_einsum_mib=1000000" python -m MaxText.maxengine_server MaxText/configs/inference.yml tokenizer_path=assets/tokenizer.mistral-v1 max_prefill_predict_length=1024 max_target_length=2048 model_name=mixtral-8x7b ici_fsdp_parallelism=1 ici_autoregressive_parallelism=1 ici_tensor_parallelism=1 ici_context_autoregressive_parallelism=8 scan_layers=false weight_dtype=bfloat16 per_device_batch_size=24 megablox=False quantization=int8 quantize_kvcache=True checkpoint_is_quantized=True load_parameters_path=gs://jetstream-runner/8-7B-int8 capacity_factor=1 attention=dot_product model_call_mode=inference sparse_matmul=False weight_dtype=bfloat16
+LIBTPU_INIT_ARGS="--xla_tpu_enable_windowed_einsum_for_reduce_scatter=false --xla_jf_spmd_threshold_for_windowed_einsum_mib=1000000" python -m MaxText.maxengine_server MaxText/configs/inference.yml tokenizer_path=assets/tokenizer.mistral-v1 max_prefill_predict_length=1024 max_target_length=2048 model_name=mixtral-8x7b ici_fsdp_parallelism=1 ici_autoregressive_parallelism=1 ici_tensor_parallelism=1 ici_context_autoregressive_parallelism=8 scan_layers=false weight_dtype=bfloat16 per_device_batch_size=24 megablox=False quantization=int8 quantize_kvcache=True checkpoint_is_quantized=True load_parameters_path=gs://jetstream-runner/8-7B-int8 capacity_factor=1 attention=dot_product model_call_mode=inference sparse_matmul=False weight_dtype=bfloat16 &
 
 sleep 600
 
 cd ..
 
-python JetStream/benchmarks/benchmark_serving.py   --tokenizer ~/test_dir/maxtext/assets/tokenizer.mistral-v1 --save-result   --save-request-outputs   --request-outputs-file-path outputs.json   --num-prompts 1200   --max-output-length 1024  --dataset openorca --run-eval True > ~/test_dir/moe_8x7b_jetstream.txt
-tail -n10 ~/test_dir/moe_8x7b_jetstream.txt > ~/test_dir/moe_8x7b_jetstream.tmp && mv ~/test_dir/moe_8x7b_jetstream.tmp ~/test_dir/moe_8x7b_jetstream.txt
+# copy openorca datset 
+gsutil cp gs://jetstream-runner/datasets/open_orca_gpt4_tokenized_llama.calibration_1000.pkl JetStream/benchmarks/
 
-# kill python jobs
-sudo kill -9 $(ps aux | grep python | awk '{print $2}')
+python -c "import nltk; nltk.download('punkt')"
+
+python JetStream/benchmarks/benchmark_serving.py   --tokenizer ~/test_dir/maxtext/assets/tokenizer.mistral-v1 --save-result   --save-request-outputs   --request-outputs-file-path outputs.json   --num-prompts 1200   --max-output-length 1024  --dataset openorca --run-eval True > ~/test_dir/moe_8x7b_jetstream.txt
+tail -n25 ~/test_dir/moe_8x7b_jetstream.txt > ~/test_dir/moe_8x7b_jetstream.tmp && mv ~/test_dir/moe_8x7b_jetstream.tmp ~/test_dir/moe_8x7b_jetstream.txt
+
+# kill Jetstream server
+kill -9 %%
