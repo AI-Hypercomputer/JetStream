@@ -39,7 +39,7 @@ export ENABLE_JAX_PROFILER=true
 export JAX_PROFILER_PORT=9999
 
 cd ~/maxtext
-python MaxText/maxengine_server.py \
+python3 -m MaxText.maxengine_server \
   MaxText/configs/base.yml \
   tokenizer_path=${TOKENIZER_PATH} \
   load_parameters_path=${LOAD_PARAMETERS_PATH} \

@@ -70,7 +70,7 @@ export AQT_CKPT=${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/checkpoints/100/items
 # Note that the `AQT_CKPT` is in a `scanned` format which is great for training but for efficient decoding performance we want the checkpoint in an `unscanned` format.
 export RUN_NAME=${MODEL_NAME}_unscanned_chkpt_${idx}
 
-JAX_PLATFORMS=cpu python MaxText/generate_param_only_checkpoint.py \
+JAX_PLATFORMS=cpu python3 -m MaxText.generate_param_only_checkpoint \
 MaxText/configs/base.yml \
 base_output_directory=${BASE_OUTPUT_DIRECTORY} \
 load_parameters_path=${AQT_CKPT} \

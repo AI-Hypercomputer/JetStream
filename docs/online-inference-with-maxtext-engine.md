@@ -157,7 +157,7 @@ export PER_DEVICE_BATCH_SIZE=4
 
 ```bash
 cd ~/maxtext
-python MaxText/maxengine_server.py \
+python3 -m MaxText.maxengine_server \
   MaxText/configs/base.yml \
   tokenizer_path=${TOKENIZER_PATH} \
   load_parameters_path=${LOAD_PARAMETERS_PATH} \
@@ -225,12 +225,12 @@ There are several different quantization configurations to choose from:
 
 #### int8 DRQ quantized checkpoint
 ```bash
-python MaxText/decode.py MaxText/configs/base.yml tokenizer_path=assets/tokenizer.llama2 load_parameters_path=${LOAD_PARAMETERS_PATH} max_prefill_predict_length=1024 max_target_length=2048 model_name=llama2-7b ici_fsdp_parallelism=1 ici_autoregressive_parallelism=1 ici_tensor_parallelism=-1 scan_layers=false weight_dtype=bfloat16 per_device_batch_size=11 attention=dot_product quantization=int8 save_quantized_params_path=${SAVE_QUANT_PARAMS_PATH}
+python3 -m MaxText.decode MaxText/configs/base.yml tokenizer_path=assets/tokenizer.llama2 load_parameters_path=${LOAD_PARAMETERS_PATH} max_prefill_predict_length=1024 max_target_length=2048 model_name=llama2-7b ici_fsdp_parallelism=1 ici_autoregressive_parallelism=1 ici_tensor_parallelism=-1 scan_layers=false weight_dtype=bfloat16 per_device_batch_size=11 attention=dot_product quantization=int8 save_quantized_params_path=${SAVE_QUANT_PARAMS_PATH}
 ```
 
 #### Weights-only int8 quantized checkpoint
 ```bash
-python MaxText/decode.py MaxText/configs/base.yml tokenizer_path=assets/tokenizer.llama2 load_parameters_path=${LOAD_PARAMETERS_PATH} max_prefill_predict_length=1024 max_target_length=2048 model_name=llama2-7b ici_fsdp_parallelism=1 ici_autoregressive_parallelism=1 ici_tensor_parallelism=-1 scan_layers=false weight_dtype=bfloat16 per_device_batch_size=11 attention=dot_product quantization=int8w save_quantized_params_path=${SAVE_QUANT_PARAMS_PATH}
+python3 -m MaxText.decode MaxText/configs/base.yml tokenizer_path=assets/tokenizer.llama2 load_parameters_path=${LOAD_PARAMETERS_PATH} max_prefill_predict_length=1024 max_target_length=2048 model_name=llama2-7b ici_fsdp_parallelism=1 ici_autoregressive_parallelism=1 ici_tensor_parallelism=-1 scan_layers=false weight_dtype=bfloat16 per_device_batch_size=11 attention=dot_product quantization=int8w save_quantized_params_path=${SAVE_QUANT_PARAMS_PATH}
 ```
 
 #### Mixed precision weight-only quantized checkpoint
@@ -247,7 +247,7 @@ First, update the mixed precision config file (`MaxText/configs/quantization/mp_
 ```
 Then run the following command:
 ```bash
-python MaxText/decode.py MaxText/configs/base.yml tokenizer_path=assets/tokenizer.llama2 load_parameters_path=${LOAD_PARAMETERS_PATH} max_prefill_predict_length=1024 max_target_length=2048 model_name=llama2-7b ici_fsdp_parallelism=1 ici_autoregressive_parallelism=1 ici_tensor_parallelism=-1 scan_layers=false weight_dtype=bfloat16 per_device_batch_size=11 attention=dot_product quantization=intmp
+python3 -m MaxText.decode MaxText/configs/base.yml tokenizer_path=assets/tokenizer.llama2 load_parameters_path=${LOAD_PARAMETERS_PATH} max_prefill_predict_length=1024 max_target_length=2048 model_name=llama2-7b ici_fsdp_parallelism=1 ici_autoregressive_parallelism=1 ici_tensor_parallelism=-1 scan_layers=false weight_dtype=bfloat16 per_device_batch_size=11 attention=dot_product quantization=intmp
 quant_cfg_path=configs/quantization/mp_scale.json save_quantized_params_path=${SAVE_QUANT_PARAMS_PATH}
 ```
 
@@ -291,7 +291,7 @@ export QUANTIZE_KVCACHE=False
 export PER_DEVICE_BATCH_SIZE=12
 
 cd ~/maxtext
-python MaxText/maxengine_server.py \
+python3 -m MaxText.maxengine_server \
   MaxText/configs/base.yml \
   tokenizer_path=${TOKENIZER_PATH} \
   load_parameters_path=${LOAD_PARAMETERS_PATH} \
@@ -311,7 +311,7 @@ python MaxText/maxengine_server.py \
 
 For the mixed precision quantized model
 ```bash
-python MaxText/maxengine_server.py \
+python3 -m MaxText.maxengine_server \
   MaxText/configs/base.yml \
   tokenizer_path=${TOKENIZER_PATH} \
   load_parameters_path=${LOAD_PARAMETERS_PATH} \

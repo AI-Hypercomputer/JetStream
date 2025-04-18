@@ -55,8 +55,8 @@ gcloud storage buckets create ${BASE_OUTPUT_DIRECTORY} --location=${BUCKET_LOCAT
 
 # Convert model checkpoints to MaxText compatible checkpoints.
 if [ "$MODEL" == "gemma" ]; then
-    CONVERT_CKPT_SCRIPT="convert_gemma_chkpt.py"
-    JAX_PLATFORMS=cpu python MaxText/${CONVERT_CKPT_SCRIPT} \
+    CONVERT_CKPT_SCRIPT="convert_gemma_chkpt"
+    JAX_PLATFORMS=cpu python3 -m MaxText.${CONVERT_CKPT_SCRIPT} \
     --base_model_path ${CHKPT_BUCKET} \
     --maxtext_model_path ${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx} \
     --model_size ${MODEL_VARIATION}
@@ -87,14 +87,14 @@ else
 	    lora_local_path=${LORA_INPUT_ADAPTERS_PATH}
 	fi
 
-	JAX_PLATFORMS=cpu python MaxText/${CONVERT_CKPT_SCRIPT} \
+	JAX_PLATFORMS=cpu python3 -m MaxText.${CONVERT_CKPT_SCRIPT} \
 	--base-model-path ${tmp_ckpt_path}${directory_substring} \
 	--maxtext-model-path ${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx} \
 	--model-size ${MODEL_NAME} \
 	--lora-input-adapters-path ${lora_local_path} \
 	--huggingface-checkpoint ${HUGGING_FACE_CHECKPOINT}
     else
-	JAX_PLATFORMS=cpu python MaxText/${CONVERT_CKPT_SCRIPT} \
+	JAX_PLATFORMS=cpu python3 -m MaxText.${CONVERT_CKPT_SCRIPT} \
 	--base-model-path ${tmp_ckpt_path}${directory_substring} \
 	--maxtext-model-path ${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx} \
 	--model-size ${MODEL_NAME} \
@@ -111,7 +111,7 @@ export SCANNED_CKPT_PATH=${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx}
 export RUN_NAME=${MODEL_NAME}_unscanned_chkpt_${idx}
 
 if [[ ! -z "${LORA_INPUT_ADAPTERS_PATH}" ]]; then
-    JAX_PLATFORMS=cpu python MaxText/generate_param_only_checkpoint.py \
+    JAX_PLATFORMS=cpu python3 -m MaxText.generate_param_only_checkpoint \
     MaxText/configs/base.yml \
     base_output_directory=${BASE_OUTPUT_DIRECTORY} \
     load_parameters_path=${SCANNED_CKPT_PATH}/base/0/items \
@@ -121,7 +121,7 @@ if [[ ! -z "${LORA_INPUT_ADAPTERS_PATH}" ]]; then
     force_unroll=true
     echo "Written MaxText unscanned checkpoint to ${BASE_OUTPUT_DIRECTORY}/${RUN_NAME}/checkpoints"
 else
-    JAX_PLATFORMS=cpu python MaxText/generate_param_only_checkpoint.py \
+    JAX_PLATFORMS=cpu python3 -m MaxText.generate_param_only_checkpoint \
     MaxText/configs/base.yml \
     base_output_directory=${BASE_OUTPUT_DIRECTORY} \
     load_parameters_path=${SCANNED_CKPT_PATH}/0/items \
