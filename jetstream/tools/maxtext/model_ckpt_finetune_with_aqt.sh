@@ -50,7 +50,7 @@ export CONVERTED_CHECKPOINT=${MODEL_BUCKET}/${MODEL}/${MODEL_VARIATION}/${idx}/0
 # Fine tune the converted model checkpoints with AQT.
 export RUN_NAME=finetune_aqt_${idx}
 
-python3 MaxText/train.py \
+python3 -m MaxText.train \
 MaxText/configs/base.yml \
 run_name=${RUN_NAME} \
 base_output_directory=${BASE_OUTPUT_DIRECTORY} \

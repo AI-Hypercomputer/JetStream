@@ -12,7 +12,7 @@ export run_dir=${base_output_dir}/microbenchmark/${run_name}/${experiment_time}/
 echo "run_dir: ${run_dir}"
 gsutil cp ${config_file_path} ${run_dir}/
 
-python3 MaxText/inference_microbenchmark.py \
+python3 -m MaxText.inference_microbenchmark \
     ${config_file_path} \
     model_name=${model_name} \
     tokenizer_path=assets/tokenizer.llama2 \
