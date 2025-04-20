@@ -168,6 +168,7 @@ class Engine(abc.ABC):
       true_length: int,
       sampler: Optional[Callable[[Any], Any]] = None,
       request_id: Optional[uuid.UUID] = None,
+      slot: Optional[int] = None,
   ) -> Tuple[Prefix, ResultTokens]:
     """Computes a kv-cache for a set of tokens conditional on existing cache.
 
@@ -177,6 +178,10 @@ class Engine(abc.ABC):
     kv_cache (typically) for the resulting text.
 
     If sampler is passed, then the engine should use it do sample next token.
+
+    Args:
+      slot: When provided, a preallocated slot for the request, otherwise
+            a slot will be allocated after prefill before insert into the batch.
     """
 
   @abc.abstractmethod
