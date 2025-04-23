@@ -12,57 +12,100 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Implementation of PrefixCache with LRU cache and Trie based key lookup.
+"""Hierarchical prefix cache implementation for accelerating LLM prefill.
 
-i) Initialize cache
+This module provides a `PrefixCache` class that implements a two-level cache
+(HBM and DRAM) for storing Key-Value (KV) caches generated during the prefill
+stage of language model inference.
 
-# Prefix return by prefill function of mixtral-8x22b model 
-# with max_prefill_length=1024,
-# int8 quantize_kvcache is 235_930_060 bytes, nearly 256 MB.
-# It need about 256 * 256 MB = 64GB to caching 256 prompts prefill.
-hbm_bytes = 64_000_000_000  # 64 GB
-dram_bytes = 640_000_000_000  # 640 GB
-prefix_cache = PrefixCache(hbm_bytes=hbm_bytes, dram_bytes=dram_bytes)
+Key Features:
+- **Hierarchical Storage:** Utilizes both HBM (High Bandwidth Memory) for fast
+  access and host DRAM for larger capacity.
+- **LRU Eviction:** Employs a Least Recently Used (LRU) strategy to manage cache
+  entries in both HBM and DRAM layers.
+- **Trie-based Key Lookup:** Uses a `PrefixCacheTrie` for efficient retrieval of
+  the longest matching prefix key based on input tokens.
+- **Thread Safety:** The `PrefixCache` class uses a lock to ensure thread-safe
+  operations.
 
-ii) Read from Cache:
+Core Components:
+- `Value`: Dataclass holding the KVCache (`prefix`), token information, and
+  metadata like size and device placement.
+- `PrefixCacheTrie`: A Trie data structure optimized for finding the longest
+  common prefix among token sequences (keys).
+- `ValueStorageInterface`: Abstract base class defining the storage layer API.
+- `HBMStorage`, `DRAMStorage`: Concrete implementations of
+  `ValueStorageInterface`
+  for HBM and DRAM respectively. They handle device placement (`jax.device_put`,
+  `jax.device_get`).
+- `LRUStrategy`: Manages the order of keys based on usage for LRU eviction.
+- `HierarchicalCache`: Manages the two storage layers (`HBMStorage`,
+  `DRAMStorage`) and their respective LRU strategies. Handles adding,
+  retrieving, and evicting entries across the hierarchy.
+- `PrefixCache`: The main user-facing class that integrates the Trie lookup
+  (`_trie`) and the hierarchical storage (`_cache`).
 
-# From request
-prompt: str = "blah"
-full_key: Key = tokenizer.tokenize(prompt)
+Basic Usage:
 
-# Inside prefill call
-orig_key_len = len(full_key)
+1.  **Initialization:**
+    ```python
+    # Define HBM and DRAM capacity in bytes
+    hbm_bytes = 64 * 1024**3  # 64 GiB
+    dram_bytes = 512 * 1024**3 # 512 GiB
 
-matched_key = prefix_cache.fetch_longest_common_prefix_key(key)
-if matched_key is not None and load_cache_is_efficient_enough(matched_key):
-  cache_results = prefix_cache.load(matched_key)
-else:
-  cache_results = None
+    prefix_cache = PrefixCache(hbm_bytes=hbm_bytes, dram_bytes=dram_bytes)
+    ```
 
-if cache_results:
-   # load cache successfully
-   matched_len = calculate_matched_len(full_key, matched_key)
-   cached_prefix = cache_results.prefix
-else:
-   cached_prefix = None
+2.  **Saving a Prefix:**
+    After computing the KVCache (`full_kv_cache`) for a prompt
+    (`full_key_tokens`):
+    ```python
+    from jetstream.core.prefix_cache import Value
 
-iii) Run prefill un-cached prompt and write to cache
-
-full_kv_cache = prefill(prompt, cached_prefix, matched_len)
-
-# if the cache didn't contain prefix or if it was a partial match
-if cached_prefix is None or matched_len != orig_key_len:
-    prefix_cache.save(full_key, Value(
+    # padded_kv_cache_length: Length used for KVCache generation
+    value_to_save = Value(
         prefix=full_kv_cache,
-        true_length=true_length,
-        padded_length=padded_length,
-        tokens=full_key,
-    ))
+        true_length=len(full_key_tokens), # Actual length without padding
+        padded_length=padded_kv_cache_length
+        tokens=full_key_tokens,
+    )
+    # Only save if the key (or a longer version) isn't already present
+    if not prefix_cache.contains(full_key_tokens):
+        prefix_cache.save(full_key_tokens, value_to_save)
+    ```
 
+3.  **Loading a Prefix (before prefill):**
+    Given new input tokens (`input_tokens`):
+    ```python
+    # Find the longest matching prefix in the cache
+    # Optionally set a minimum length for the match (e.g., chunk_size)
+    cached_value = prefix_cache.load(input_tokens,
+        min_common_prefix_key_length=chunk_size)
+
+    if cached_value:
+        # Cache hit!
+        existing_prefix_cache = cached_value.prefix
+        # Figure out how many tokens matched
+        common_len = cal_common_prefix_length(input_tokens, cached_value.tokens)
+        # Prefill only the remaining tokens
+        remaining_tokens = input_tokens[common_len:]
+        # ... proceed with prefill using existing_prefix_cache and 
+        # remaining_tokens ...
+    else:
+        # Cache miss - prefill the entire input_tokens
+        # ... proceed with full prefill ...
+    ```
+
+Helper Functions:
+- `load_existing_prefix`: Convenience function to load a prefix and format it
+  as `engine_api.ExistingPrefix`, truncating the common tokens to a multiple
+  of `chunk_size`.
+- `save_existing_prefix`: Convenience function to save a prefix, truncating the
+  key tokens to a multiple of `chunk_size` and checking for existence first.
 """
 
 from collections import OrderedDict
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 import abc
 import dataclasses
 import jax
@@ -70,11 +113,13 @@ import jax.numpy as jnp
 import logging
 import threading
 
+from jetstream.engine import engine_api
+
 logger = logging.getLogger(__name__)
 
 Token = int
 # Tuple of tokens from prompt
-Key = Tuple[Token, ...]
+Key = tuple[Token, ...]
 Prefix = Any  # KVCache for one prompt
 
 
@@ -280,6 +325,22 @@ class PrefixCacheTrie:
       node = node.children[token]
 
     return tuple(result_tokens)
+
+  def contains(self, key: Key) -> bool:
+    """Check if the exact key exists as a path in the trie.
+
+    Args:
+      key: The key (tuple of tokens) to search for.
+
+    Returns:
+      True if the key exists as a complete path in the trie, False otherwise.
+    """
+    node = self._root
+    for token in key:
+      if token not in node.children:
+        return False
+      node = node.children[token]
+    return True
 
   def erase(self, key: Key) -> None:
     """Erase key in trie if it is leaf."""
@@ -578,7 +639,7 @@ class HierarchicalCache:
   """
 
   def __init__(
-      self, layers: Tuple[ValueStorageInterface, ValueStorageInterface]
+      self, layers: tuple[ValueStorageInterface, ValueStorageInterface]
   ):
     assert (
         layers[0].get_max_size_bytes() <= layers[1].get_max_size_bytes()
@@ -747,13 +808,22 @@ class PrefixCache:
     self._cache: HierarchicalCache
     self.clear()
 
-  def fetch_longest_common_prefix_key(self, key: Key) -> Optional[Key]:
-    """Returns key with longest common prefix matched or None if not found."""
-    logger.debug("fetch_longest_common_prefix_key, key=%r", key)
+  def contains(self, key: Key) -> bool:
+    """Check if a key is in the cache.
+
+    If the key is already in the cache. No need to save again assuming the
+    value associated with the key will not change.
+
+    Args:
+      key: The key to check for existence in the cache.
+
+    Returns:
+      True if the key exists in the cache, False otherwise.
+    """
     with self._lock:
-      matched_key = self._trie.get_longest_common_prefix_key(key)
-      logger.debug("matched_key=%r", matched_key)
-      return matched_key
+      # If the key exists in trie path, the succeed path to the leaf would
+      # be saved in the cache.
+      return self._trie.contains(key)
 
   def save(self, key: Key, value: Value) -> bool:
     """Save key/value to the cache."""
@@ -768,11 +838,21 @@ class PrefixCache:
       self._trie.insert(key)
       return True
 
-  def load(self, key: Key, device: Any = None) -> Optional[Value]:
-    """Returns Value stored with key or None if not found.
+  def load(
+      self,
+      key: Key,
+      min_common_prefix_key_length: Optional[int] = None,
+      device: Any = None,
+  ) -> Optional[Value]:
+    """Returns Value to the key with longest common prefix matched.
+
+    Return None if not found.
 
     Args:
-      key: key to load.
+      key: key to search common prefix.
+      min_common_prefix_key_length:
+        If provided, only the longest common prefix key length
+        >= the threshold will be loaded and return.
       device:
         The same type as device in the jax.device_put.
         Load the Value on the device.
@@ -783,13 +863,20 @@ class PrefixCache:
     """
     logger.debug("load key=%r", key)
     with self._lock:
-      value = self._cache.retrieve(key, device)
+      matched_key = self._trie.get_longest_common_prefix_key(key)
+      logger.debug("get matched key=%r", matched_key)
+      if matched_key is None:
+        return None
+      if (
+          min_common_prefix_key_length is not None
+          and cal_common_prefix_length(key, matched_key)
+          < min_common_prefix_key_length
+      ):
+        return None
+
+      value = self._cache.retrieve(matched_key, device)
       if value is None:
-        logger.warning(
-            "The key should fetched by fetch_longest_common_prefix_key, "
-            "load key=%r should be valid but not.",
-            key,
-        )
+        logger.warning("Load key=%r should be valid but not.", key)
         return None
       return value
 
@@ -804,3 +891,174 @@ class PrefixCache:
               DRAMStorage(self._dram_bytes),
           )
       )
+
+
+def load_existing_prefix(
+    prefix_cache: PrefixCache,
+    tokens: tuple[Token, ...],
+    chunk_size: int,
+) -> Optional[tuple[engine_api.ExistingPrefix, int]]:
+  """Loads the longest common prefix from the cache for the given tokens.
+
+  The existing prefix will truncate to a multiple of chunk_size and ensure at
+  least one token remains to do prefill once.
+
+  Args:
+    prefix_cache: The PrefixCache instance to load from.
+    tokens: The input token sequence (as a tuple) for which to find a prefix.
+    chunk_size: The chunk size used for prefilling. The returned common prefix
+      length will be truncated to a multiple of this size.
+
+  Returns:
+    A tuple containing:
+      - existing_prefix: An ExistingPrefix object containing the cached KVCache
+        and the common prefix tokens (truncated to a multiple of chunk_size).
+      - common_prefix_len: The actual length of the common prefix found.
+    Returns None if no suitable prefix is found in the cache or if the common
+    prefix is shorter than chunk_size.
+  """
+  # Attempt to load the longest matching prefix from the cache.
+  # We set a minimum length to ensure the match is at least one chunk long.
+  cached_value = prefix_cache.load(
+      tokens, min_common_prefix_key_length=chunk_size
+  )
+
+  if cached_value is None:
+    logger.debug("No prefix found in cache for the given tokens.")
+    return None
+
+  # Calculate the actual length of the common prefix.
+  common_prefix_len = cal_common_prefix_length(tokens, cached_value.tokens)
+
+  if common_prefix_len < chunk_size:
+    # This case might occur if the cache logic changes or if there's an
+    # unexpected state.
+    logger.debug(
+        "Found prefix in cache, but common length (%d) is less than chunk"
+        " size (%d).",
+        common_prefix_len,
+        chunk_size,
+    )
+    return None
+
+  # Truncate the common prefix length to the nearest multiple of chunk_size.
+  truncated_len = common_prefix_len - (common_prefix_len % chunk_size)
+
+  # Ensure that at least one token remains for the next prefill step.
+  # If the truncated length covers the entire input sequence,
+  # reduce it by one chunk.
+  if truncated_len == len(tokens):
+    truncated_len -= chunk_size
+    # If reducing by a chunk makes the length zero or less, it means the
+    # original common prefix was exactly one chunk long and matched the
+    # whole input. In this specific case, we can't use the cache effectively
+    # for chunked prefill.
+    if truncated_len <= 0:
+      logger.debug(
+          "Common prefix length %d reduced to %d after ensuring remaining"
+          " tokens with chunk size %d. Cannot use cache.",
+          common_prefix_len,
+          truncated_len,
+          chunk_size,
+      )
+      return None
+
+  # Check if truncated_len became zero after the initial truncation (shouldn't
+  # happen with min_common_prefix_key_length check).
+  if truncated_len == 0:
+    logger.debug(
+        "Common prefix length %d truncated to 0 with chunk size %d.",
+        common_prefix_len,
+        chunk_size,
+    )
+    return None
+
+  # Extract the truncated common prefix tokens.
+  truncated_common_tokens = tokens[:truncated_len]
+  truncated_tokens_array = jnp.array(truncated_common_tokens)
+
+  # Create the ExistingPrefix object.
+  existing_prefix = engine_api.ExistingPrefix(
+      cache=cached_value.prefix, common_prefix_tokens=truncated_tokens_array
+  )
+
+  logger.debug(
+      "Loaded existing prefix. Original common length: %d, Truncated length:"
+      " %d",
+      common_prefix_len,
+      truncated_len,
+  )
+
+  return existing_prefix, common_prefix_len
+
+
+def save_existing_prefix(
+    prefix_cache: PrefixCache,
+    tokens: tuple[Token, ...],
+    prefix: Prefix,
+    chunk_size: int,
+    padded_length: int,
+    copy_prefix: bool,
+) -> bool:
+  """Save the existing prefix if needed.
+
+  The tokens would be truncated to length of multiple of chunk_sizes.
+  The truncated tokens would be the key to the cache.
+  If key is in the prefix cache, it will not saved again.
+
+  Args:
+    prefix_cache: The PrefixCache instance to save to.
+    tokens: The token sequence (as a tuple) representing the key.
+    prefix: The KVCache (or relevant prefix data) to store.
+    chunk_size: The chunk size used for prefilling. The saved length will be
+      related to this.
+    padded_length: The padded length of the KVCache in prefix.
+    copy_prefix: Whether to copy the prefix before saving.
+
+  Return:
+    True if save happened and was successful, False otherwise.
+  """
+
+  save_len = len(tokens) - (len(tokens) % chunk_size)
+  if save_len < chunk_size:
+    logger.debug(
+        "Token length %d is less than chunk size %d. Not saving prefix.",
+        len(tokens),
+        chunk_size,
+    )
+    return False
+
+  truncated_tokens = tokens[:save_len]
+  if prefix_cache.contains(truncated_tokens):
+    logger.debug(
+        "Prefix with key length %d already exists in cache. Not saving.",
+        save_len,
+    )
+    return False
+
+  copied_prefix = prefix
+  if copy_prefix:
+    copied_prefix = jax.tree.map(lambda x: x.copy(), prefix)
+
+  value_to_save = Value(
+      prefix=copied_prefix,
+      true_length=len(truncated_tokens),
+      padded_length=padded_length,
+      tokens=truncated_tokens,
+  )
+
+  logger.debug("Saving prefix with key length %d to cache.", save_len)
+  saved = prefix_cache.save(truncated_tokens, value_to_save)
+
+  return saved
+
+
+def cal_common_prefix_length(
+    key: tuple[int, ...], matched_key: tuple[int, ...]
+) -> int:
+  length = 0
+  for token1, token2 in zip(key, matched_key):
+    if token1 != token2:
+      break
+    length += 1
+  return length

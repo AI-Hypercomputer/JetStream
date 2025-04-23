@@ -94,11 +94,15 @@ import grpc
 import jax
 from jetstream.core.lora import adapter_tensorstore as adapterstore
 
+from jetstream.core import prefix_cache
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.core.utils.return_sample import ReturnSample
-from jetstream.engine import engine_api, tokenizer_api, token_utils
+from jetstream.engine import chunked_prefill
+from jetstream.engine import engine_api
+from jetstream.engine import token_utils
+from jetstream.engine import tokenizer_api
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
 
@@ -261,6 +265,10 @@ class Driver:
   _prefill_adapterstore: list[adapterstore.AdapterTensorStore] | None = None
   _generate_adapterstore: list[adapterstore.AdapterTensorStore] | None = None
 
+  # Optional prefix cache for storing and retrieving KV caches of common
+  # prompt prefixes to accelerate prefill. Only work with chunked prefill.
+  _prefix_cache: prefix_cache.PrefixCache | None = None
+
   def __init__(
       self,
       prefill_engines: Optional[list[engine_api.Engine]] = None,
@@ -278,6 +286,7 @@ class Driver:
       metrics_collector: JetstreamMetricsCollector | None = None,
       is_ray_backend: bool = False,
       multi_sampling: bool = False,
+      prefix_cache_inst: prefix_cache.PrefixCache | None = None,
   ):
     if prefill_engines is None:
       raise ValueError("No prefill engine provided.")
@@ -306,6 +315,7 @@ class Driver:
     self._interleaved_mode = interleaved_mode
     self._metrics_collector = metrics_collector
     self._multi_sampling = multi_sampling
+    self._prefix_cache = prefix_cache_inst
 
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
@@ -619,54 +629,157 @@ class Driver:
       prefill_params: Any,
       tokenizer: tokenizer_api.Tokenizer,
       tokens: jax.Array | np.ndarray,
+      existing_prefix: Optional[engine_api.ExistingPrefix] = None,
   ) -> Tuple[engine_api.Prefix, engine_api.ResultTokens]:
-    """Do chunked prefill.
+    """Performs the prefill operation in chunks.
 
-    Should not use without enabling use_chunked_prefill config.
+    This method takes a sequence of tokens and processes them in chunks using
+    the provided prefill engine. It can optionally start from an existing
+    prefix (KVCache state).
+
+    Note: This method requires the `use_chunked_prefill` attribute to be True
+    on the `prefill_engine`.
+
+    Args:
+      prefill_engine: The engine instance responsible for prefilling.
+      prefill_params: The parameters (e.g., model weights) for the prefill
+        engine.
+      tokenizer: The tokenizer used, primarily for padding information if
+        needed during chunk generation.
+      tokens: A JAX or NumPy array of input token IDs to be prefilled.
+      existing_prefix: An optional `ExistingPrefix` object containing a
+        previously computed KVCache and the corresponding common tokens. If
+        provided, prefill starts from this state. Defaults to None.
+
+    Returns:
+      A tuple containing:
+        - The resulting prefix (engine-specific KVCache state) after
+          processing the tokens.
+        - The first token generated immediately after the prefill.
+
+    Raises:
+      ValueError: If `use_chunked_prefill` is not enabled on the engine.
+        (Implicitly raised by `chunked_prefill.do_chunked_prefill` if checks
+         are present there.
     """
 
-    assert prefill_engine.use_chunked_prefill
+    chunked_tokens_list = chunked_prefill.gen_chunked_padded_tokens(
+        tokens,
+        prefill_engine.prefill_chunk_size,
+        tokenizer,
+        existing_prefix.common_prefix_tokens if existing_prefix else None,
+        jax_padding=self._jax_padding,
+    )
+    prefill_result, first_token = chunked_prefill.do_chunked_prefill(
+        prefill_engine,
+        prefill_params,
+        chunked_tokens_list,
+        existing_prefix,
+    )
+    return prefill_result, first_token
 
-    prefill_result = None
-    first_token = None
+  def _do_chunked_prefill_with_prefix_cache(
+      self,
+      prefill_engine: engine_api.Engine,
+      prefill_params: Any,
+      tokenizer: tokenizer_api.Tokenizer,
+      tokens: jax.Array | np.ndarray,
+  ) -> Tuple[engine_api.Prefix, engine_api.ResultTokens]:
+    """Performs chunked prefill leveraging a prefix cache.
+
+    This method attempts to accelerate the prefill process by first loading
+    the longest possible matching prefix (KV cache state) from the
+    `self._prefix_cache`. It then performs chunked prefill only on the
+    remaining portion of the input tokens. Finally, it saves the potentially
+    updated or new prefix back into the cache.
+
+    Note:
+        - This method requires `use_chunked_prefill` to be True on the
+          `prefill_engine`.
+        - This method requires `self._prefix_cache` to be initialized.
+
+    Args:
+      prefill_engine: The engine instance responsible for prefilling.
+      prefill_params: The parameters (e.g., model weights) for the prefill
+        engine.
+      tokenizer: The tokenizer used for padding and potentially during cache
+        operations if needed.
+      tokens: A JAX or NumPy array of input token IDs to be prefilled.
+
+    Returns:
+      A tuple containing:
+        - The resulting prefix (engine-specific KVCache state) after
+          processing all tokens (either loaded from cache or computed).
+        - The first token generated immediately after the full prefill.
+
+    Raises:
+      ValueError: If `use_chunked_prefill` is not enabled on the engine or
+        if `self._prefix_cache` is None.
+    """
+    if not prefill_engine.use_chunked_prefill:
+      raise ValueError("Chunked prefill must be enabled to use this function.")
+    if self._prefix_cache is None:
+      raise ValueError("Prefix cache is not initialized.")
+
+    # Ensure tokens are in tuple format for cache keys
+    tuple_tokens = tuple(tokens.tolist())
+    chunk_size = prefill_engine.prefill_chunk_size
+
+    # 1. Load the longest possible prefix from the cache
+    load_result = prefix_cache.load_existing_prefix(
+        self._prefix_cache, tuple_tokens, chunk_size
+    )
 
     existing_prefix = None
-    for start_pos in range(
-        0,
-        len(tokens),
-        prefill_engine.prefill_chunk_size,
-    ):
-      input_token = tokens[
-          start_pos : min(
-              len(tokens), start_pos + prefill_engine.prefill_chunk_size
-          )
-      ]
-      padded_input_token, input_true_length = token_utils.pad_tokens(
-          input_token,
-          tokenizer.bos_id,
-          tokenizer.pad_id,
-          is_bos=False,
-          max_prefill_length=prefill_engine.max_prefill_length,
-          jax_padding=self._jax_padding,
+    remain_tokens = tokens  # Assume full prefill initially
+    original_common_prefix_len = 0
+
+    if load_result:
+      existing_prefix, original_common_prefix_len = load_result
+      # Calculate the tokens that still need to be prefilled
+      # common_prefix_tokens is already truncated to chunk_size multiple
+      # and ensures at least one token remains.
+      truncated_len = existing_prefix.common_prefix_tokens.shape[0]
+      remain_tokens = tokens[truncated_len:]
+      logger.debug(
+          "Prefix cache hit. Original common length: %d, Truncated length: %d,"
+          " Remaining tokens to prefill: %d",
+          original_common_prefix_len,
+          truncated_len,
+          len(remain_tokens),
       )
-      prefill_result, first_token = prefill_engine.prefill(
-          params=prefill_params,
-          existing_prefix=existing_prefix,
-          padded_tokens=padded_input_token,
-          true_length=input_true_length,
-      )
-      existing_prefix = engine_api.ExistingPrefix(
-          cache=prefill_result["cache"],
-          common_prefix_tokens=tokens[
-              0 : min(
-                  len(tokens), start_pos + prefill_engine.prefill_chunk_size
-              )
-          ],
+    else:
+      logger.debug(
+          "Prefix cache miss or prefix too short. Prefilling all tokens."
       )
 
-    # Should assign in the loop
+    # 2. Perform chunked prefill on the remaining tokens
+    prefill_result, first_token = self._do_chunked_prefill(
+        prefill_engine=prefill_engine,
+        prefill_params=prefill_params,
+        tokenizer=tokenizer,
+        tokens=remain_tokens,
+        existing_prefix=existing_prefix,
+    )
+
     assert prefill_result is not None
     assert first_token is not None
+
+    # 3. Save the potentially new prefix to the cache
+    # save_existing_prefix handles truncation and checks if the key exists.
+    # We pass the original full tokens and the final cache state.
+    # copy_prefix=True because the insert function after will donate the result.
+    # Assuming max prefill length is the padded length to the cache.
+    saved = prefix_cache.save_existing_prefix(
+        prefix_cache=self._prefix_cache,
+        tokens=tuple_tokens,
+        prefix=prefill_result["cache"],
+        chunk_size=chunk_size,
+        padded_length=prefill_engine.max_prefill_length,
+        copy_prefix=True,
+    )
+    if saved:
+      logger.debug("Saved new prefix to cache.")
 
     return prefill_result, first_token
 
@@ -749,14 +862,28 @@ class Driver:
         )
         request.complete = np.zeros((request.num_samples,), np.bool_)
       else:
-        # if chunked_prefill is used,
-        if prefill_engine.use_chunked_prefill:
-          prefill_result, first_token = self._do_chunked_prefill(
-              prefill_engine,
-              final_prefill_params,
-              tokenizer,
-              padded_tokens[:true_length],
-          )
+        # if chunked_prefill is used, and the prompt is long enough
+        if (
+            prefill_engine.use_chunked_prefill
+            and true_length >= prefill_engine.prefill_chunk_size
+        ):
+          if self._prefix_cache is not None:
+            prefill_result, first_token = (
+                self._do_chunked_prefill_with_prefix_cache(
+                    prefill_engine,
+                    final_prefill_params,
+                    tokenizer,
+                    padded_tokens[:true_length],
+                )
+            )
+          else:
+            prefill_result, first_token = self._do_chunked_prefill(
+                prefill_engine,
+                final_prefill_params,
+                tokenizer,
+                padded_tokens[:true_length],
+            )
+
         else:
           # Compute new kv cache for the prefill_content.
           prefill_result, first_token = prefill_engine.prefill(

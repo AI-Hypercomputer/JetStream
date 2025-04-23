@@ -35,6 +35,7 @@ import grpc
 import jax
 from jetstream.core import config_lib
 from jetstream.core import orchestrator
+from jetstream.core import prefix_cache
 from jetstream.core.lora import adapter_tensorstore as adapterstore
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 from jetstream.core.proto import jetstream_pb2_grpc
@@ -138,6 +139,7 @@ def create_driver(
     enable_model_warmup: bool = False,
     multi_sampling: bool = False,
     lora_input_adapters_path: str | None = None,
+    prefix_caching_config: config_lib.PrefixCachingConfig | None = None,
 ):
   """Creates a driver with a specified config.
 
@@ -148,6 +150,7 @@ def create_driver(
     metrics_collector: The JetStream Promethus metric collector.
     enable_model_warmup: The flag to enable model server warmup.
     multi_sampling: The flag to enable multi-sampling.
+    prefix_caching_config: Config to prefix caching. Disable if None.
 
   Returns:
     An orchestrator driver.
@@ -236,6 +239,13 @@ def create_driver(
       traceback.print_exc()
       os.kill(os.getpid(), signal.SIGKILL)
 
+  prefix_cache_inst = None
+  if prefix_caching_config is not None:
+    prefix_cache_inst = prefix_cache.PrefixCache(
+        hbm_bytes=prefix_caching_config.max_hbm_byte,
+        dram_bytes=prefix_caching_config.max_dram_byte,
+    )
+
   return orchestrator.Driver(
       prefill_engines=prefill_engines,
       generate_engines=generate_engines,
@@ -248,6 +258,7 @@ def create_driver(
       metrics_collector=metrics_collector,
       is_ray_backend=config.is_ray_backend,
       multi_sampling=multi_sampling,
+      prefix_cache_inst=prefix_cache_inst,
   )
 
 
@@ -264,6 +275,7 @@ def run(
     enable_model_warmup: bool = False,
     multi_sampling: bool = False,
     lora_input_adapters_path: str | None = None,
+    prefix_caching_config: config_lib.PrefixCachingConfig | None = None,
 ) -> JetStreamServer:
   """Runs a server with a specified config.
 
@@ -281,6 +293,7 @@ def run(
     enable_model_warmup: The flag to enable model server warmup.
     multi_sampling: The flag to enable multi-sampling.
     lora_input_adapters_path: Input path for all lora adapters.
+    prefix_caching_config: Config to prefix caching. Disable if None.
 
   Returns:
     JetStreamServer that wraps the grpc server and orchestrator driver.
@@ -310,6 +323,7 @@ def run(
       enable_model_warmup,
       multi_sampling,
       lora_input_adapters_path,
+      prefix_caching_config=prefix_caching_config,
   )
   # We default threads to the total number of concurrent allowed decodes,
   # to make sure we can fully saturate the model. Set default minimum to 64.
