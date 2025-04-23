@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+# This workflow builds a stable stack for JetStream+Maxtext, runs benchmarks,
+# cleans up resources, and sends notifications.
 
-name: Tests
+name: Run Maxtext JetStream Tests
 
 on:
   # pull_request:
@@ -23,25 +23,97 @@ on:
   #   branches: [ "main" ]
   workflow_dispatch:
   schedule:
-    # Run the job every 4 hours
-    - cron:  '0 */24 * * *'
+    # Run the job daily at midnight UTC
+    - cron:  '0 0 * * *'
 
 jobs:
   prelim:
     runs-on: ["self-hosted", "tpu", "v6e-8"]
     steps:
+    - name: Test gsutil installation
+      run: which gsutil >/dev/null 2>&1 || { echo >&2 "gsutil is required but not installed. Aborting"; exit 24;}
+    - name: Cleanup old docker images
+      run: docker system prune --all --force
+    - name: Authenticate gcloud
+      run: gcloud auth configure-docker us-docker.pkg.dev --quiet
+
+  build_stable_stack:
+    name: Build Stable Stack
+    needs: prelim
+    runs-on: ["self-hosted", "tpu", "v6e-8"]
+    env:
+      LOCAL_IMAGE_TAG: jetstream-maxtext-stable-stack/tpu:github_${{ github.run_id }}
+    steps:
     - uses: actions/checkout@v4
+    - name: Build
+      run: |
+          pushd experimental/jetstream-maxtext-stable-stack
+          ./build.sh \
+            LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG}"
+          popd
+    - name: Test
+      run: |
+          pushd experimental/jetstream-maxtext-stable-stack
+          ./test.sh \
+            LOCAL_IMAGE_TAG=${LOCAL_IMAGE_TAG}
+          popd
+    - name: Upload image
+      run: |
+          UPLOAD_IMAGE_TAG=gcr.io/cloud-tpu-inference-test/${LOCAL_IMAGE_TAG}
+          docker tag ${LOCAL_IMAGE_TAG} ${UPLOAD_IMAGE_TAG}
+          docker push ${UPLOAD_IMAGE_TAG}
+          NIGHTLY_TAG=${UPLOAD_IMAGE_TAG%:*}:nightly
+          NIGHTLY_TAG_DATE=${NIGHTLY_TAG}-$(date +"%Y%m%d")
+          docker tag ${LOCAL_IMAGE_TAG} ${NIGHTLY_TAG}
+          docker tag ${LOCAL_IMAGE_TAG} ${NIGHTLY_TAG_DATE}
+          docker push ${NIGHTLY_TAG}
+          docker push ${NIGHTLY_TAG_DATE}
+
+  benchmark_report:
+    name: Benchmark Report
+    needs: build_stable_stack
+    runs-on: ["self-hosted", "tpu", "v6e-8"]
+    container:
+      # sync with the image uploaded from build_stable_stack stage
+      image: gcr.io/cloud-tpu-inference-test/jetstream-maxtext-stable-stack/tpu:github_${{ github.run_id }}
+      options: "--net=host --privileged"
+    env:
+      OUTPUT_DIR: /workspace/test_dir/
+    steps:
+    - name: Create output directory # Ensure directory exists in container
+      run: mkdir -p ${OUTPUT_DIR}
     - name: Test MOEBenchmarks
-      run: bash .github/workflows/test_moe_benchmarks.sh
-      # run: bash .github/workflows/test_moe_8x22b_microbenchmark.sh
-    # - name: Test MOE long context chunked prefill - 8k
-    #   run: bash .github/workflows/benchmark_chunked_prefill.sh
-  
+      # Report should generated in OUTPUT_DIR depend on ENV
+      run: bash JetStream/.github/workflows/test_moe_benchmarks.sh
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark_report
+        path: ${{ env.OUTPUT_DIR }}
+
+  clean_up:
+    if: ${{ always() }}  # always execute, regardless of previous jobs or steps.
+    needs: [build_stable_stack, benchmark_report]
+    name: "Clean up"
+    runs-on: ["self-hosted"]
+    permissions:
+      contents: read
+      issues: write  # for failed-build-issue
+    steps:
+    - name: Delete TPU image
+      # sync with the image uploaded from build_stable_stack stage
+      run: gcloud container images delete gcr.io/cloud-tpu-inference-test/jetstream-maxtext-stable-stack/tpu:github_${{ github.run_id }} --force-delete-tags --quiet
+
   notify:
     name: Notify test build # creates an issue or modifies last open existing issue for failed build
-    needs: [prelim]
+    needs: [build_stable_stack, benchmark_report]
     runs-on: ["self-hosted", "tpu", "v6e-8"]
     steps:
+    - name: Download benchmark artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: benchmark_report
+        path: ./benchmark_report
     - name: Check whether one of the jobs failed
       if: ${{ failure() }}
       uses: jayqi/failed-build-issue-action@1a893bbf43ef1c2a8705e2b115cd4f0fe3c5649b  # v1.2.0
@@ -61,7 +133,5 @@ jobs:
         to: singhvijaya@google.com, yuyanpeng@google.com, vipannalla@google.com
         from: JetStream Runs
         secure: true
-        attachments: ~/test_dir/moe_8x7b.txt,~/test_dir/moe_8x22b.txt,~/test_dir/moe_8x22b_long_context_8k_prefill.txt,~/test_dir/moe_8x7b_jetstream.txt
+        attachments: ./benchmark_report/moe_8x7b.txt,./benchmark_report/moe_8x22b.txt,./benchmark_report/moe_8x22b_long_context_8k_prefill.txt,./benchmark_report/moe_8x7b_jetstream.txt
         body: workflow for ${{github.repository}} completed successfully!
-    - name: Cleanup
-      run: rm -rf ~/test_dir
