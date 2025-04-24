@@ -60,6 +60,7 @@ class SlotData:
   tokens: Union[jax.Array, np.ndarray]
   valid: Union[jax.Array, np.ndarray]
   lengths: Union[jax.Array, np.ndarray]
+  log_prob: Union[jax.Array, np.ndarray] = None
 
 
 # pylint: disable=g-doc-args
@@ -91,6 +92,11 @@ class ResultTokens(abc.ABC):
   samples_per_slot: int = struct.field(
       pytree_node=False,
   )
+  # log probabilities of the tokens. Shape: [batch, tokens]
+  log_prob: Union[jax.Array, np.ndarray] = struct.field(
+      pytree_node=False,
+      default=None,
+  )
 
   def copy_to_host_async(self: "ResultTokens") -> None:
     """Copy to host asynchronously."""
@@ -107,6 +113,7 @@ class ResultTokens(abc.ABC):
         self.valid_idx,
         self.length_idx,
         self.samples_per_slot,
+        self.log_prob,
     )
 
   def get_result_at_slot(self, slot: int) -> SlotData:
@@ -148,6 +155,7 @@ class ResultTokens(abc.ABC):
         valid=self.data[slots, self.valid_idx[0] : self.valid_idx[1]],
         # Only get a 1D representation here
         lengths=self.data[slots, self.length_idx[0] : self.length_idx[1]][:, 0],
+        log_prob=self.log_prob[slots, :] if self.log_prob is not None else None,
     )
 
 
