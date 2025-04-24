@@ -83,6 +83,9 @@ import pandas
 from tqdm.asyncio import tqdm  # pytype: disable=pyi-error
 from transformers import AutoTokenizer
 
+_WYZHANG_DEBUG_ENABLED=True
+_WYZHANG_PREFILL_QUOTA=1
+_WYZHANG_ACTIVE_REQ_QUOTA=1
 
 def str2bool(v: str) -> bool:
   """Convert a string of truth to True or False.
@@ -679,6 +682,10 @@ async def send_request(
   else:
     token_ids = tokenizer.encode(input_request.prompt)
 
+  if _WYZHANG_DEBUG_ENABLED:
+    print(f'----- Request -----')
+    print(f'{input_request.prompt}')
+
   # Send the request
   request = jetstream_pb2.DecodeRequest(
       token_content=jetstream_pb2.DecodeRequest.TokenContent(
@@ -697,6 +704,11 @@ async def send_request(
       out_token_cnt,
   )
   req_complete_cnt.increment()
+
+  out_str = tokenizer.decode(out_tokens)
+  if _WYZHANG_DEBUG_ENABLED:
+    print(f'----- Response -----')
+    print(f'{out_str}')
 
   # Collect per-request output and metrics.
   output = RequestFuncOutput()
@@ -1100,8 +1112,8 @@ def main(args: argparse.Namespace):
   hf_access_token = args.hf_access_token
   use_chat_template = args.use_chat_template
 
-  prefill_quota = AsyncCounter(init_value=3)
-  active_req_quota = AsyncCounter(init_value=450)
+  prefill_quota = AsyncCounter(init_value=_WYZHANG_PREFILL_QUOTA)
+  active_req_quota = AsyncCounter(init_value=_WYZHANG_ACTIVE_REQ_QUOTA)
 
   api_url = f"{args.server}:{args.port}"
   tokenizer = get_tokenizer(

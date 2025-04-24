@@ -104,26 +104,17 @@ from jetstream.engine import engine_api
 from jetstream.engine import token_utils
 from jetstream.engine import tokenizer_api
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
+from jetstream.core.utils import log_config
 import numpy as np
 
-log_level = os.getenv("LOG_LEVEL", "WARNING").upper()
+logger = log_config.get_logger(name=__name__, log_level=logging.WARN)
 
-logger = logging.getLogger("JetstreamLogger")
-logger.propagate = False
-logger.setLevel(getattr(logging, log_level, logging.WARNING))
-
-handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(getattr(logging, log_level, logging.WARNING))
-formatter = logging.Formatter(
-    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-
+# When enabled, preallocate slot before prefill,
+# otherise slot gets allocated after prefill and right before insert.
+_slot_preallocation_enabled = True
 
 def ThreadDebugLog(thread_name: str, message: str) -> None:
   logger.debug("[%s] %s", thread_name, message)
-
 
 @dataclasses.dataclass
 class ActiveRequestMetadata:
@@ -166,6 +157,8 @@ class ActiveRequest:
   prefill_result: Any = None
   # The number of responses for one request.
   num_samples: int = 1
+  # Allocated slot ID. It can be preallocated or already in use.
+  slot_id: Optional[int] = None
   # The unique id for the activeRequest, used for tracking the request's status
   # TODO(wyzhang): Figure out how to set request uuid without potentially
   #                causing jax.jit re-compilation for engine api implementation.
@@ -245,7 +238,7 @@ class Driver:
   # detokenize threads. It is a list of tokens to be detokenized.
   _detokenize_backlogs: list[queue.Queue[engine_api.ResultTokens]] = []
   _generate_slots: list[queue.Queue[int]] = []
-  _active_requests: list[queue.Queue[tuple[int, ActiveRequest]]] = []
+  _active_request_count: list[int] = []
 
   # For interleaved_mode, only generate if all slots are full
   # or corresponding prefill queue is empty.
@@ -396,6 +389,7 @@ class Driver:
         queue.Queue(engine.max_concurrent_decodes)
         for engine in self._generate_engines
     ]
+    self._active_request_count = [0 for _ in self._generate_engines]
     _ = [
         [
             self._generate_slots[idx].put(i)
@@ -796,10 +790,22 @@ class Driver:
     thread_name = f"Prefill thread {idx}"
     ThreadDebugLog(thread_name, f"Prefill params {idx} loaded.")
 
+    if _slot_preallocation_enabled:
+      # Make sure there are only 1 generate engine to ensure
+      # the preallocated slot is for the same generate engine.
+      assert len(self._generate_engines) == 1
+      my_slots = self._generate_slots[idx]
+
     while self.live:
       my_transfer_backlog = self._transfer_backlogs[idx]
       # The prefill thread can just sleep until it has work to do.
       request = self._prefill_backlog.get(block=True)
+
+      if _slot_preallocation_enabled:
+        # Preallocate a slot
+        slot = my_slots.get(block=True)
+        # print(f'wyzhangd: prefill thread: prealloc slot {slot}')
+        request.slot_id = slot
 
       if request is None:
         break
@@ -812,13 +818,13 @@ class Driver:
           f" is_bos: {is_bos}",
       )
       # Tokenize and padding the text or token input.
+      # print(f'wyzhangd: prefill thread: tokenize {request.prefill_content}')
       padded_tokens, true_length = self._process_prefill_content(
           request,
           tokenizer,
           is_bos,
           prefill_engine.max_prefill_length,
       )
-
       adapter_id = request.adapter_id
 
       # Here we are applying the LoRA adapter params to the base params and
@@ -890,6 +896,7 @@ class Driver:
               params=final_prefill_params,
               padded_tokens=padded_tokens,
               true_length=true_length,
+              slot=slot,
           )
 
         request.complete = np.zeros(
@@ -930,6 +937,7 @@ class Driver:
       ThreadDebugLog(thread_name, "Completed prefilling for one ActiveRequest.")
       # Once prefill is complete, place it on the transfer queue and block if
       # full.
+      # print(f'wyzhangd: prefill thread: enq transfer backlog for slot {request.slot_id}')
       my_transfer_backlog.put(request, block=True)
       ThreadDebugLog(
           thread_name,
@@ -986,6 +994,7 @@ class Driver:
     while self.live:
       # The transfer thread can just sleep until it has work to do.
       new_request = transfer_backlog.get(block=True)
+      # print(f'wyzhangd: transfer thread: got request for slot {new_request.slot_id}')
       if new_request is None:
         break
       new_request.metadata.transfer_dequeue_time = time.perf_counter()
@@ -1004,6 +1013,7 @@ class Driver:
         self._transfer_prefill_result(new_request, target_idx)
       # Place the request on the correct generate backlog and block if full.
       new_request.metadata.generate_enqueue_time = time.perf_counter()
+      # print(f'wyzhangd: trasnfer thread: enq generate backlog for slot {new_request.slot_id}')
       self._generate_backlogs[target_idx].put(new_request, block=True)
       ThreadDebugLog(
           thread_name,
@@ -1015,6 +1025,66 @@ class Driver:
 
     logger.info("Transfer thread %d stopped.", idx)
 
+
+  def _insert_for_preallocated_slots(
+    self,
+    idx,
+    my_generate_backlog,
+    active_request_count,
+    generate_engine,
+    decode_state,
+    generate_timestep,
+    my_detokenize_backlog,
+  ):
+    """Inserts prefill requests that already have preallocated slot ids"""
+    assert (
+      _slot_preallocation_enabled
+    ), "Slot preallocation should be enabled, but is not."
+    assert (
+      self._interleaved_mode
+    ), "Slot preallocation should be enabled only for interleaved mode."
+
+    while True:
+      try:
+        # Cannot dequeue with blocking since we should not wait for prefill
+        # requests when some slots are taken to run generate.
+        new_request = my_generate_backlog.get(block=False)
+        if new_request is None:
+          return None
+      except queue.Empty:
+        if active_request_count[idx] == 0:
+          # Nothing for generate to do. Wait for a bit before checking
+          # generate backlog again.
+          time.sleep(0.1)
+          continue
+        break
+
+      # Make sure prefill request has a preallocated slot id
+      assert (
+        new_request.slot_id is not None
+      ), f"A request doesn't have a preallocated slot while it should."
+      slot = new_request.slot_id
+      # print(f'wyzhangd: generate thread: got req with id {new_request.request_id} and insert to slot id {new_request.slot_id}')
+      # print(f'wyzhangd: generate thread: decode state before insert {decode_state}')
+      # print(f'wyzhangd: generate thread: insert prefill result {new_request.prefill_result}')
+      decode_state = generate_engine.insert(
+          new_request.prefill_result,
+          decode_state,
+          slot=slot,
+          request_id=new_request.request_id,
+      )
+      # print(f'wyzhangd: generate thread: decode state after insert {decode_state}')
+      del new_request.prefill_result
+      new_request.generate_timestep_added = generate_timestep
+      new_request.complete = np.zeros(
+          (generate_engine.samples_per_slot,), dtype=np.bool_
+      )
+      # Respond to detokenization backpressure.
+      # print(f'wyzhangd: generate thread: enq detoken backlog for slot {slot}')
+      my_detokenize_backlog.put((slot, new_request), block=True)
+    return decode_state
+    
+
   def _insert_if_possible(
       self,
       idx,
@@ -1024,9 +1094,23 @@ class Driver:
       decode_state,
       my_slots,
       my_generate_backlog,
+      active_request_count,
       generate_engine,
       my_detokenize_backlog,
   ):
+    if _slot_preallocation_enabled:
+      # When slots are preallocated before prefill. We can just
+      # dequeue from generate backlog until the queue is empty.
+      return self._insert_for_preallocated_slots(
+        idx,
+        my_generate_backlog,
+        active_request_count,
+        generate_engine,
+        decode_state,
+        generate_timestep,
+        my_detokenize_backlog,
+      )
+
     # Check if there are any free my_slots. We don't want to block here since
     # we can still generate if we can't insert. We do this in a while loop to
     # insert as many sequences as possible.
@@ -1289,6 +1373,7 @@ class Driver:
             decode_state,
             my_slots,
             my_generate_backlog,
+            self._active_request_count,
             generate_engine,
             my_detokenize_backlog,
         )
@@ -1302,13 +1387,16 @@ class Driver:
       # At this point, we know that we have at least some slots filled.
       assert (
           my_slots.qsize() < max_concurrent_decodes
-      ), "At this point we must have some requests inserted into the slots."
+      ), f"At this point we must have some requests inserted into the slots, but {my_slots.qsize()} < {max_concurrent_decodes}"
 
       # Now we actually take a generate step on requests in the slots.
+      # print(f'wyzhangd: generate thread: decode state before run generate {decode_state}')
       decode_state, sampled_tokens = generate_engine.generate(
           generate_params, decode_state
       )
+      # print(f'wyzhangd: generate thread: decode state after run generate {decode_state}')
       sampled_tokens.copy_to_host_async()
+      # print(f'wyzhangd: generat thread: run generate got sampled token {sampled_tokens}')
       # Respond to detokenization backpressure.
       my_detokenize_backlog.put((generate_timestep, sampled_tokens), block=True)
       generate_timestep += 1
@@ -1367,10 +1455,11 @@ class Driver:
     my_generate_engine = self._generate_engines[idx]
     my_slots = self._generate_slots[idx]
 
+    max_concurrent_decodes = my_generate_engine.max_concurrent_decodes
     metadata = my_generate_engine.get_tokenizer()
     tokenizer = my_generate_engine.build_tokenizer(metadata)
     my_live_requests = {
-        i: None for i in range(my_generate_engine.max_concurrent_decodes)
+        i: None for i in range(max_concurrent_decodes)
     }
     my_live_multi_sampling_requests = (
         {}
@@ -1420,6 +1509,7 @@ class Driver:
         )
       # generate step tokens
       elif isinstance(data[1], engine_api.ResultTokens):
+        # print(f'wyzhangd: detoken thread: got generate data {data}')
         # We want to detokenize them.
         generate_timestep_added, result_tokens = data
         # Disable attribute error because pytype doesn't know this
@@ -1457,6 +1547,7 @@ class Driver:
         else:
           for slot, request in my_live_requests.items():
             if request is not None:
+              assert request.slot_id == slot
               results, complete = token_utils.process_result_tokens(
                   tokenizer=tokenizer,
                   slots=slot,
@@ -1467,6 +1558,7 @@ class Driver:
                   ),
                   complete=request.complete,
               )
+              # print(f'wyzhangd: detoken thread: handle slot {slot} result {results}')
               request.complete = complete
               # Return some output samples.
               request.enqueue_samples(results)
@@ -1477,6 +1569,9 @@ class Driver:
                   self._collect_metrics(result_tokens, request, slot)
                 # Place the slot back on the free queue.
                 my_live_requests[slot] = None
+                assert self._active_request_count[idx] >= 1
+                self._active_request_count[idx] -= 1
+                # print(f'wyzhangd: detoken thread: slot {slot} marked NOT live')
                 my_slots.put(
                     slot, block=False
                 )  # This should always have space.
@@ -1495,6 +1590,9 @@ class Driver:
           # We want to update a slot with the new channel.
           slot, active_request = data
           my_live_requests[slot] = active_request
+          self._active_request_count[idx] += 1
+          assert self._active_request_count[idx] <= max_concurrent_decodes, f'{self._active_request_count[idx]} > {max_concurrent_decodes}'
+          # print(f'wyzhangd: detoken thread: slot {slot} marked live')          
 
     logger.info("Detokenize thread %d stopped.", idx)
 
@@ -1694,6 +1792,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     )
     # Wrap request as an ActiveRequest.
     active_request = ActiveRequest(
+        request_id=0,
         max_tokens=request.max_tokens,
         prefill_content=prefill_content,
         is_client_side_tokenization=is_client_side_tokenization,
