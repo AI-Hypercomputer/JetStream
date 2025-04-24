@@ -1,5 +1,7 @@
-# TODO: need a public path
-export PARAM_PATH=${PARAM_PATH}
+#!/bin/bash
+
+SERVER_PID=""
+CLIENT_PID=""
 
 python -c "import nltk; nltk.download('punkt')"
 
@@ -26,8 +28,10 @@ python -m MaxText.maxengine_server \
   model_call_mode=inference \
   sparse_matmul=False \
   use_chunked_prefill=true \
-  prefill_chunk_size=64 \
-  load_parameters_path=${PARAM_PATH} &
+  prefill_chunk_size=256 \
+  load_parameters_path=gs://jetstream-runner/8-7B-int8 &
+
+SERVER_PID=$!
 
 popd
 
@@ -41,4 +45,21 @@ python ./JetStream/benchmarks/benchmark_serving.py \
   --num-prompts 100 \
   --max-output-length 2048 \
   --dataset openorca \
-  --run-eval True
+  --run-eval True &
+
+CLIENT_PID=$!
+
+while true; do
+  # If server is not running, it is crash. Terminate the script.
+  if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
+    exit 1
+  fi
+
+  # If client is done
+  if ! kill -0 "${CLIENT_PID}" 2>/dev/null; then
+    wait $CLIENT_PID
+    exit $?
+  fi
+
+  sleep 1
+done
