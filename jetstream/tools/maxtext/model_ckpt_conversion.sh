@@ -65,11 +65,11 @@ else
     pip install torch --index-url https://download.pytorch.org/whl/cpu
     # llama_or_mistral_ckpt.py requires local path, so we need to copy the checkpoint from CHKPT_BUCKET to local.
     tmp_ckpt_path="/tmp/"
-    #gcloud storage cp -r ${CHKPT_BUCKET} ${tmp_ckpt_path}
+    gcloud storage cp -r ${CHKPT_BUCKET} ${tmp_ckpt_path}
 
     path_parts=(${CHKPT_BUCKET//\// })
     directory_substring=${path_parts[-1]}
-    CONVERT_CKPT_SCRIPT="llama_or_mistral_ckpt.py"
+    CONVERT_CKPT_SCRIPT="llama_or_mistral_ckpt"
 
     if [[ ! -z "${LORA_INPUT_ADAPTERS_PATH}" ]]; then
 	lora_local_path="/tmp/"
