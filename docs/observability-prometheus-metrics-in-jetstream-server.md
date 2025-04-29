@@ -23,7 +23,7 @@ export PER_DEVICE_BATCH_SIZE=11
 export PROMETHEUS_PORT=9090
 
 cd ~/maxtext
-python MaxText/maxengine_server.py \
+python3 -m MaxText.maxengine_server \
   MaxText/configs/base.yml \
   tokenizer_path=${TOKENIZER_PATH} \
   load_parameters_path=${LOAD_PARAMETERS_PATH} \

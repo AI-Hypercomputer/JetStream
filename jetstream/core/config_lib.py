@@ -59,6 +59,19 @@ class MetricsServerConfig:
   model_name: Optional[str] = None
 
 
+@dataclasses.dataclass
+class PrefixCachingConfig:
+  """Config to prefix caching.
+
+  Attributes:
+    max_hbm_byte: the max size saving in hbm in bytes.
+    max_dram_byte: the max size saving in dram on host in bytes.
+  """
+
+  max_hbm_byte: int
+  max_dram_byte: int
+
+
 # ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼#
 
 

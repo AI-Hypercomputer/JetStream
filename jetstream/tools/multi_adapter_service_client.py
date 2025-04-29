@@ -28,7 +28,7 @@ from jetstream.engine.token_utils import load_vocab
 
 _SERVER = flags.DEFINE_string("server", "0.0.0.0", "server address")
 _PORT = flags.DEFINE_string("port", "9000", "port to ping")
-#_TEXT = flags.DEFINE_string("text", "My dog is cute", "The message")
+# _TEXT = flags.DEFINE_string("text", "My dog is cute", "The message")
 _TEXT = flags.DEFINE_string("text", "22 year old", "The message")
 _MAX_TOKENS = flags.DEFINE_integer(
     "max_tokens", 3, "Maximum number of output/decode tokens of a sequence"
@@ -90,16 +90,17 @@ def main(argv: Sequence[str]) -> None:
     if _TEST_API_NAME.value == "load_lora_adapter":
       print(f"Calling the /v1/load_lora_adapter.")
 
-      adapter_id=_LORA_ADAPTER_ID.value
-      adapter_path=_LORA_ADAPTER_PATH.value
+      adapter_id = _LORA_ADAPTER_ID.value
+      adapter_path = _LORA_ADAPTER_PATH.value
 
       if adapter_id == None or adapter_path == None:
-        print(f"For `load_lora_adapter` API call, `adapter_id` and `adapter_path` must be passed.")
+        print(
+            f"For `load_lora_adapter` API call, `adapter_id` and `adapter_path` must be passed."
+        )
         return
 
       request = multi_lora_decoding_pb2.LoadAdapterRequest(
-            adapter_id=adapter_id,
-            adapter_path=adapter_path
+          adapter_id=adapter_id, adapter_path=adapter_path
       )
 
       response = stub.load_lora_adapter(request)
@@ -107,19 +108,23 @@ def main(argv: Sequence[str]) -> None:
       if response.success is True:
         print(f"Adapter={adapter_id} is loaded successfully.")
       else:
-        print(f"Adapter={adapter_id} loading failed with error={response.error_message}")
-    
+        print(
+            f"Adapter={adapter_id} loading failed with error={response.error_message}"
+        )
+
     elif _TEST_API_NAME.value == "unload_lora_adapter":
       print(f"Calling the /v1/unload_lora_adapter.")
 
-      adapter_id=_LORA_ADAPTER_ID.value
+      adapter_id = _LORA_ADAPTER_ID.value
 
       if adapter_id == None:
-        print(f"For `unload_lora_adapter` API call, `adapter_id` must be passed.")
+        print(
+            f"For `unload_lora_adapter` API call, `adapter_id` must be passed."
+        )
         return
 
       request = multi_lora_decoding_pb2.UnloadAdapterRequest(
-            adapter_id=adapter_id,
+          adapter_id=adapter_id,
       )
 
       response = stub.unload_lora_adapter(request)
@@ -127,8 +132,10 @@ def main(argv: Sequence[str]) -> None:
       if response.success is True:
         print(f"Adapter={adapter_id} is unloaded successfully.")
       else:
-        print(f"Adapter={adapter_id} unloading failed with error={response.error_message}")
-    
+        print(
+            f"Adapter={adapter_id} unloading failed with error={response.error_message}"
+        )
+
     elif _TEST_API_NAME.value == "models":
       print(f"Calling the /v1/models.")
 
@@ -144,16 +151,18 @@ def main(argv: Sequence[str]) -> None:
           print(f"No adapters are loaded on the server.")
 
         for adapter_info in response.adapter_infos:
-          print(f"adapter_id={adapter_info.adapter_id}, loading_cost={adapter_info.loading_cost}, size_hbm={adapter_info.size_hbm} bytes, size_cpu={adapter_info.size_cpu} Bytes, last_accessed={adapter_info.last_accessed}, status={adapter_info.status}")
+          print(
+              f"adapter_id={adapter_info.adapter_id}, loading_cost={adapter_info.loading_cost}, size_hbm={adapter_info.size_hbm} bytes, size_cpu={adapter_info.size_cpu} Bytes, last_accessed={adapter_info.last_accessed}, status={adapter_info.status}"
+          )
       else:
         print(f"`models` call failed with error={response.error_message}")
-    
+
     elif _TEST_API_NAME.value == "completions":
       print(f"Calling the /v1/completions.")
 
       request = jetstream_pb2.DecodeRequest(
           text_content=jetstream_pb2.DecodeRequest.TextContent(
-            text=_TEXT.value,
+              text=_TEXT.value,
           ),
           max_tokens=_MAX_TOKENS.value,
           lora_adapter_id=_LORA_ADAPTER_ID.value,
@@ -171,7 +180,6 @@ def main(argv: Sequence[str]) -> None:
       print(f"Prompt: {_TEXT.value}")
       print(f"Response: {text_output}")
 
-    
     elif _TEST_API_NAME.value == None:
       print(f"`test_api_name` flag is not set. So exiting.")
       return

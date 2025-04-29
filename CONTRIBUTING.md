@@ -25,6 +25,10 @@ This project follows
 
 ## Contribution process
 
+### Style Formatting
+
+Please run `make format` before submitting your PR. 
+
 ### Code Reviews
 
 All submissions, including submissions by project members, require review. We

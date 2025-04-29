@@ -174,7 +174,7 @@ def mock_adapter_requests(total_mock_requests: int):
     if index == 0:
       request.adapter_id = ""
     else:
-      i = (index % 10) +1
+      i = (index % 10) + 1
       request.adapter_id = f"test_lora_{i}"
     request.output_len = 200
     data.append(request)
@@ -191,7 +191,7 @@ def main(args: argparse.Namespace):
 
   tokenizer = get_tokenizer(model_id, tokenizer_id)
   input_requests = mock_adapter_requests(
-    args.total_mock_requests
+      args.total_mock_requests
   )  # e.g. [("AB", 2, "AB", 3)]
 
   request_outputs = asyncio.run(

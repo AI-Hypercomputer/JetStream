@@ -92,14 +92,17 @@ from typing import Any, AsyncIterator, Optional, Tuple, cast, List
 
 import grpc
 import jax
-import jax.numpy as jnp
 from jetstream.core.lora import adapter_tensorstore as adapterstore
 
+from jetstream.core import prefix_cache
 from jetstream.core.proto import jetstream_pb2
 from jetstream.core.proto import jetstream_pb2_grpc
 from jetstream.core.utils import async_multifuture
 from jetstream.core.utils.return_sample import ReturnSample
-from jetstream.engine import engine_api, tokenizer_api, token_utils
+from jetstream.engine import chunked_prefill
+from jetstream.engine import engine_api
+from jetstream.engine import token_utils
+from jetstream.engine import tokenizer_api
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
 
@@ -152,8 +155,6 @@ class ActiveRequest:
   """Current state of the driver."""
 
   #################### Information relevant for generation #####################
-  # The unique id for the activeRequest, used for tracking the request's status
-  request_id: uuid.UUID
   max_tokens: int
   # We keep prefill and decode information together in the same object so that
   # there is less indirection about where this return channel is.
@@ -165,6 +166,10 @@ class ActiveRequest:
   prefill_result: Any = None
   # The number of responses for one request.
   num_samples: int = 1
+  # The unique id for the activeRequest, used for tracking the request's status
+  # TODO(wyzhang): Figure out how to set request uuid without potentially
+  #                causing jax.jit re-compilation for engine api implementation.
+  request_id: Optional[uuid.UUID] = None
   #################### Information relevant for prefill ########################
   prefill_content: Optional[str | list[int]] = None
   ################## Information relevant for detokenization ###################
@@ -260,6 +265,10 @@ class Driver:
   _prefill_adapterstore: list[adapterstore.AdapterTensorStore] | None = None
   _generate_adapterstore: list[adapterstore.AdapterTensorStore] | None = None
 
+  # Optional prefix cache for storing and retrieving KV caches of common
+  # prompt prefixes to accelerate prefill. Only work with chunked prefill.
+  _prefix_cache: prefix_cache.PrefixCache | None = None
+
   def __init__(
       self,
       prefill_engines: Optional[list[engine_api.Engine]] = None,
@@ -267,14 +276,17 @@ class Driver:
       prefill_params: Optional[list[Any]] = None,
       generate_params: Optional[list[Any]] = None,
       prefill_adapterstore: Optional[
-        list[adapterstore.AdapterTensorStore]] = None,
+          list[adapterstore.AdapterTensorStore]
+      ] = None,
       generate_adapterstore: Optional[
-        list[adapterstore.AdapterTensorStore]] = None,
+          list[adapterstore.AdapterTensorStore]
+      ] = None,
       interleaved_mode: bool = False,
       jax_padding: bool = True,
       metrics_collector: JetstreamMetricsCollector | None = None,
       is_ray_backend: bool = False,
       multi_sampling: bool = False,
+      prefix_cache_inst: prefix_cache.PrefixCache | None = None,
   ):
     if prefill_engines is None:
       raise ValueError("No prefill engine provided.")
@@ -303,6 +315,7 @@ class Driver:
     self._interleaved_mode = interleaved_mode
     self._metrics_collector = metrics_collector
     self._multi_sampling = multi_sampling
+    self._prefix_cache = prefix_cache_inst
 
     # Stages 1-4 represent the life cycle of a request.
     # Stage 1
@@ -456,9 +469,11 @@ class Driver:
 
     if self._metrics_collector:
       self._metrics_collector.get_num_requests_waiting_metric().set_function(
-          self._get_total_requests_waiting_decode)
+          self._get_total_requests_waiting_decode
+      )
       self._metrics_collector.get_kv_cache_utilization_metric().set_function(
-          self._get_kv_cache_utilization)
+          self._get_kv_cache_utilization
+      )
 
     # Start all threads
     for t in self._all_threads:
@@ -553,13 +568,16 @@ class Driver:
     if self._metrics_collector:
       for idx, engine in enumerate(self._generate_engines):
         max_loras += engine.max_concurrent_decodes
-        if (self._generate_adapterstore and
-            idx < len(self._generate_adapterstore)):
+        if self._generate_adapterstore and idx < len(
+            self._generate_adapterstore
+        ):
           adapters_list_str += asyncio.run(
-              self._generate_adapterstore[idx].get_hbm_loaded_adapters())
+              self._generate_adapterstore[idx].get_hbm_loaded_adapters()
+          )
 
-      self._metrics_collector.get_lora_request_info_metric(max_loras,
-          adapters_list_str).set_to_current_time()
+      self._metrics_collector.get_lora_request_info_metric(
+          max_loras, adapters_list_str
+      ).set_to_current_time()
 
   def get_total_concurrent_requests(self) -> int:
     """Gets the total number of concurrent requests the driver can handle."""
@@ -584,48 +602,19 @@ class Driver:
       tokenizer: tokenizer_api.Tokenizer,
       is_bos: bool,
       max_prefill_length: int,
-      chunked_prefill: bool = False,
-      chunk_size: Optional[int] = None,
-  ) -> Tuple[jax.Array | np.ndarray, jax.Array, jax.Array | np.ndarray]:
+  ) -> Tuple[jax.Array | np.ndarray, int]:
     content = request.prefill_content
     if isinstance(content, str):
       # If it's text input, tokenize and pad the input.
-      tokens, true_length = tokenizer.encode(
+      return tokenizer.encode(
           content,
           is_bos=is_bos,
           max_prefill_length=max_prefill_length,
           jax_padding=self._jax_padding,
       )
-      positions = jnp.expand_dims(
-          jnp.arange(0, len(tokens), dtype=jnp.int32), 0
-      )
-
-      if chunked_prefill:
-        return token_utils.chunk_and_pad_tokens(
-            tokens[:true_length],
-            tokenizer.bos_id,
-            tokenizer.pad_id,
-            is_bos=is_bos,
-            max_prefill_length=max_prefill_length,
-            chunk_size=chunk_size,
-            jax_padding=self._jax_padding,
-        )
-      return tokens, true_length, positions
-
     else:
-      if chunked_prefill:
-        return token_utils.chunk_and_pad_tokens(
-            content,
-            tokenizer.bos_id,
-            tokenizer.pad_id,
-            is_bos=is_bos,
-            max_prefill_length=max_prefill_length,
-            chunk_size=chunk_size,
-            jax_padding=self._jax_padding,
-        )
-
       # If it's token input, pad the input.
-      tokens, true_length = token_utils.pad_tokens(
+      return token_utils.pad_tokens(
           content,
           tokenizer.bos_id,
           tokenizer.pad_id,
@@ -633,10 +622,166 @@ class Driver:
           max_prefill_length=max_prefill_length,
           jax_padding=self._jax_padding,
       )
-      positions = jnp.expand_dims(
-          jnp.arange(0, len(tokens), dtype=jnp.int32), 0
+
+  def _do_chunked_prefill(
+      self,
+      prefill_engine: engine_api.Engine,
+      prefill_params: Any,
+      tokenizer: tokenizer_api.Tokenizer,
+      tokens: jax.Array | np.ndarray,
+      existing_prefix: Optional[engine_api.ExistingPrefix] = None,
+  ) -> Tuple[engine_api.Prefix, engine_api.ResultTokens]:
+    """Performs the prefill operation in chunks.
+
+    This method takes a sequence of tokens and processes them in chunks using
+    the provided prefill engine. It can optionally start from an existing
+    prefix (KVCache state).
+
+    Note: This method requires the `use_chunked_prefill` attribute to be True
+    on the `prefill_engine`.
+
+    Args:
+      prefill_engine: The engine instance responsible for prefilling.
+      prefill_params: The parameters (e.g., model weights) for the prefill
+        engine.
+      tokenizer: The tokenizer used, primarily for padding information if
+        needed during chunk generation.
+      tokens: A JAX or NumPy array of input token IDs to be prefilled.
+      existing_prefix: An optional `ExistingPrefix` object containing a
+        previously computed KVCache and the corresponding common tokens. If
+        provided, prefill starts from this state. Defaults to None.
+
+    Returns:
+      A tuple containing:
+        - The resulting prefix (engine-specific KVCache state) after
+          processing the tokens.
+        - The first token generated immediately after the prefill.
+
+    Raises:
+      ValueError: If `use_chunked_prefill` is not enabled on the engine.
+        (Implicitly raised by `chunked_prefill.do_chunked_prefill` if checks
+         are present there.
+    """
+
+    chunked_tokens_list = chunked_prefill.gen_chunked_padded_tokens(
+        tokens,
+        prefill_engine.prefill_chunk_size,
+        tokenizer,
+        existing_prefix.common_prefix_tokens if existing_prefix else None,
+        jax_padding=self._jax_padding,
+    )
+    prefill_result, first_token = chunked_prefill.do_chunked_prefill(
+        prefill_engine,
+        prefill_params,
+        chunked_tokens_list,
+        existing_prefix,
+    )
+    return prefill_result, first_token
+
+  def _do_chunked_prefill_with_prefix_cache(
+      self,
+      prefill_engine: engine_api.Engine,
+      prefill_params: Any,
+      tokenizer: tokenizer_api.Tokenizer,
+      tokens: jax.Array | np.ndarray,
+  ) -> Tuple[engine_api.Prefix, engine_api.ResultTokens]:
+    """Performs chunked prefill leveraging a prefix cache.
+
+    This method attempts to accelerate the prefill process by first loading
+    the longest possible matching prefix (KV cache state) from the
+    `self._prefix_cache`. It then performs chunked prefill only on the
+    remaining portion of the input tokens. Finally, it saves the potentially
+    updated or new prefix back into the cache.
+
+    Note:
+        - This method requires `use_chunked_prefill` to be True on the
+          `prefill_engine`.
+        - This method requires `self._prefix_cache` to be initialized.
+
+    Args:
+      prefill_engine: The engine instance responsible for prefilling.
+      prefill_params: The parameters (e.g., model weights) for the prefill
+        engine.
+      tokenizer: The tokenizer used for padding and potentially during cache
+        operations if needed.
+      tokens: A JAX or NumPy array of input token IDs to be prefilled.
+
+    Returns:
+      A tuple containing:
+        - The resulting prefix (engine-specific KVCache state) after
+          processing all tokens (either loaded from cache or computed).
+        - The first token generated immediately after the full prefill.
+
+    Raises:
+      ValueError: If `use_chunked_prefill` is not enabled on the engine or
+        if `self._prefix_cache` is None.
+    """
+    if not prefill_engine.use_chunked_prefill:
+      raise ValueError("Chunked prefill must be enabled to use this function.")
+    if self._prefix_cache is None:
+      raise ValueError("Prefix cache is not initialized.")
+
+    # Ensure tokens are in tuple format for cache keys
+    tuple_tokens = tuple(tokens.tolist())
+    chunk_size = prefill_engine.prefill_chunk_size
+
+    # 1. Load the longest possible prefix from the cache
+    load_result = prefix_cache.load_existing_prefix(
+        self._prefix_cache, tuple_tokens, chunk_size
+    )
+
+    existing_prefix = None
+    remain_tokens = tokens  # Assume full prefill initially
+    original_common_prefix_len = 0
+
+    if load_result:
+      existing_prefix, original_common_prefix_len = load_result
+      # Calculate the tokens that still need to be prefilled
+      # common_prefix_tokens is already truncated to chunk_size multiple
+      # and ensures at least one token remains.
+      truncated_len = existing_prefix.common_prefix_tokens.shape[0]
+      remain_tokens = tokens[truncated_len:]
+      logger.debug(
+          "Prefix cache hit. Original common length: %d, Truncated length: %d,"
+          " Remaining tokens to prefill: %d",
+          original_common_prefix_len,
+          truncated_len,
+          len(remain_tokens),
       )
-      return tokens, true_length, positions
+    else:
+      logger.debug(
+          "Prefix cache miss or prefix too short. Prefilling all tokens."
+      )
+
+    # 2. Perform chunked prefill on the remaining tokens
+    prefill_result, first_token = self._do_chunked_prefill(
+        prefill_engine=prefill_engine,
+        prefill_params=prefill_params,
+        tokenizer=tokenizer,
+        tokens=remain_tokens,
+        existing_prefix=existing_prefix,
+    )
+
+    assert prefill_result is not None
+    assert first_token is not None
+
+    # 3. Save the potentially new prefix to the cache
+    # save_existing_prefix handles truncation and checks if the key exists.
+    # We pass the original full tokens and the final cache state.
+    # copy_prefix=True because the insert function after will donate the result.
+    # Assuming max prefill length is the padded length to the cache.
+    saved = prefix_cache.save_existing_prefix(
+        prefix_cache=self._prefix_cache,
+        tokens=tuple_tokens,
+        prefix=prefill_result["cache"],
+        chunk_size=chunk_size,
+        padded_length=prefill_engine.max_prefill_length,
+        copy_prefix=True,
+    )
+    if saved:
+      logger.debug("Saved new prefix to cache.")
+
+    return prefill_result, first_token
 
   def _prefill_thread(self, idx: int):
     """Thread which runs in the background performing prefills."""
@@ -667,12 +812,11 @@ class Driver:
           f" is_bos: {is_bos}",
       )
       # Tokenize and padding the text or token input.
-      padded_tokens, true_length, _ = self._process_prefill_content(
+      padded_tokens, true_length = self._process_prefill_content(
           request,
           tokenizer,
           is_bos,
           prefill_engine.max_prefill_length,
-          False,
       )
 
       adapter_id = request.adapter_id
@@ -684,26 +828,26 @@ class Driver:
       # in parallel and sharing the same params. Issue arrise because prefill
       # uses pre-merged weights and generate uses only base weights.
       final_prefill_params = prefill_params
-      if adapter_id:
+      if adapter_id and adapter_tensorstore is not None:
         try:
-          if adapter_tensorstore is None:
-            raise ValueError(
-                f"adapter_tensorstore is None for prefill_engine_id={idx}")
-
-          lora_params = adapter_tensorstore.get_lora_weights(
-              adapter_id=adapter_id, load_if_not_loaded=True)
-          lora_config = adapter_tensorstore.get_lora_config(
-              adapter_id=adapter_id, load_if_not_loaded=True)
+          lora_params = asyncio.run(
+              adapter_tensorstore.get_lora_weights(
+                  adapter_id=adapter_id, load_if_not_loaded=True
+              )
+          )
+          lora_config = asyncio.run(
+              adapter_tensorstore.get_lora_config(
+                  adapter_id=adapter_id, load_if_not_loaded=True
+              )
+          )
           prefill_engine.apply_adapter(
-	            final_prefill_params,
-	            lora_config,
-	            lora_params)
-        except Exception as e:          # pylint: disable=broad-exception-caught
+              final_prefill_params, lora_config, lora_params
+          )
+        except Exception as e:  # pylint: disable=broad-exception-caught
           request.num_samples = 1
           request.complete = np.zeros((request.num_samples,), np.bool_)
           error_message = f"An error occurred: {type(e).__name__} - {str(e)}"
-          error_result = ReturnSample(text=[error_message],
-              token_ids=[])
+          error_result = ReturnSample(text=[error_message], token_ids=[])
           request.enqueue_samples([error_result])
           request.return_channel.close()
           continue
@@ -718,42 +862,28 @@ class Driver:
         )
         request.complete = np.zeros((request.num_samples,), np.bool_)
       else:
-        # if chunked_prefill is used,
-        if prefill_engine.use_chunked_prefill:
-          padded_chunked_tokens, true_lengths_of_chunks, positions_chunks = (
-              self._process_prefill_content(
-                  request,
-                  tokenizer,
-                  is_bos,
-                  prefill_engine.max_prefill_length,
-                  prefill_engine.use_chunked_prefill,
-                  prefill_engine.chunk_size,
-              )
-          )
-          prefill_result = None
-          for chunk_num, _ in enumerate(padded_chunked_tokens):
-            cache_so_far = (
-                {} if prefill_result is None else prefill_result["cache"]  # pylint: disable=unsubscriptable-object
+        # if chunked_prefill is used, and the prompt is long enough
+        if (
+            prefill_engine.use_chunked_prefill
+            and true_length >= prefill_engine.prefill_chunk_size
+        ):
+          if self._prefix_cache is not None:
+            prefill_result, first_token = (
+                self._do_chunked_prefill_with_prefix_cache(
+                    prefill_engine,
+                    final_prefill_params,
+                    tokenizer,
+                    padded_tokens[:true_length],
+                )
             )
-            prefill_result, first_token = prefill_engine.prefill(
-                params=final_prefill_params | {"cache": cache_so_far},
-                padded_tokens=padded_chunked_tokens[chunk_num],
-                true_length=true_lengths_of_chunks[chunk_num],
-                positions=positions_chunks[chunk_num],
-                previous_chunk=prefill_result,
-                complete_prompt_true_length=true_length,
-                complete_padded_prompt=padded_tokens,
+          else:
+            prefill_result, first_token = self._do_chunked_prefill(
+                prefill_engine,
+                final_prefill_params,
+                tokenizer,
+                padded_tokens[:true_length],
             )
-            # true_length_array is arrays of 1 true lengths so far
-            t_l_array = jnp.expand_dims(
-                jnp.arange(
-                    0,
-                    chunk_num * prefill_engine.chunk_size
-                    + true_lengths_of_chunks[chunk_num],
-                ),
-                1,
-            )
-            prefill_result["true_length_array"] = t_l_array
+
         else:
           # Compute new kv cache for the prefill_content.
           prefill_result, first_token = prefill_engine.prefill(
@@ -762,32 +892,32 @@ class Driver:
               true_length=true_length,
           )
 
-      if adapter_id:
-        try:
-          if adapter_tensorstore is None:
-            raise ValueError(
-                f"adapter_tensorstore is None for prefill_engine_id={idx}")
+        request.complete = np.zeros(
+            (prefill_engine.samples_per_slot,), np.bool_
+        )
 
-          lora_params = adapter_tensorstore.get_lora_weights(adapter_id)
-          lora_config = adapter_tensorstore.get_lora_config(adapter_id)
+      if adapter_id and adapter_tensorstore is not None:
+        try:
+          lora_params = asyncio.run(
+              adapter_tensorstore.get_lora_weights(adapter_id)
+          )
+          lora_config = asyncio.run(
+              adapter_tensorstore.get_lora_config(adapter_id)
+          )
           prefill_engine.unapply_adapter(
-	            final_prefill_params,
-	            lora_config,
-	            lora_params)
-        except Exception as e:          # pylint: disable=broad-exception-caught
+              final_prefill_params, lora_config, lora_params
+          )
+        except Exception as e:  # pylint: disable=broad-exception-caught
           request.num_samples = 1
           request.complete = np.zeros((request.num_samples,), np.bool_)
           error_message = f"An error occurred: {type(e).__name__} - {str(e)}"
-          error_result = ReturnSample(text=[error_message],
-              token_ids=[])
+          error_result = ReturnSample(text=[error_message], token_ids=[])
           request.enqueue_samples([error_result])
           request.return_channel.close()
           continue
 
       del final_prefill_params
-
       request.prefill_result = prefill_result
-      request.complete = np.zeros((prefill_engine.samples_per_slot,), np.bool_)
 
       # put first token to detokenize queue
       my_detokenize_backlog = self._detokenize_backlogs[idx]
@@ -972,7 +1102,7 @@ class Driver:
           new_request.prefill_result,
           decode_state,
           slot=slot,
-          #request_id=new_request.request_id,
+          # request_id=new_request.request_id,
       )
 
       if adapter_tensorstore:
@@ -1386,6 +1516,100 @@ class Driver:
 
     logger.info("Detokenize thread %d stopped.", idx)
 
+  async def load_adapter_to_tensorstore(
+      self, adapter_id: str, adapter_path: str
+  ):
+    """Load the adapter to adapter_tensorstore for each engine."""
+    logger.info("Loading adapter_id=%s from %s.", adapter_id, adapter_path)
+
+    for idx, tensorstore in enumerate(self._prefill_adapterstore):
+      try:
+        engine = self._prefill_engines[idx]
+        adapter_params, adapter_config = engine.load_single_adapter(
+            adapter_path
+        )
+
+        if not adapter_params or not adapter_config:
+          raise ValueError(
+              f"Failed to load adapter={adapter_id} from {adapter_path}."
+          )
+
+        await tensorstore.register_adapter(
+            adapter_id, adapter_path, adapter_config
+        )
+
+        await tensorstore.load_adapter(adapter_id, adapter_params, True)
+
+        logger.info("Successfully loaded '%s' in engine_%d.", adapter_id, idx)
+        engine.print_stats(f"After loading '{adapter_id}' in engine_{idx}")
+
+      except Exception as e:
+        logger.info("Adapter loading failed with error: %s", str(e))
+        raise e
+
+    for idx, tensorstore in enumerate(self._generate_adapterstore):
+      try:
+        engine = self._generate_engines[idx]
+        adapter_params, adapter_config = engine.load_single_adapter(
+            adapter_path
+        )
+
+        if not adapter_params or not adapter_config:
+          raise ValueError(
+              f"Failed to load adapter={adapter_id} from {adapter_path}."
+          )
+
+        await tensorstore.register_adapter(
+            adapter_id, adapter_path, adapter_config
+        )
+
+        await tensorstore.load_adapter(adapter_id, adapter_params, True)
+
+        logger.info("Successfully loaded '%s' in engine_%d.", adapter_id, idx)
+        engine.print_stats(f"After loading '{adapter_id}' in engine_{idx}")
+
+      except Exception as e:
+        logger.info("Adapter loading failed with error: %s", str(e))
+        raise e
+
+  async def unload_adapter_from_tensorstore(self, adapter_id: str):
+    """Unload the adapter from adapter_tensorstore of each engine."""
+    logger.info("Unloading adapter_id=%s", adapter_id)
+
+    for idx, tensorstore in enumerate(self._prefill_adapterstore):
+      try:
+        engine = self._prefill_engines[idx]
+        await tensorstore.unload_adapter(adapter_id)
+
+        logger.info("Successfully unloaded '%s' in engine_%d.", adapter_id, idx)
+        engine.print_stats(f"After unloading '{adapter_id}' in engine_{idx}")
+
+      except Exception as e:
+        logger.info("Adapter unloading failed with error: %s", str(e))
+        raise e
+
+    for idx, tensorstore in enumerate(self._generate_adapterstore):
+      try:
+        engine = self._generate_engines[idx]
+        await tensorstore.unload_adapter(adapter_id)
+
+        logger.info("Successfully unloaded '%s' in engine_%d.", adapter_id, idx)
+        engine.print_stats(f"After unloading '{adapter_id}' in engine_{idx}")
+
+      except Exception as e:
+        logger.info("Adapter unloading failed with error: %s", str(e))
+        raise e
+
+  def list_adapters_from_tensorstore(self):
+    """List all the adapters from the adapter_tensorstore of each engine."""
+    logger.info("Listing loaded adapters.")
+
+    listed_adapters = {}
+    for tensorstore in self._generate_adapterstore:
+      listed_adapters.update(tensorstore.adapter_registry)
+
+    return listed_adapters
+
 
   def load_adapter_to_tensorstore(
           self,
@@ -1591,7 +1815,6 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
     )
     # Wrap request as an ActiveRequest.
     active_request = ActiveRequest(
-        request_id=uuid.uuid4(),
         max_tokens=request.max_tokens,
         prefill_content=prefill_content,
         is_client_side_tokenization=is_client_side_tokenization,
@@ -1634,8 +1857,8 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
       if ttft == 0:
         ttft = time.perf_counter() - request_start_time
         if ttft > 2.0:
-          logging.info(
-              datetime.now(),
+          logger.info(  # pylint: disable=logging-fstring-interpolation
+              f"{datetime.now()}: "
               f"Slow TTFT: {ttft:.2f}s,"
               f" stats={active_request.metadata.stats()},"
               f" prefill_qsize={self._driver.prefill_backlog_size()}",

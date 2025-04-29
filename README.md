@@ -65,6 +65,9 @@ python -m unittest -v jetstream.tests.core.test_orchestrator
 # Test JetStream core server library
 python -m unittest -v jetstream.tests.core.test_server
 
+# Test JetStream lora adapter tensorstore
+python -m unittest -v jetstream.tests.core.lora.test_adapter_tensorstore
+
 # Test mock JetStream engine implementation
 python -m unittest -v jetstream.tests.engine.test_mock_engine
 

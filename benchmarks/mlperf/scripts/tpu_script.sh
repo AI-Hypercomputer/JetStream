@@ -160,7 +160,7 @@ copy_relevant_files() {
 
 # # source .env/bin/activate
 # your_run_name=jwyang_bs1_llama7b
-# python MaxText/inference_microbenchmark.py \
+# python3 -m MaxText.inference_microbenchmark \
 #   MaxText/configs/base.yml \
 #   base_output_directory=gs://jwyang-data/maxtext-llama2-7b/microbenchmark \
 #   run_name=${your_run_name} \
@@ -192,7 +192,7 @@ export load_parameters_path_chat=gs://jwyang-runner-maxtext-logs/llama2-7b_unsca
 export load_parameters_path=gs://jwyang-runner-maxtext-logs/llama2-7b_unscanned_chkpt_2024-04-26-19-40/checkpoints/0/items
 export load_parameters_path_chat_quantized=gs://jwyang-data/llama7b-chat-quantized-fixed/0/items
 
-python MaxText/maxengine_server.py \
+python3 -m MaxText.maxengine_server \
   MaxText/configs/base.yml \
   base_output_directory=gs://jwyang-data/maxtext-llama2-7b/microbenchmark \
   load_parameters_path=${load_parameters_path_chat} \
@@ -244,7 +244,7 @@ export load_parameters_path=gs://runner-maxtext-logs/2024-05-16-23-59/unscanned_
 
 export experiment_time=$(date +%Y-%m-%d-%H-%M)
 echo "export experiment_time=${experiment_time}"
-python MaxText/maxengine_server.py \
+python3 -m MaxText.maxengine_server \
   MaxText/configs/base.yml \
   base_output_directory=gs://morgandu-tpu/maxtext-logs/microbenchmark/${experiment_time} \
   model_name=llama2-13b \
@@ -269,7 +269,7 @@ python MaxText/maxengine_server.py \
   per_device_batch_size=1
 
 
-python MaxText/inference_microbenchmark.py \
+python3 -m MaxText.inference_microbenchmark \
     MaxText/configs/base.yml \
     base_output_directory=gs://morgandu-tpu/maxtext-logs/microbenchmark/${experiment_time} \
     model_name=llama2-13b \
@@ -298,7 +298,7 @@ python MaxText/inference_microbenchmark.py \
 # # LLaMA2-70B commands
 # # source .env/bin/activate
 # your_run_name=jwyang_bs1_llama70b
-# python MaxText/inference_microbenchmark.py \
+# python3 -m MaxText.inference_microbenchmark \
 #   MaxText/configs/base.yml \
 #   base_output_directory=gs://jwyang-data/maxtext-llama2-70b/microbenchmark \
 #   run_name=${your_run_name} \
@@ -328,7 +328,7 @@ export per_device_batch_size=1
 export prefill_length=16
 export target_length=32
 
-python MaxText/maxengine_server.py \
+python3 -m MaxText.maxengine_server \
   MaxText/configs/base.yml \
   base_output_directory=gs://jwyang-data/maxtext-llama2-70b/microbenchmark \
   run_name=$(date +%Y-%m-%d-%H-%M) \

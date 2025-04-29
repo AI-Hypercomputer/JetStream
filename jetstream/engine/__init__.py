@@ -15,9 +15,14 @@
 """Initialization for any Engine implementation."""
 
 import jax
+from importlib import util
 
-try:
+if util.find_spec("pathwaysutils"):
   import pathwaysutils
-except ImportError as e:
-  print("Proxy backend support is not added")
-  pass
+
+  pathwaysutils.initialize()
+else:
+  print(
+      "Running JetStream without Pathways. "
+      "Module pathwaysutils is not imported."
+  )

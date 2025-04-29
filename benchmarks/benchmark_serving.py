@@ -71,6 +71,7 @@ from typing import Any, AsyncGenerator, Optional
 
 from benchmarks.eval_accuracy import eval_accuracy
 from benchmarks.eval_accuracy_mmlu import eval_accuracy_mmlu
+from benchmarks.eval_accuracy_longcontext import eval_accuracy_longcontext
 from benchmarks.metrics import CounterMetric, EventMetric
 import grpc
 from jetstream.core.proto import jetstream_pb2
@@ -166,6 +167,7 @@ class InputRequest:
   output: str = ""
   output_len: int = 0
   sample_idx: int = -1
+  metric: str = ""
 
 
 @dataclass
@@ -187,10 +189,12 @@ class RequestFuncOutput:
       prompt = self.input_request.prompt
       original_output = self.input_request.output
       sample_idx = self.input_request.sample_idx
+      metric = self.input_request.metric
     else:
       prompt = None
       original_output = None
       sample_idx = None
+      metric = None
     return {
         "prompt": prompt,
         "original_output": original_output,
@@ -201,6 +205,7 @@ class RequestFuncOutput:
         "ttst_sec": self.ttst_sec,
         "prompt_len": self.prompt_len,
         "sample_idx": sample_idx,
+        "metric": metric,
     }
 
 
@@ -208,6 +213,7 @@ def get_tokenizer(
     model_id: str,
     tokenizer_name: str,
     use_hf_tokenizer: bool,
+    access_token: str | None = None,
 ) -> Any:
   """Return a tokenizer or a tokenizer placholder."""
   if tokenizer_name == "test":
@@ -218,7 +224,7 @@ def get_tokenizer(
     # follow up instructions below to set up access token
     # https://huggingface.co/docs/transformers.js/en/guides/private
     print(f"Using HuggingFace tokenizer: {tokenizer_name}")
-    return AutoTokenizer.from_pretrained(tokenizer_name)
+    return AutoTokenizer.from_pretrained(tokenizer_name, token=access_token)
   elif model_id == "llama-3":
     # Llama 3 uses a tiktoken tokenizer.
     print(f"Using llama-3 tokenizer: {tokenizer_name}")
@@ -279,6 +285,23 @@ def load_openorca_dataset_pkl(
   return [(prompt, output) for prompt, output in zip(prompts, outputs)]
 
 
+def load_longcontext_dataset_pkl(
+    dataset_path: str,
+) -> tuple[list[tuple[Any, Any]], list]:
+  assert os.path.isfile(dataset_path)
+
+  # read pickle file
+  data = pandas.read_pickle(dataset_path)
+
+  samples = []
+  metrics = []
+  for _, row in data.iterrows():
+    samples.append((row["input"], row["gt_output"]))
+    metrics.append(row["metric"])
+
+  return samples, metrics
+
+
 def load_mmlu_dataset_csv(dataset_path: str) -> tuple[Any, dict[str, str]]:
   assert dataset_path != ""
   dataset = []
@@ -319,7 +342,7 @@ def gen_mmlu_qa(data: Any, mmlu_method: str = "") -> str:
         f"(D) {row['D']}\n"
     )
 
-    output += "\nCorrect answer: "
+    output += "\nCorrect answer:"
 
     if mmlu_method == "HELM":
       output += f"({row['answer']})\n\n"
@@ -371,11 +394,9 @@ def load_math500_dataset(dataset_path: str) -> list[tuple[Any, Any]]:
 
 
 def tokenize_dataset(
-    dataset: list[tuple[Any, Any, Any]],
-    tokenizer: Any,
+    dataset: list[tuple[Any, Any, Any]], tokenizer: Any, use_chat_template: bool
 ) -> list[tuple[str, Any, str, int, int, int]]:
   tokenized_dataset = []
-
   for prompt, output, idx in dataset:
     if isinstance(output, tuple):
       output_len = len(tokenizer.encode(output[0]))
@@ -384,7 +405,12 @@ def tokenize_dataset(
       output_len = len(tokenizer.encode(output))
       output_tokens = output
 
-    prompt_tokens = tokenizer.encode(prompt)
+    if use_chat_template:
+      prompt_tokens = tokenizer.apply_chat_template(
+          [{"role": "user", "content": prompt}], add_generation_prompt=True
+      )
+    else:
+      prompt_tokens = tokenizer.encode(prompt)
 
     tokenized_data = (
         prompt,
@@ -402,7 +428,6 @@ def filter_dataset(
     tokenized_dataset: list[tuple[str, Any, str, int, int, int]],
     dataset_type: str,
     max_output_length: int = 0,
-    run_mmlu_dataset: bool = False,
     min_input_length: int = 4,
     max_input_length: int = 0,
     max_target_length: int = 0,
@@ -424,7 +449,8 @@ def filter_dataset(
       sample_idx,
   ) in tokenized_dataset:
     if prompt_len < min_input_length or (
-        not (run_mmlu_dataset or dataset_type == "math500") and output_len < 4
+        not (dataset_type == "mmlu" or dataset_type == "math500")
+        and output_len < 4
     ):
       # Prune too short sequences.
       # This is because TGI causes errors when the input or output length
@@ -455,15 +481,16 @@ def filter_dataset(
 def sample_requests(
     dataset: list[tuple[Any, Any]],
     tokenizer: Any,
+    use_chat_template: bool,
     num_requests: int,
     dataset_type: str,
     max_output_length: int = 0,
     oversample_multiplier: float = 1.2,
-    run_mmlu_dataset: bool = False,
     min_input_length: int = 4,
     max_input_length: int = 0,
     max_target_length: int = 0,
     max_output_multiplier: int = 0,
+    metrics: Optional[list[str]] = None,
 ) -> list[InputRequest]:
 
   # Original dataset size
@@ -493,18 +520,23 @@ def sample_requests(
     sampled_data = dataset[i] + (dataset_indices[i],)
     sampled_dataset.append(sampled_data)
 
-  tokenized_dataset = tokenize_dataset(sampled_dataset, tokenizer)
+  tokenized_dataset = tokenize_dataset(
+      sampled_dataset, tokenizer, use_chat_template
+  )
 
   input_requests = filter_dataset(
       tokenized_dataset,
       dataset_type,
       max_output_length,
-      run_mmlu_dataset,
       min_input_length,
       max_input_length,
       max_target_length,
       max_output_multiplier,
   )
+
+  if metrics is not None:
+    for request in input_requests:
+      request.metric = metrics[request.sample_idx]
 
   # Sample the requests.
   if len(input_requests) > num_requests:
@@ -593,34 +625,43 @@ async def grpc_async_request(
 ) -> tuple[list[int], float, float, float]:
   """Send grpc synchronous request since the current grpc server is sync."""
   options = [("grpc.keepalive_timeout_ms", 10000)]
-  async with grpc.aio.insecure_channel(api_url, options=options) as channel:
-    stub = jetstream_pb2_grpc.OrchestratorStub(channel)
-    request_start_time = time.perf_counter()
-    response = stub.Decode(request)
-    token_list = []
-    ttft = 0
-    ttst = 0
-    stream_resp_cnt = 0
-    async for resp in response:
-      stream_resp_cnt += 1
-      if stream_resp_cnt == 1:
-        await prefill_quota.inc()
-        ttft = time.perf_counter() - request_start_time
-        if ttft > 2.0:
-          print(datetime.now(), f"slow TTFT {ttft:.2f}", prefill_quota.value())
-      elif stream_resp_cnt == 2:
-        ttst = time.perf_counter() - request_start_time
-      resp_tokens = resp.stream_content.samples[0].token_ids
-      token_list.extend(resp_tokens)
-      out_token_cnt.increment(len(resp_tokens))
-    await active_req_quota.inc()
-    req_latency = time.perf_counter() - request_start_time
-    return token_list, ttft, ttst, req_latency
+  # Retry connection while server is not ready.
+  while True:
+    try:
+      async with grpc.aio.insecure_channel(api_url, options=options) as channel:
+        stub = jetstream_pb2_grpc.OrchestratorStub(channel)
+        request_start_time = time.perf_counter()
+        response = stub.Decode(request)
+        token_list = []
+        ttft = 0
+        ttst = 0
+        stream_resp_cnt = 0
+        async for resp in response:
+          stream_resp_cnt += 1
+          if stream_resp_cnt == 1:
+            await prefill_quota.inc()
+            ttft = time.perf_counter() - request_start_time
+            if ttft > 2.0:
+              print(
+                  datetime.now(), f"slow TTFT {ttft:.2f}", prefill_quota.value()
+              )
+          elif stream_resp_cnt == 2:
+            ttst = time.perf_counter() - request_start_time
+          resp_tokens = resp.stream_content.samples[0].token_ids
+          token_list.extend(resp_tokens)
+          out_token_cnt.increment(len(resp_tokens))
+        await active_req_quota.inc()
+        req_latency = time.perf_counter() - request_start_time
+        return token_list, ttft, ttst, req_latency
+    except grpc.aio.AioRpcError as e:
+      print(e)
+      await asyncio.sleep(10)
 
 
 async def send_request(
     api_url: str,
     tokenizer: Any,
+    use_chat_template: bool,
     input_request: InputRequest,
     prefill_quota: AsyncCounter,
     active_req_quota: AsyncCounter,
@@ -630,7 +671,13 @@ async def send_request(
 ) -> RequestFuncOutput:
   """Send the request to JetStream server."""
   # Tokenize on client side following MLPerf standard.
-  token_ids = tokenizer.encode(input_request.prompt)
+  if use_chat_template:
+    token_ids = tokenizer.apply_chat_template(
+        [{"role": "user", "content": input_request.prompt}],
+        add_generation_prompt=True,
+    )
+  else:
+    token_ids = tokenizer.encode(input_request.prompt)
 
   # Send the request
   request = jetstream_pb2.DecodeRequest(
@@ -676,6 +723,7 @@ async def send_request(
 async def benchmark(
     api_url: str,
     tokenizer: Any,
+    use_chat_template: bool,
     input_requests: list[InputRequest],
     request_rate: float,
     disable_tqdm: bool,
@@ -719,6 +767,7 @@ async def benchmark(
             send_request(
                 api_url=api_url,
                 tokenizer=tokenizer,
+                use_chat_template=use_chat_template,
                 input_request=request,
                 prefill_quota=prefill_quota,
                 active_req_quota=active_req_quota,
@@ -837,7 +886,14 @@ def parse_args() -> argparse.Namespace:
       "--dataset",
       type=str,
       default="test",
-      choices=["test", "sharegpt", "openorca", "mmlu", "math500"],
+      choices=[
+          "test",
+          "sharegpt",
+          "openorca",
+          "mmlu",
+          "math500",
+          "longcontext",
+      ],
       help="The dataset name.",
   )
   parser.add_argument("--dataset-path", type=str, help="Path to the dataset.")
@@ -871,9 +927,26 @@ def parse_args() -> argparse.Namespace:
       ),
   )
   parser.add_argument(
+      "--hf-access-token",
+      type=str,
+      default="",
+      help=(
+          "Access token used to load a tokenizer from an API (i.e. HuggingFace)"
+      ),
+  )
+  parser.add_argument(
+      "--use-chat-template",
+      type=str2bool,
+      default=False,
+      help=(
+          "Whether the tokenizer should be applying a chat template "
+          "(used for instruction-tuned models)."
+      ),
+  )
+  parser.add_argument(
       "--num-prompts",
       type=int,
-      default=1000,
+      default=-1,
       help=(
           "Number of prompts to process. (number of sample requests we randomly"
           " collect from dataset)"
@@ -1013,11 +1086,6 @@ def parse_args() -> argparse.Namespace:
       choices=["HELM", "Harness", ""],
       help="mmlu method/format to generate shots",
   )
-  parser.add_argument(
-      "--run-mmlu-dataset",
-      action="store_true",
-      help="specify if it's for mmlu dataset",
-  )
   return parser.parse_args()
 
 
@@ -1029,13 +1097,17 @@ def main(args: argparse.Namespace):
   model_id = args.model
   tokenizer_id = args.tokenizer
   use_hf_tokenizer = args.use_hf_tokenizer
+  hf_access_token = args.hf_access_token
+  use_chat_template = args.use_chat_template
 
   prefill_quota = AsyncCounter(init_value=3)
   active_req_quota = AsyncCounter(init_value=450)
 
   api_url = f"{args.server}:{args.port}"
-
-  tokenizer = get_tokenizer(model_id, tokenizer_id, use_hf_tokenizer)
+  tokenizer = get_tokenizer(
+      model_id, tokenizer_id, use_hf_tokenizer, hf_access_token
+  )
+  metrics = None
   if tokenizer == "test" or args.dataset == "test":
     input_requests = mock_requests(
         args.total_mock_requests
@@ -1057,6 +1129,10 @@ def main(args: argparse.Namespace):
       dataset = load_math500_dataset(
           args.dataset_path,
       )
+    elif args.dataset == "longcontext":
+      dataset, metrics = load_longcontext_dataset_pkl(
+          args.dataset_path,
+      )
     else:
       raise ValueError(
           f"Fatal Error: Uncognized input parameters: {args.dataset}"
@@ -1065,17 +1141,23 @@ def main(args: argparse.Namespace):
     # A given args.max_output_length value is the max generation step,
     # when the args.max_output_length is default to None, the sample's golden
     # output length will be used to decide the generation step.
+    if args.num_prompts == -1:
+      num_requests = len(dataset)
+    else:
+      num_requests = args.num_prompts
+
     input_requests = sample_requests(
         dataset=dataset,
         tokenizer=tokenizer,
-        num_requests=args.num_prompts,
+        use_chat_template=use_chat_template,
+        num_requests=num_requests,
         dataset_type=args.dataset,
         max_output_length=args.max_output_length,
-        run_mmlu_dataset=args.run_mmlu_dataset,
         min_input_length=args.min_input_length,
         max_input_length=args.max_input_length,
         max_target_length=args.max_target_length,
         max_output_multiplier=args.max_output_multiplier,
+        metrics=metrics,
     )
 
   warmup_requests = None
@@ -1090,6 +1172,7 @@ def main(args: argparse.Namespace):
         benchmark(
             api_url=api_url,
             tokenizer=tokenizer,
+            use_chat_template=use_chat_template,
             input_requests=warmup_requests,
             request_rate=args.request_rate,
             disable_tqdm=args.disable_tqdm,
@@ -1108,6 +1191,7 @@ def main(args: argparse.Namespace):
       benchmark(
           api_url=api_url,
           tokenizer=tokenizer,
+          use_chat_template=use_chat_template,
           input_requests=input_requests,
           request_rate=args.request_rate,
           disable_tqdm=args.disable_tqdm,
@@ -1119,8 +1203,10 @@ def main(args: argparse.Namespace):
   # Process output
   output = [output.to_dict() for output in request_outputs]
   if args.run_eval:
-    if args.run_mmlu_dataset:
+    if args.dataset == "mmlu":
       eval_json = eval_accuracy_mmlu(output)
+    elif args.dataset == "longcontext":
+      eval_json = eval_accuracy_longcontext(output)
     else:
       eval_json = eval_accuracy(output, args.dataset[:4])
 

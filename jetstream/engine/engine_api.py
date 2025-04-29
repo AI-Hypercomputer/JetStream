@@ -48,12 +48,19 @@ PRNGKeyType = Any
 
 
 @struct.dataclass
+class ExistingPrefix:
+  cache: Any
+  common_prefix_tokens: jax.Array
+
+
+@struct.dataclass
 class SlotData:
   """Class to store slot data."""
 
   tokens: Union[jax.Array, np.ndarray]
   valid: Union[jax.Array, np.ndarray]
   lengths: Union[jax.Array, np.ndarray]
+  log_prob: Union[jax.Array, np.ndarray] = None
 
 
 # pylint: disable=g-doc-args
@@ -85,6 +92,11 @@ class ResultTokens(abc.ABC):
   samples_per_slot: int = struct.field(
       pytree_node=False,
   )
+  # log probabilities of the tokens. Shape: [batch, tokens]
+  log_prob: Union[jax.Array, np.ndarray] = struct.field(
+      pytree_node=False,
+      default=None,
+  )
 
   def copy_to_host_async(self: "ResultTokens") -> None:
     """Copy to host asynchronously."""
@@ -101,6 +113,7 @@ class ResultTokens(abc.ABC):
         self.valid_idx,
         self.length_idx,
         self.samples_per_slot,
+        self.log_prob,
     )
 
   def get_result_at_slot(self, slot: int) -> SlotData:
@@ -142,6 +155,7 @@ class ResultTokens(abc.ABC):
         valid=self.data[slots, self.valid_idx[0] : self.valid_idx[1]],
         # Only get a 1D representation here
         lengths=self.data[slots, self.length_idx[0] : self.length_idx[1]][:, 0],
+        log_prob=self.log_prob[slots, :] if self.log_prob is not None else None,
     )
 
 
@@ -157,7 +171,7 @@ class Engine(abc.ABC):
       self,
       *,
       params: Params,
-      existing_prefix: Optional[Prefix] = None,
+      existing_prefix: Optional[ExistingPrefix] = None,
       padded_tokens: jax.Array,
       true_length: int,
       sampler: Optional[Callable[[Any], Any]] = None,
@@ -311,6 +325,16 @@ class Engine(abc.ABC):
   def colocated_cpus(self) -> Union[list[CpuDevices], None]:
     """CPU devices colocated with the engine's accelerators."""
 
+  @property
+  @abc.abstractmethod
+  def use_chunked_prefill(self) -> bool:
+    """Whether to use chunked prefill."""
+
+  @property
+  @abc.abstractmethod
+  def prefill_chunk_size(self) -> int:
+    """Prefill chunk size."""
+
 
 class JetStreamEngine(Engine):
   """A wrapper engine of the Engine class.
@@ -368,12 +392,14 @@ class JetStreamEngine(Engine):
       prefix: Prefix,
       decode_state: DecodeState,
       slot: int,
+      request_id: Optional[uuid.UUID] = None,
   ) -> DecodeState:
 
     decode_state = self._downstream_engine.insert(
         prefix=prefix,
         decode_state=decode_state,
         slot=slot,
+        request_id=request_id,
     )
     return decode_state
 
@@ -439,3 +465,11 @@ class JetStreamEngine(Engine):
   @property
   def colocated_cpus(self) -> Union[list[CpuDevices], None]:
     return self._downstream_engine.colocated_cpus
+
+  @property
+  def use_chunked_prefill(self) -> bool:
+    return self._downstream_engine.use_chunked_prefill
+
+  @property
+  def prefill_chunk_size(self) -> int:
+    return self._downstream_engine.prefill_chunk_size

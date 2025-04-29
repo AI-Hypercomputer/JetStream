@@ -18,6 +18,7 @@ from bisect import bisect_left
 import logging
 from typing import Any, Iterable, List, Optional, Tuple, Union
 
+from transformers import AutoTokenizer
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -100,34 +101,35 @@ def tokenize_and_pad(
 
 
 def chunk_and_pad_tokens(
-    tokens,
+    tokens: np.ndarray,
     bos_id: int,
     pad_id: int,
-    is_bos: bool = True,
+    is_bos: bool,
+    chunk_size: int,
     prefill_lengths: Optional[List[int]] = None,
     max_prefill_length: Optional[int] = None,
-    chunk_size: Optional[int] = None,
     jax_padding: bool = True,
 ) -> Tuple[
     List[Union[jax.Array, np.ndarray]],
-    List[Union[jax.Array, np.ndarray]],
-    List[Union[jax.Array, np.ndarray]],
+    List[int],
+    List[jax.Array],
 ]:
-  """Chunks and pads tokens for chunked prefill
-    if total token size is 520 and chunk size is 256,
+  """Chunks and pads tokens for chunked prefill.
+
+    If total token size is 520 and chunk size is 256,
     the function will return 3 chunks and return tuple is as follows-
     [[t0,..t255][t256,..t511][t512,..t519]],
     [256, 256, 7],
-    [[0,..255],[256,..511],[512..518..]]
+    [[[0,..255]],[[256,..511]],[[512..518..]]]
 
     Args:
     tokens: Tokens.
     bos_id: Bos ID.
     pad_id: Pad ID.
     is_bos: Add a beginning of sequence token if this is ture.
+    chunk_size: maximum size of each chunk
     prefill_lengths: Buckets to pad the sequence to for static compilation.
     max_prefill_length: Maximum bucket to use.
-    chunk_size: maximum size of each chunk
     jax_padding: convert to JAX padded tokens if True.
 
   Returns:
@@ -135,6 +137,19 @@ def chunk_and_pad_tokens(
     padded_chunk_true_lengths: List of integers - true length of each chunk
     positions:list of position of each token in the chunk
   """
+  # Add a beginning of sequence token if this is the beginning.
+  if is_bos:
+    tokens = np.concatenate(
+        [
+            np.array(
+                [
+                    bos_id,
+                ]
+            ),
+            tokens,
+        ],
+        axis=-1,
+    )
 
   num_tokens = len(tokens)
   num_chunks = int(math.ceil(num_tokens / chunk_size))
@@ -146,33 +161,22 @@ def chunk_and_pad_tokens(
 
   # positions of tokens in each chunk
   positions = []
-  # to be able to slice the tokens
-  tokens = jnp.array(tokens)
+
   for chunk_num in range(num_chunks):
-    start = int(chunk_num * chunk_size)
-    end = jnp.minimum((chunk_num + 1) * chunk_size, num_tokens)
-    chunk_tokens = jax.lax.slice(tokens, (start,), (end,))
-    if chunk_num == 0:
-      padded_chunk, padded_chunk_true_length = pad_tokens(
-          chunk_tokens,
-          bos_id,
-          pad_id,
-          is_bos,
-          prefill_lengths,
-          max_prefill_length,
-          jax_padding,
-      )
-    else:
-      # is_bos should be false in subsequent chunks.
-      padded_chunk, padded_chunk_true_length = pad_tokens(
-          chunk_tokens,
-          bos_id,
-          pad_id,
-          False,
-          prefill_lengths,
-          max_prefill_length,
-          jax_padding,
-      )
+    start: int = chunk_num * chunk_size
+    end: int = min((chunk_num + 1) * chunk_size, num_tokens)
+    chunk_tokens = tokens[start:end]
+    # the bos is added at the begin of the function.
+    # is_bos should be false in chunks.
+    padded_chunk, padded_chunk_true_length = pad_tokens(
+        chunk_tokens,
+        bos_id,
+        pad_id,
+        False,
+        prefill_lengths,
+        max_prefill_length,
+        jax_padding,
+    )
 
     positions_chunk = jnp.expand_dims(
         jnp.arange(start, start + len(padded_chunk), dtype=jnp.int32), 0
@@ -200,7 +204,7 @@ def pad_tokens(
     tokens: Tokens.
     bos_id: Bos ID.
     pad_id: Pad ID.
-    is_bos: Add a beginning of sequence token if this is ture.
+    is_bos: Add a beginning of sequence token if this is true.
     prefill_lengths: Buckets to pad the sequence to for static compilation.
     max_prefill_length: Maximum bucket to use.
     jax_padding: convert to JAX padded tokens if True.
@@ -506,3 +510,103 @@ class TikToken(tokenizer_api.Tokenizer):
   def bos_id(self) -> int:
     """ID of the BOS token."""
     return self.tokenizer.bos_id
+
+
+class HuggingFaceTokenizer(tokenizer_api.Tokenizer):
+  """Tokenizer to convert strings to token ids and vice-versa."""
+
+  def __init__(self, metadata: tokenizer_pb2.TokenizerParameters):
+    self.tokenizer = AutoTokenizer.from_pretrained(
+        metadata.path, token=metadata.access_token
+    )
+    self.metadata = metadata
+
+  def encode(
+      self, s: str, **kwargs
+  ) -> Tuple[Union[jax.Array, np.ndarray], int]:
+    """Tokenize a string.
+    Args:
+        s: String to tokenize.
+        **kwargs: Additional keyword arguments
+    Returns:
+        tokens: Tokenized into integers.
+        true_length: Actual length of the non-padded sequence
+          if padding is used.
+    """
+    is_bos = kwargs.pop("is_bos", True)
+    prefill_lengths = kwargs.pop("prefill_lengths", None)
+    max_prefill_length = kwargs.pop("max_prefill_length", None)
+    jax_padding = kwargs.pop("jax_padding", True)
+    if getattr(self.metadata, "use_chat_template", False):
+      tokens = self.tokenizer.apply_chat_template(
+          [{"role": "user", "content": s}],
+          add_generation_prompt=True,
+          return_tensors="np",
+      ).squeeze()
+      if is_bos:
+        logging.warning(
+            "Overriding is_bos to False because use_chat_template "
+            "is set to True."
+        )
+      is_bos = False
+    else:
+      tokens = self.tokenizer.encode(
+          s, add_special_tokens=False, return_tensors="np"
+      ).squeeze()
+
+    tokens, true_length = pad_tokens(
+        tokens,
+        self.bos_id,
+        self.pad_id,
+        is_bos=is_bos,
+        prefill_lengths=prefill_lengths,
+        max_prefill_length=max_prefill_length,
+        jax_padding=jax_padding,
+    )
+    return tokens, true_length
+
+  def decode(self, token_ids: list[int]) -> str:
+    """Processess input token ids to generate a string.
+    Args:
+      token_ids: List of token ids.
+    Returns:
+      str: String generated from the token ids.
+    """
+    return self.tokenizer.decode(token_ids, skip_special_tokens=True)
+
+  @property
+  def pad_id(self) -> Union[None, int]:
+    """ID of the pad token."""
+    if getattr(self.tokenizer, "pad_token_id", None):
+      return self.tokenizer.pad_token_id
+    elif getattr(self.tokenizer, "pad_token", None):
+      try:
+        return self.tokenizer.encode(self.tokenizer.pad_token)[0]
+      except ValueError as _:
+        raise ValueError(
+            "Tokenizer does not contain a special" " pad token!"
+        ) from None
+
+  @property
+  def eos_id(self) -> Union[None, int]:
+    if getattr(self.tokenizer, "eos_token_id", None):
+      return self.tokenizer.eos_token_id
+    elif getattr(self.tokenizer, "eos_token", None):
+      try:
+        return self.tokenizer.encode(self.tokenizer.eos_token)[0]
+      except ValueError as _:
+        raise ValueError(
+            "Tokenizer does not contain a special " "eos token!"
+        ) from None
+
+  @property
+  def bos_id(self) -> Union[None, int]:
+    if getattr(self.tokenizer, "bos_token_id", None):
+      return self.tokenizer.bos_token_id
+    elif getattr(self.tokenizer, "bos_token", None):
+      try:
+        return self.tokenizer.encode(self.tokenizer.bos_token)[0]
+      except ValueError as _:
+        raise ValueError(
+            "Tokenizer does not contain a special " "bos token!"
+        ) from None

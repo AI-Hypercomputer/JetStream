@@ -1,0 +1,165 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# This workflow builds a stable stack for JetStream+Maxtext, runs benchmarks,
+# cleans up resources, and sends notifications.
+
+name: Run Maxtext JetStream Tests
+
+on:
+  # pull_request:
+  # push:
+  #   branches: [ "main" ]
+  workflow_dispatch:
+  schedule:
+    # Run the job daily at midnight UTC
+    - cron:  '0 0 * * *'
+
+jobs:
+  prelim:
+    runs-on: ["self-hosted", "tpu", "v6e-8"]
+    steps:
+    - name: Test gsutil installation
+      run: which gsutil >/dev/null 2>&1 || { echo >&2 "gsutil is required but not installed. Aborting"; exit 24;}
+    - name: Cleanup old docker images
+      run: docker system prune --all --force
+    - name: Authenticate gcloud
+      run: gcloud auth configure-docker gcr.io --quiet
+
+  build_stable_stack:
+    name: Build Stable Stack
+    needs: prelim
+    runs-on: ["self-hosted", "tpu", "v6e-8"]
+    env:
+      LOCAL_IMAGE_TAG: jetstream-maxtext-stable-stack/tpu:github_${{ github.run_id }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Authenticate gcloud
+      run: gcloud auth configure-docker gcr.io --quiet
+    - name: Build
+      run: |
+          pushd experimental/jetstream-maxtext-stable-stack
+          ./build.sh \
+            LOCAL_IMAGE_TAG="${LOCAL_IMAGE_TAG}"
+          popd
+    - name: Test
+      run: |
+          pushd experimental/jetstream-maxtext-stable-stack
+          ./test.sh \
+            LOCAL_IMAGE_TAG=${LOCAL_IMAGE_TAG}
+          popd
+    - name: Upload image
+      run: |
+          UPLOAD_IMAGE_TAG=gcr.io/cloud-ml-auto-solutions/${LOCAL_IMAGE_TAG}
+          docker tag ${LOCAL_IMAGE_TAG} ${UPLOAD_IMAGE_TAG}
+          docker push ${UPLOAD_IMAGE_TAG}
+
+  benchmark_report:
+    name: Benchmark Report
+    needs: build_stable_stack
+    runs-on: ["self-hosted", "tpu", "v6e-8"]
+    env:
+      OUTPUT_DIR: ./test_dir
+    steps:
+    - name: Test MOEBenchmarks
+      run: |
+        rm -rf ${OUTPUT_DIR}
+        mkdir -p ${OUTPUT_DIR}
+        # sync with the image uploaded from build_stable_stack stage
+        # Report should generated in OUTPUT_DIR depend on ENV
+        DOCKER_OUTPUT_DIR=/output
+        docker run \
+          -v ${OUTPUT_DIR}:${DOCKER_OUTPUT_DIR} \
+          --env OUTPUT_DIR=${DOCKER_OUTPUT_DIR} \
+          --privileged --net=host --rm -i \
+          gcr.io/cloud-ml-auto-solutions/jetstream-maxtext-stable-stack/tpu:github_${{ github.run_id }} \
+          bash -c "
+            bash JetStream/.github/workflows/test_moe_benchmarks.sh
+          "
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark_report
+        path: ${{ env.OUTPUT_DIR }}
+
+  clean_up_on_fail:
+    if: ${{ failure() }}
+    needs: [build_stable_stack, benchmark_report]
+    name: "Clean up"
+    runs-on: ["self-hosted"]
+    permissions:
+      contents: read
+      issues: write  # for failed-build-issue
+    steps:
+    - name: Authenticate gcloud
+      run: gcloud auth configure-docker gcr.io --quiet
+    - name: Delete TPU image
+      # sync with the image uploaded from build_stable_stack stage
+      run: gcloud container images delete gcr.io/cloud-ml-auto-solutions/jetstream-maxtext-stable-stack/tpu:github_${{ github.run_id }} --force-delete-tags --quiet
+
+  tag_night_image:
+    needs: [build_stable_stack, benchmark_report]
+    name: "Tag night image"
+    runs-on: ["self-hosted"]
+    permissions:
+      contents: read
+      issues: write  # for failed-build-issue
+    steps:
+    - name: Authenticate gcloud
+      run: gcloud auth configure-docker gcr.io --quiet
+    - name: Upload night image
+      # sync with the image uploaded from build_stable_stack stage
+      run: |
+        UPLOAD_IMAGE_TAG=gcr.io/cloud-ml-auto-solutions/jetstream-maxtext-stable-stack/tpu:github_${{ github.run_id }}
+        NIGHTLY_TAG=${UPLOAD_IMAGE_TAG%:*}:nightly
+        NIGHTLY_TAG_DATE=${NIGHTLY_TAG}-$(date +"%Y%m%d")
+        gcloud container images add-tag ${UPLOAD_IMAGE_TAG} ${NIGHTLY_TAG} --quiet
+        gcloud container images add-tag ${UPLOAD_IMAGE_TAG} ${NIGHTLY_TAG_DATE} --quiet
+        gcloud container images untag ${UPLOAD_IMAGE_TAG} --quiet
+
+  notify:
+    name: Notify test build # creates an issue or modifies last open existing issue for failed build
+    needs: [build_stable_stack, benchmark_report]
+    runs-on: ["self-hosted", "tpu", "v6e-8"]
+    env:
+      BENCHMARK_REPORT_DIR: ./benchmark_report
+    steps:
+    - name: Clean previous artifact
+      run: rm -rf ${{ env.BENCHMARK_REPORT_DIR }}
+    - name: Download benchmark artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: benchmark_report
+        path: ${{ env.BENCHMARK_REPORT_DIR }}
+    - name: Check whether one of the jobs failed
+      if: ${{ failure() }}
+      uses: jayqi/failed-build-issue-action@1a893bbf43ef1c2a8705e2b115cd4f0fe3c5649b  # v1.2.0
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Log message if dependent job succeeded
+      if: ${{ ! (failure() && github.event.pull_request == null) }}
+      run: echo "Conditions for creating/updating issue not met. Skipping."
+    - name: Send email
+      uses: dawidd6/action-send-mail@v3.6.0
+      with:
+        server_address: smtp.gmail.com
+        server_port: 465
+        username: ${{secrets.MAIL_USERNAME}}
+        password: ${{secrets.MAIL_PASSWORD}}
+        subject: Message from Inference Stable Stack Runs.
+        to: singhvijaya@google.com, yuyanpeng@google.com, vipannalla@google.com
+        from: JetStream Runs
+        secure: true
+        attachments: ${{ env.BENCHMARK_REPORT_DIR }}/moe_8x7b.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x22b.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x22b_long_context_8k_prefill.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x7b_jetstream.txt
+        body: workflow for ${{github.repository}} completed successfully!
