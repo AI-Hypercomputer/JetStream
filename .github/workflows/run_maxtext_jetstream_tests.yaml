@@ -136,12 +136,12 @@ jobs:
       BENCHMARK_REPORT_DIR: ./benchmark_report
     steps:
     - name: Clean previous artifact
-      run: rm -rf ${{ env.OUTPUT_DIR }}
+      run: rm -rf ${{ env.BENCHMARK_REPORT_DIR }}
     - name: Download benchmark artifact
       uses: actions/download-artifact@v4
       with:
         name: benchmark_report
-        path: ${{ env.OUTPUT_DIR }}
+        path: ${{ env.BENCHMARK_REPORT_DIR }}
     - name: Check whether one of the jobs failed
       if: ${{ failure() }}
       uses: jayqi/failed-build-issue-action@1a893bbf43ef1c2a8705e2b115cd4f0fe3c5649b  # v1.2.0
@@ -161,5 +161,5 @@ jobs:
         to: singhvijaya@google.com, yuyanpeng@google.com, vipannalla@google.com
         from: JetStream Runs
         secure: true
-        attachments: ${{ env.OUTPUT_DIR }}/moe_8x7b.txt,${{ env.OUTPUT_DIR }}/moe_8x22b.txt,${{ env.OUTPUT_DIR }}/moe_8x22b_long_context_8k_prefill.txt,${{ env.OUTPUT_DIR }}/moe_8x7b_jetstream.txt
+        attachments: ${{ env.BENCHMARK_REPORT_DIR }}/moe_8x7b.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x22b.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x22b_long_context_8k_prefill.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x7b_jetstream.txt
         body: workflow for ${{github.repository}} completed successfully!
