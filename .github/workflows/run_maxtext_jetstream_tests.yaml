@@ -72,7 +72,7 @@ jobs:
     env:
       OUTPUT_DIR: ./test_dir
     steps:
-    - name: Test MOEBenchmarks
+    - name: Test MOE Benchmarks
       run: |
         rm -rf ${OUTPUT_DIR}
         mkdir -p ${OUTPUT_DIR}
@@ -86,6 +86,19 @@ jobs:
           gcr.io/cloud-ml-auto-solutions/jetstream-maxtext-stable-stack/tpu:github_${{ github.run_id }} \
           bash -c "
             bash JetStream/.github/workflows/test_moe_benchmarks.sh
+          "
+    - name: Test llama 70b Benchmarks
+      run: |
+        # sync with the image uploaded from build_stable_stack stage
+        # Report should generated in OUTPUT_DIR depend on ENV
+        DOCKER_OUTPUT_DIR=/output
+        docker run \
+          -v ${OUTPUT_DIR}:${DOCKER_OUTPUT_DIR} \
+          --env OUTPUT_DIR=${DOCKER_OUTPUT_DIR} \
+          --privileged --net=host --rm -i \
+          gcr.io/cloud-ml-auto-solutions/jetstream-maxtext-stable-stack/tpu:github_${{ github.run_id }} \
+          bash -c "
+            bash JetStream/.github/workflows/test_llama_benchmarks.sh
           "
     - name: Upload build artifact
       uses: actions/upload-artifact@v4
@@ -161,5 +174,5 @@ jobs:
         to: singhvijaya@google.com, yuyanpeng@google.com, vipannalla@google.com
         from: JetStream Runs
         secure: true
-        attachments: ${{ env.BENCHMARK_REPORT_DIR }}/moe_8x7b.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x22b.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x22b_long_context_8k_prefill.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x7b_jetstream.txt
+        attachments: ${{ env.BENCHMARK_REPORT_DIR }}/moe_8x7b.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x22b.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x22b_long_context_8k_prefill.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x7b_jetstream.txt,${{ env.BENCHMARK_REPORT_DIR }}/llama_70b_jetstream.txt
         body: workflow for ${{github.repository}} completed successfully!
