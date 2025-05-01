@@ -26,7 +26,12 @@ sleep 800
 cd ..
 
 python JetStream/benchmarks/benchmark_serving.py   --tokenizer maxtext/assets/tokenizer.llama2 --save-result   --save-request-outputs   --request-outputs-file-path outputs.json   --num-prompts 1200   --max-output-length 1024  --dataset openorca --run-eval True > ${OUTPUT_DIR}/llama_70b_jetstream.txt
-tail -n25 ${OUTPUT_DIR}/llama_70b_jetstream.txt > ${OUTPUT_DIR}/llama_70b_jetstream.tmp && mv ${OUTPUT_DIR}/llama_70b_jetstream.tmp ${OUTPUT_DIR}/llama_70b_jetstream.txt
+#tail -n25 ${OUTPUT_DIR}/llama_70b_jetstream.txt > ${OUTPUT_DIR}/llama_70b_jetstream.tmp && mv ${OUTPUT_DIR}/llama_70b_jetstream.tmp ${OUTPUT_DIR}/llama_70b_jetstream.txt
 
 # kill Jetstream server
 kill -9 %%
+tail -n25 ${OUTPUT_DIR}/llama_70b_jetstream.txt > ${OUTPUT_DIR}/llama_70b_jetstream.tmp
+echo "\n8x7b Maxtext Jetstream Run throughput and accuracy for llama 70b" >> ${OUTPUT_DIR}/result_comparison.txt
+grep "\nthroughput" ${OUTPUT_DIR}/llama_70b_jetstream.tmp >> ${OUTPUT_DIR}/result_comparison.txt
+grep "\nrouge1" ${OUTPUT_DIR}/llama_70b_jetstream.tmp >> ${OUTPUT_DIR}/result_comparison.txt
+mv ${OUTPUT_DIR}/llama_70b_jetstream.tmp ${OUTPUT_DIR}/llama_70b_jetstream.txt
