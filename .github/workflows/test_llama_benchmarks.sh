@@ -19,9 +19,11 @@ export WEIGHT_DTYPE=bfloat16
 export PER_DEVICE_BATCH_SIZE=54
 export LOAD_PARAMETERS_PATH=gs://jetstream-runner/llama-70B-int8/int8_
 
-python MaxText/maxengine_server.py   MaxText/configs/base.yml   tokenizer_path=${TOKENIZER_PATH}   load_parameters_path=${LOAD_PARAMETERS_PATH}   max_prefill_predict_length=${MAX_PREFILL_PREDICT_LENGTH}   max_target_length=${MAX_TARGET_LENGTH}   model_name=${MODEL_NAME}   ici_fsdp_parallelism=${ICI_FSDP_PARALLELISM}   ici_autoregressive_parallelism=${ICI_AUTOREGRESSIVE_PARALLELISM}   ici_tensor_parallelism=${ICI_TENSOR_PARALLELISM}   scan_layers=${SCAN_LAYERS}   weight_dtype=${WEIGHT_DTYPE}   per_device_batch_size=${PER_DEVICE_BATCH_SIZE} checkpoint_is_quantized=True quantization=int8 quantize_kvcache=True  enable_jax_profiler=True &
+python -m MaxText.maxengine_server MaxText/configs/base.yml   tokenizer_path=${TOKENIZER_PATH}   load_parameters_path=${LOAD_PARAMETERS_PATH}   max_prefill_predict_length=${MAX_PREFILL_PREDICT_LENGTH}   max_target_length=${MAX_TARGET_LENGTH}   model_name=${MODEL_NAME}   ici_fsdp_parallelism=${ICI_FSDP_PARALLELISM}   ici_autoregressive_parallelism=${ICI_AUTOREGRESSIVE_PARALLELISM}   ici_tensor_parallelism=${ICI_TENSOR_PARALLELISM}   scan_layers=${SCAN_LAYERS}   weight_dtype=${WEIGHT_DTYPE}   per_device_batch_size=${PER_DEVICE_BATCH_SIZE} checkpoint_is_quantized=True quantization=int8 quantize_kvcache=True  enable_jax_profiler=True &
 
 sleep 800
+
+cd ..
 
 python JetStream/benchmarks/benchmark_serving.py   --tokenizer maxtext/assets/tokenizer.llama2 --save-result   --save-request-outputs   --request-outputs-file-path outputs.json   --num-prompts 1200   --max-output-length 1024  --dataset openorca --run-eval True > ${OUTPUT_DIR}/llama_70b_jetstream.txt
 tail -n25 ${OUTPUT_DIR}/llama_70b_jetstream.txt > ${OUTPUT_DIR}/llama_70b_jetstream.tmp && mv ${OUTPUT_DIR}/llama_70b_jetstream.tmp ${OUTPUT_DIR}/llama_70b_jetstream.txt

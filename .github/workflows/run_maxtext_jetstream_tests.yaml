@@ -43,10 +43,17 @@ jobs:
     runs-on: ["self-hosted", "tpu", "v6e-8"]
     env:
       LOCAL_IMAGE_TAG: jetstream-maxtext-stable-stack/tpu:github_${{ github.run_id }}
+      OUTPUT_DIR: /output_dir
+    outputs:
+      manifest_name: ${{ steps.copy_build_manifest.outputs.manifest_name }}
     steps:
     - uses: actions/checkout@v4
     - name: Authenticate gcloud
       run: gcloud auth configure-docker gcr.io --quiet
+    - name: Prepare output directory
+      run: |
+          rm -rf ${OUTPUT_DIR}
+          mkdir -p ${OUTPUT_DIR}
     - name: Build
       run: |
           pushd experimental/jetstream-maxtext-stable-stack
@@ -64,6 +71,19 @@ jobs:
           UPLOAD_IMAGE_TAG=gcr.io/cloud-ml-auto-solutions/${LOCAL_IMAGE_TAG}
           docker tag ${LOCAL_IMAGE_TAG} ${UPLOAD_IMAGE_TAG}
           docker push ${UPLOAD_IMAGE_TAG}
+    - name: Copy build manifest
+      id: copy_build_manifest
+      run: |
+          TEMP_CONTAINER_ID=$(docker create ${LOCAL_IMAGE_TAG} bash -c 'ls jetstream_maxtext_manifest*')
+          MANIFEST_NAME=$(docker start -a $TEMP_CONTAINER_ID)
+          docker cp $TEMP_CONTAINER_ID:/jetstream_maxtext_stable_stack/$MANIFEST_NAME ${OUTPUT_DIR}
+          docker rm $TEMP_CONTAINER_ID
+          echo "manifest_name=${MANIFEST_NAME}" >> $GITHUB_OUTPUT
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: build_manifest
+        path: ${{ env.OUTPUT_DIR }}
 
   benchmark_report:
     name: Benchmark Report
@@ -147,14 +167,22 @@ jobs:
     runs-on: ["self-hosted", "tpu", "v6e-8"]
     env:
       BENCHMARK_REPORT_DIR: ./benchmark_report
+      BUILD_MANIFEST_DIR: ./build_manifest
     steps:
     - name: Clean previous artifact
-      run: rm -rf ${{ env.BENCHMARK_REPORT_DIR }}
+      run: |
+        rm -rf ${{ env.BENCHMARK_REPORT_DIR }}
+        rm -rf ${{ env.BUILD_MANIFEST_DIR }}
     - name: Download benchmark artifact
       uses: actions/download-artifact@v4
       with:
         name: benchmark_report
         path: ${{ env.BENCHMARK_REPORT_DIR }}
+    - name: Download build manifest
+      uses: actions/download-artifact@v4
+      with:
+        name: build_manifest
+        path: ${{ env.BUILD_MANIFEST_DIR }}
     - name: Check whether one of the jobs failed
       if: ${{ failure() }}
       uses: jayqi/failed-build-issue-action@1a893bbf43ef1c2a8705e2b115cd4f0fe3c5649b  # v1.2.0
@@ -174,5 +202,5 @@ jobs:
         to: singhvijaya@google.com, yuyanpeng@google.com, vipannalla@google.com
         from: JetStream Runs
         secure: true
-        attachments: ${{ env.BENCHMARK_REPORT_DIR }}/moe_8x7b.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x22b.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x22b_long_context_8k_prefill.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x7b_jetstream.txt,${{ env.BENCHMARK_REPORT_DIR }}/llama_70b_jetstream.txt
+        attachments: ${{ env.BUILD_MANIFEST_DIR }}/${{ needs.build_stable_stack.outputs.manifest_name }},${{ env.BENCHMARK_REPORT_DIR }}/moe_8x7b.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x22b.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x22b_long_context_8k_prefill.txt,${{ env.BENCHMARK_REPORT_DIR }}/moe_8x7b_jetstream.txt,${{ env.BENCHMARK_REPORT_DIR }}/llama_70b_jetstream.txt
         body: workflow for ${{github.repository}} completed successfully!
