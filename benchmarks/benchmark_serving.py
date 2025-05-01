@@ -815,23 +815,23 @@ async def benchmark(
         f"Overall token throughput: {metrics.overall_throughput:.2f} tokens/s"
     )
 
-    print(f"{metrics.ttft.distribution_summary_str()}")
-    print(f"{metrics.ttst.distribution_summary_str()}")
-    print(f"{metrics.tpot.distribution_summary_str()}")
+    # print(f"{metrics.ttft.distribution_summary_str()}")
+    # print(f"{metrics.ttst.distribution_summary_str()}")
+    # print(f"{metrics.tpot.distribution_summary_str()}")
 
-    # Calculate one rate for each 10 sec window. Adjusts the window size if
-    # needed to use csv output below for plotting the rate over time.
-    window_size_sec = 10
-    print(
-        f"----- Request complete rate time series "
-        f"(window_size = {window_size_sec} sec) -----"
-    )
-    print(f"{req_complete_cnt.rate_over_window_to_csv(window_size_sec)}")
-    print(
-        f"----- Output token rate time series "
-        f"(window_size = {window_size_sec} sec) -----"
-    )
-    print(f"{out_token_cnt.rate_over_window_to_csv(window_size_sec)}")
+    # # Calculate one rate for each 10 sec window. Adjusts the window size if
+    # # needed to use csv output below for plotting the rate over time.
+    # window_size_sec = 10
+    # print(
+    #     f"----- Request complete rate time series "
+    #     f"(window_size = {window_size_sec} sec) -----"
+    # )
+    # # print(f"{req_complete_cnt.rate_over_window_to_csv(window_size_sec)}")
+    # print(
+    #     f"----- Output token rate time series "
+    #     f"(window_size = {window_size_sec} sec) -----"
+    # )
+    # print(f"{out_token_cnt.rate_over_window_to_csv(window_size_sec)}")
 
     output_metrics = {
         "duration": benchmark_duration,
