@@ -19,8 +19,13 @@ from jetstream.core.proto import jetstream_pb2 as jetstream__pb2
 
 
 class OrchestratorStub(object):
-    """TODO: Merge this with main JetStream core once we settle on an API.
+  """TODO: Merge this with main JetStream core once we settle on an API."""
 
+  def __init__(self, channel):
+    """Constructor.
+
+    Args:
+        channel: A grpc.Channel.
     """
     self.Decode = channel.unary_stream(
         "/jetstream_proto.Orchestrator/Decode",
@@ -35,23 +40,19 @@ class OrchestratorStub(object):
 
 
 class OrchestratorServicer(object):
-    """TODO: Merge this with main JetStream core once we settle on an API.
+  """TODO: Merge this with main JetStream core once we settle on an API."""
 
-    """
+  def Decode(self, request, context):
+    """Query LLM to generate text or tokens."""
+    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+    context.set_details("Method not implemented!")
+    raise NotImplementedError("Method not implemented!")
 
-    def Decode(self, request, context):
-        """Query LLM to generate text or tokens.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def HealthCheck(self, request, context):
-        """Checks if the model server is live.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
+  def HealthCheck(self, request, context):
+    """Checks if the model server is live."""
+    context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+    context.set_details("Method not implemented!")
+    raise NotImplementedError("Method not implemented!")
 
 
 def add_OrchestratorServicer_to_server(servicer, server):
@@ -73,9 +74,9 @@ def add_OrchestratorServicer_to_server(servicer, server):
   server.add_generic_rpc_handlers((generic_handler,))
 
 
- # This class is part of an EXPERIMENTAL API.
+# This class is part of an EXPERIMENTAL API.
 class Orchestrator(object):
-    """TODO: Merge this with main JetStream core once we settle on an API.
+  """TODO: Merge this with main JetStream core once we settle on an API."""
 
   @staticmethod
   def Decode(
