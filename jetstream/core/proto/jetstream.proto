@@ -63,8 +63,11 @@ message DecodeRequest {
 
   string lora_adapter_id = 9;
 
+  // Indicates whether the content has a beginning of sequence (BOS) token.
+  bool has_bos = 10;
+
   reserved 1, 2, 3;
-  // Next ID: 10
+  // Next ID: 11
 }
 
 message DecodeResponse {
