@@ -59,4 +59,4 @@ mv ${OUTPUT_DIR}/moe_8x7b_jetstream.tmp ${OUTPUT_DIR}/moe_8x7b_jetstream.txt
 
 
 # download golden numbers from gcs
-gsutil cp gs://jetstream-inference-stable-stack-artifacts/golden-numbers/golden-numbers.txt ${OUTPUT_DIR}/
+gcloud storage cp gs://jetstream-inference-stable-stack-artifacts/golden-numbers/golden-numbers.txt ${OUTPUT_DIR}/
