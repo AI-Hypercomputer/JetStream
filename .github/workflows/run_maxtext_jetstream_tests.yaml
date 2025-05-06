@@ -193,7 +193,7 @@ jobs:
       run: echo "Conditions for creating/updating issue not met. Skipping."
     - name: Upload manifest to gcs
       if: ${{ ! failure() }}
-      run: gsutil cp ${{ env.BUILD_MANIFEST_DIR }}/${{ needs.build_stable_stack.outputs.manifest_name }} gs://jetstream-inference-stable-stack-artifacts/manifest-files/
+      run: gcloud storage cp ${{ env.BUILD_MANIFEST_DIR }}/${{ needs.build_stable_stack.outputs.manifest_name }} gs://jetstream-inference-stable-stack-artifacts/manifest-files/
     - name: Send email
       uses: dawidd6/action-send-mail@v3.6.0
       with:
