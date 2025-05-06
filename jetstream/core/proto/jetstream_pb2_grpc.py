@@ -15,7 +15,7 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-from jetstream.core.proto import jetstream_pb2 as jetstream__pb2
+from jetstream.core.proto import jetstream_pb2 as jetstream_dot_core_dot_proto_dot_jetstream__pb2
 
 
 class OrchestratorStub(object):
@@ -29,13 +29,13 @@ class OrchestratorStub(object):
     """
     self.Decode = channel.unary_stream(
         "/jetstream_proto.Orchestrator/Decode",
-        request_serializer=jetstream__pb2.DecodeRequest.SerializeToString,
-        response_deserializer=jetstream__pb2.DecodeResponse.FromString,
+        request_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeRequest.SerializeToString,
+        response_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeResponse.FromString,
     )
     self.HealthCheck = channel.unary_unary(
         "/jetstream_proto.Orchestrator/HealthCheck",
-        request_serializer=jetstream__pb2.HealthCheckRequest.SerializeToString,
-        response_deserializer=jetstream__pb2.HealthCheckResponse.FromString,
+        request_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.HealthCheckRequest.SerializeToString,
+        response_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.HealthCheckResponse.FromString,
     )
 
 
@@ -59,13 +59,13 @@ def add_OrchestratorServicer_to_server(servicer, server):
   rpc_method_handlers = {
       "Decode": grpc.unary_stream_rpc_method_handler(
           servicer.Decode,
-          request_deserializer=jetstream__pb2.DecodeRequest.FromString,
-          response_serializer=jetstream__pb2.DecodeResponse.SerializeToString,
+          request_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeRequest.FromString,
+          response_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeResponse.SerializeToString,
       ),
       "HealthCheck": grpc.unary_unary_rpc_method_handler(
           servicer.HealthCheck,
-          request_deserializer=jetstream__pb2.HealthCheckRequest.FromString,
-          response_serializer=jetstream__pb2.HealthCheckResponse.SerializeToString,
+          request_deserializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.HealthCheckRequest.FromString,
+          response_serializer=jetstream_dot_core_dot_proto_dot_jetstream__pb2.HealthCheckResponse.SerializeToString,
       ),
   }
   generic_handler = grpc.method_handlers_generic_handler(
@@ -95,8 +95,8 @@ class Orchestrator(object):
         request,
         target,
         "/jetstream_proto.Orchestrator/Decode",
-        jetstream__pb2.DecodeRequest.SerializeToString,
-        jetstream__pb2.DecodeResponse.FromString,
+        jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeRequest.SerializeToString,
+        jetstream_dot_core_dot_proto_dot_jetstream__pb2.DecodeResponse.FromString,
         options,
         channel_credentials,
         insecure,
@@ -124,8 +124,8 @@ class Orchestrator(object):
         request,
         target,
         "/jetstream_proto.Orchestrator/HealthCheck",
-        jetstream__pb2.HealthCheckRequest.SerializeToString,
-        jetstream__pb2.HealthCheckResponse.FromString,
+        jetstream_dot_core_dot_proto_dot_jetstream__pb2.HealthCheckRequest.SerializeToString,
+        jetstream_dot_core_dot_proto_dot_jetstream__pb2.HealthCheckResponse.FromString,
         options,
         channel_credentials,
         insecure,

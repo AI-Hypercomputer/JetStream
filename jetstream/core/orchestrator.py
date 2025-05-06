@@ -182,6 +182,8 @@ class ActiveRequest:
   )
   ################## Id of the adapter ###################
   adapter_id: str = ""
+  ################ Whether the prefill content has bos or not #################
+  has_bos: bool = False
 
   def enqueue_samples(self, generated_samples: list[ReturnSample]):
     """Adds the generated sample(s) to return channel for current step.
@@ -600,10 +602,11 @@ class Driver:
       self,
       request: ActiveRequest,
       tokenizer: tokenizer_api.Tokenizer,
-      is_bos: bool,
       max_prefill_length: int,
   ) -> Tuple[jax.Array | np.ndarray, int]:
     content = request.prefill_content
+    # Add bos token if the prefill content doesn't have bos.
+    is_bos = not request.has_bos
     if isinstance(content, str):
       # If it's text input, tokenize and pad the input.
       return tokenizer.encode(
@@ -614,6 +617,7 @@ class Driver:
       )
     else:
       # If it's token input, pad the input.
+      content = np.array(content)
       return token_utils.pad_tokens(
           content,
           tokenizer.bos_id,
@@ -804,18 +808,16 @@ class Driver:
       if request is None:
         break
       request.metadata.prefill_dequeue_time = time.perf_counter()
-      is_bos = True
       ThreadDebugLog(
           thread_name,
           f"Executing prefilling for one ActiveRequest. Current prefill "
           f"backlog size: {self._prefill_backlog.qsize()},"
-          f" is_bos: {is_bos}",
+          f" has_bos: {request.has_bos}",
       )
       # Tokenize and padding the text or token input.
       padded_tokens, true_length = self._process_prefill_content(
           request,
           tokenizer,
-          is_bos,
           prefill_engine.max_prefill_length,
       )
 
@@ -1704,6 +1706,7 @@ class LLMOrchestrator(jetstream_pb2_grpc.OrchestratorServicer):
             prefill_enqueue_time=time.perf_counter(),
         ),
         num_samples=request.num_samples if request.num_samples else 1,
+        has_bos=request.has_bos,
     )
     # The first stage is being prefilled, all other stages are handled
     # inside the driver (transfer, generate*N, detokenize).
