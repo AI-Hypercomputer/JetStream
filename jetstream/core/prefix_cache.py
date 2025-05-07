@@ -27,6 +27,8 @@ Key Features:
   the longest matching prefix key based on input tokens.
 - **Thread Safety:** The `PrefixCache` class uses a lock to ensure thread-safe
   operations.
+- **Performance Statistics:** The `PrefixCache` can track and provide statistics
+  on cache hit rates and hit length proportions.
 
 Core Components:
 - `Value`: Dataclass holding the KVCache (`prefix`), token information, and
@@ -97,13 +99,22 @@ Basic Usage:
     ```
 
 Helper Functions:
-- `load_existing_prefix`: Convenience function to load a prefix and format it
-  as `engine_api.ExistingPrefix`, truncating the common tokens to a multiple
-  of `chunk_size`.
-- `save_existing_prefix`: Convenience function to save a prefix, truncating the
-  key tokens to a multiple of `chunk_size` and checking for existence first.
+- `load_existing_prefix_and_get_remain_tokens`: A convenience function that
+  attempts to load the longest matching prefix from the cache for a given token
+  sequence. If a suitable prefix is found (meeting minimum length and
+  `chunk_size` alignment criteria), it returns an `engine_api.ExistingPrefix`
+  object containing the cached KVCache and the common tokens (length adjusted
+  to be a multiple of `chunk_size`, and potentially reduced to ensure subsequent
+  prefill is possible), along with the remaining tokens that still need to be
+  processed.
+- `save_existing_prefix`: Convenience function to save a KVCache. The key (token
+  sequence) is truncated to a multiple of `chunk_size`. The function checks if a
+  prefix for the truncated key already exists before saving.
+- `cal_common_prefix_length`: Utility function to calculate the length of the
+  common prefix between two token sequences.
 """
 
+from collections import deque
 from collections import OrderedDict
 from typing import Any, Optional
 import abc
@@ -111,11 +122,40 @@ import dataclasses
 import jax
 import jax.numpy as jnp
 import logging
+import numpy as np
+import os
+import sys
 import threading
 
 from jetstream.engine import engine_api
 
+# Use for test prefix caching.
+# Print statistic every load existing prefix success.
+# Set just above logging.DEBUG(10) to prevent too many debug logs.
+# Use custom integer log level may not well handle in other modules.
+LOG_LEVEL_STATISTIC = 11
+
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+
+# convert type to int if log_level is int
+try:
+  log_level = int(log_level)
+except ValueError:
+  pass
+
+if isinstance(log_level, str):
+  log_level = getattr(logging, log_level, logging.INFO)
+
 logger = logging.getLogger(__name__)
+logger.setLevel(log_level)
+
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(log_level)
+formatter = logging.Formatter(
+    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 Token = int
 # Tuple of tokens from prompt
@@ -230,24 +270,30 @@ class Value:
 
 
 def device_put_value(value: Value, device: Any = None) -> Value:
-  """Create a new value with prefix put to device.
+  """Creates a new `Value`, optionally placing its `prefix` on a JAX device.
 
-  If the device is the same as value.prefix,
-  we expect no copy here in jax.device_put.
+  This function always returns a new `Value` object.
+  If `device` is provided, `jax.device_put(value.prefix, device)` is used for
+  the new `Value`'s `prefix`. Otherwise, `value.prefix` is used directly (no
+  copy or device transfer for the prefix).
+
+  Note: The returned `Value`'s `device` attribute is always `value.device`,
+  irrespective of the `device` argument.
 
   Args:
-    value: Value to put.
-    device:
-      The same as the jax.device_put device to put the value.prefix.
-      if None, put to the value.device.
+    value: The input `Value` object.
+    device: Target JAX device for `value.prefix`. If `None`, `jax.device_put`
+      is not called.
   Returns:
-    Values with prefix put to device.
+    A new `Value` instance with its `prefix` potentially on the specified
+    `device`, and its `device` attribute set to `value.device`.
   """
-  put_device = device
-  if put_device is None:
-    put_device = value.device
+  return_prefix = value.prefix
+  # Prevent overhead that device_put need to parse the PyTree.
+  if device is not None:
+    return_prefix = jax.device_put(value.prefix, device)
   return Value(
-      prefix=jax.device_put(value.prefix, put_device),
+      prefix=return_prefix,
       true_length=value.true_length,
       padded_length=value.padded_length,
       tokens=value.tokens,
@@ -295,36 +341,57 @@ class PrefixCacheTrie:
     self._root = PrefixCacheTrie.Node()
 
   def insert(self, key: Key):
-    """Insert key into the trie."""
+    """Insert key into the trie.
+
+    If the key already exists, this operation does nothing.
+    """
     node = self._root
     for token in key:
       if token not in node.children:
         node.children[token] = PrefixCacheTrie.Node(parent=node, token=token)
       node = node.children[token]
 
-  def get_longest_common_prefix_key(self, key: Key) -> Optional[Key]:
-    """Get the key with longest common prefix.
-    If not found at least one token match, return None."""
-    result_tokens: list[Token] = []
+  def get_longest_common_prefix_key(
+      self, key: Key
+  ) -> tuple[Optional[Key], int]:
+    """Get the key stored in the trie that has the longest common prefix
+    with the input 'key', and the length of that common prefix.
 
+    Returns:
+      A tuple containing:
+        - The full key stored in the trie that shares the longest prefix with
+          the input `key`. None if no common prefix is found.
+        - The length of the common prefix found. 0 if no common prefix.
+    """
+    common_prefix_tokens_from_input: list[Token] = []
     node = self._root
-    for token in key:
-      if token not in node.children:
+
+    for token_from_input in key:
+      if token_from_input not in node.children:
         break
-      node = node.children[token]
-      result_tokens.append(token)
+      node = node.children[token_from_input]
+      common_prefix_tokens_from_input.append(token_from_input)
 
-    if len(result_tokens) == 0:
-      return None
+    length_of_common_prefix = len(common_prefix_tokens_from_input)
 
-    while not node.is_leaf():
-      token = node.get_one_child_token()
-      if token is None:
+    if length_of_common_prefix == 0:
+      return None, 0
+
+    full_stored_key_tokens = list(common_prefix_tokens_from_input)
+    current_node_for_extension = node
+
+    while not current_node_for_extension.is_leaf():
+      token_to_extend = current_node_for_extension.get_one_child_token()
+      if (
+          token_to_extend is None
+      ):  # Should ideally not happen if is_leaf() is correct
         break
-      result_tokens.append(token)
-      node = node.children[token]
+      full_stored_key_tokens.append(token_to_extend)
+      current_node_for_extension = current_node_for_extension.children[
+          token_to_extend
+      ]
 
-    return tuple(result_tokens)
+    return tuple(full_stored_key_tokens), length_of_common_prefix
 
   def contains(self, key: Key) -> bool:
     """Check if the exact key exists as a path in the trie.
@@ -370,8 +437,12 @@ class ValueStorageInterface(abc.ABC):
     """Calculate if needed_bytes size can add to storage."""
 
   @abc.abstractmethod
-  def add(self, key: Key, value: Value) -> bool:
+  def add_async(self, key: Key, value: Value) -> bool:
     """Add value and return True. If storage is full, return False."""
+
+  @abc.abstractmethod
+  def flush(self, key: Key) -> None:
+    """Block and flush the key added to the storage."""
 
   @abc.abstractmethod
   def retrieve(self, key: Key, device: Any = None) -> Optional[Value]:
@@ -422,6 +493,10 @@ class BasicStorage:
     Be aware not to modify the value after add to storage.
     Storage is expected to have enough space.
     """
+    if self.contains(key):
+      logger.warning("Key %r already exists in storage. Skipping add.", key)
+      return False
+
     if not self.has_enough_space(value.prefix_size_bytes):
       logger.warning(
           (
@@ -496,7 +571,7 @@ class HBMStorage(ValueStorageInterface):
     """Calculate if needed_bytes size can add to storage."""
     return self._storage.has_enough_space(needed_bytes)
 
-  def add(self, key: Key, value: Value) -> bool:
+  def add_async(self, key: Key, value: Value) -> bool:
     """Add key/value pair into the cache.
 
     Depend on jax.device_put,
@@ -510,8 +585,21 @@ class HBMStorage(ValueStorageInterface):
     Returns:
       True if successful. False if failed due to not enough space.
     """
+    logger.debug("add to HBMStorage key=%r", key)
+    if self.contains(key):
+      return False
+
     hbm_value = device_put_value(value, self._device)
     return self._storage.add(key, hbm_value)
+
+  def flush(self, key: Key) -> None:
+    """Block until the value associated with the key is ready in HBM."""
+    logger.debug("Flushed HBM key %r", key)
+    value = self._storage.retrieve(key)
+    if value is None:
+      logger.warning("Key %r not found during flush in HBMStorage.", key)
+      return
+    jax.block_until_ready(value.prefix)
 
   def retrieve(self, key: Key, device: Any = None) -> Optional[Value]:
     """Retrieve value back to the original device or None if not found.
@@ -520,11 +608,16 @@ class HBMStorage(ValueStorageInterface):
     if the original devices is the same as depend on jax.device_put.
     Key is expected to be found.
     """
+    logger.debug("retrieve from HBMStorage key=%r", key)
     hbm_value = self._storage.retrieve(key)
     if hbm_value is None:
       return None
 
-    return device_put_value(hbm_value, device)
+    put_device = device
+    if put_device is None:
+      put_device = hbm_value.device
+
+    return device_put_value(hbm_value, put_device)
 
   def evict(self, key: Key) -> Optional[Value]:
     """Evict and return value, or None if key is not in storage.
@@ -546,6 +639,7 @@ class DRAMStorage(ValueStorageInterface):
       max_size_bytes: Maximum bytes of host DRAM to use for storage
     """
     self._storage = BasicStorage(max_size_bytes)
+    self._non_flushed_key = set()
 
   def get_max_size_bytes(self) -> int:
     return self._storage.get_max_size_bytes()
@@ -554,19 +648,27 @@ class DRAMStorage(ValueStorageInterface):
     """Calculate if needed_bytes size can add to storage."""
     return self._storage.has_enough_space(needed_bytes)
 
-  def add(self, key: Key, value: Value) -> bool:
-    """Add value into host DRAM.
+  def add_async(self, key: Key, value: Value) -> bool:
+    """Adds value to host DRAM, returning False if space is insufficient.
 
-    Return false if storage does not have enough space.
-    Do not use this function to check if has enough space.
-    This function will first move to host DRAM before check the space.
-    The storage will copy to the host DRAM if originally on device,
-    or with the same reference to the value if originally on host.
-    Do not use the value after this function
-    if originally on host since the value will not copy.
+    `value.prefix` is moved to host DRAM (copied if on device, referenced if
+    already on host) *before* space is checked.
+    **Always call `has_enough_space()` first.**
+
+    Args:
+      key: Key for the cache entry.
+      value: `Value` object to store. If its `prefix` was already on host,
+        do not modify it externally after this call as it's now referenced
+        by the cache.
+    Returns:
+      True if added successfully, False otherwise.
     """
+    logger.debug("add to DRAMStorage key=%r", key)
+    if self.contains(key):
+      return False
+
     host_value = Value(
-        prefix=jax.device_get(value.prefix),
+        prefix=jax.copy_to_host_async(value.prefix),
         true_length=value.true_length,
         padded_length=value.padded_length,
         tokens=value.tokens,
@@ -574,7 +676,36 @@ class DRAMStorage(ValueStorageInterface):
         device=value.device,
     )
 
-    return self._storage.add(key, host_value)
+    ok = self._storage.add(key, host_value)
+    if ok:
+      self._non_flushed_key.add(key)
+    return ok
+
+  def flush(self, key: Key) -> None:
+    """Block until the value associated with the key is ready in DRAM."""
+    logger.debug("Flushed DRAM key %r.", key)
+    if key not in self._non_flushed_key:
+      return
+
+    value = self._storage.evict(key)
+    if value is None:
+      logger.warning("Key %r not found during flush in DRAMStorage.", key)
+      return
+
+    flushed_value = Value(
+        prefix=jax.device_get(value.prefix),
+        true_length=value.true_length,
+        padded_length=value.padded_length,
+        tokens=value.tokens,
+        prefix_size_bytes=value.prefix_size_bytes,
+        device=value.device,
+    )
+    ok = self._storage.add(key, flushed_value)
+    if not ok:
+      logger.warning(
+          "Cannot add flushed Value back to storage. Should not happen."
+      )
+    self._non_flushed_key.remove(key)
 
   def retrieve(self, key: Key, device: Any = None) -> Optional[Value]:
     """Return value from storage to the original device or None if not found.
@@ -583,14 +714,21 @@ class DRAMStorage(ValueStorageInterface):
     the storage will not copied.
     Do not modify the storage prefix retrieved.
     """
+    logger.debug("retrieve from DRAMStorage key=%r", key)
     host_value = self._storage.retrieve(key)
     if host_value is None:
       return None
 
-    return device_put_value(host_value, device)
+    put_device = device
+    if put_device is None:
+      put_device = host_value.device
+
+    return device_put_value(host_value, put_device)
 
   def evict(self, key: Key) -> Optional[Value]:
     """Evict and return value, or None if key is not in storage."""
+    if key in self._non_flushed_key:
+      self._non_flushed_key.remove(key)
     return self._storage.evict(key)
 
   def contains(self, key: Key) -> bool:
@@ -619,11 +757,12 @@ class LRUStrategy:
 
 
 @dataclasses.dataclass
-class StorageWithStrategy:
+class CacheLayer:
   """Storage with corresponding strategy"""
 
   storage: ValueStorageInterface
   strategy: LRUStrategy
+  key_trie: PrefixCacheTrie = dataclasses.field(default_factory=PrefixCacheTrie)
 
 
 class HierarchicalCache:
@@ -645,9 +784,18 @@ class HierarchicalCache:
         layers[0].get_max_size_bytes() <= layers[1].get_max_size_bytes()
     ), "Bottom layer of storage need to be larger than top."
 
-    self._layers = [
-        StorageWithStrategy(storage, LRUStrategy()) for storage in layers
-    ]
+    self._layers = [CacheLayer(storage, LRUStrategy()) for storage in layers]
+
+  def contains(self, key: Key) -> bool:
+    """Checks if the key exists in any layer.
+
+    Args:
+      key: The key to check for existence.
+
+    Returns:
+      True if the key exists in at least one layer, False otherwise.
+    """
+    return any(layer.key_trie.contains(key) for layer in self._layers)
 
   def add(self, key: Key, value: Value) -> tuple[bool, dict[Key, Value]]:
     """Add to all layers and return result
@@ -671,16 +819,27 @@ class HierarchicalCache:
     # Only return last layers evicted key value pair
     # which is fully evicted from hierarchical cache.
     all_ok = True
-    last_layer_evicted_key_values: dict[Key, Value] = {}
+    fully_evicted_key_values: dict[Key, Value] = {}
     for layer in self._layers:
-      if layer.storage.contains(key):
+      if not layer.storage.contains(key):
+        ok, last_layer_evicted_key_values = self._evict_to_enough_space(
+            layer, needed_bytes
+        )
+        all_ok = all_ok and ok
+      else:
         last_layer_evicted_key_values = {}
-        continue
 
-      ok, last_layer_evicted_key_values = self._evict_to_enough_space(
-          layer, needed_bytes
-      )
-      all_ok = all_ok and ok
+      for evict_key in last_layer_evicted_key_values:
+        layer.key_trie.erase(evict_key)
+
+      # Value evict from previous layer need to flush to current layer.
+      # For example full evicted from HBM and flush to DRAM.
+      # flush after evict to prevent flush evicted value don't need
+      keys_evicted_from_previous_layer = fully_evicted_key_values.keys()
+      for evict_key in keys_evicted_from_previous_layer:
+        layer.storage.flush(evict_key)
+
+      fully_evicted_key_values = last_layer_evicted_key_values
 
     if not all_ok:
       logging.error(
@@ -688,65 +847,92 @@ class HierarchicalCache:
           "after checking max_size is enough for bytes=%d.",
           needed_bytes,
       )
-      return False, last_layer_evicted_key_values
+      return False, fully_evicted_key_values
 
     for layer in self._layers:
       if not layer.storage.contains(key):
-        if not layer.storage.add(key, value):
+        if not layer.storage.add_async(key, value):
           logging.error(
               "Cannot add to storage. key=%r, needed_bytes=%d",
               key,
               needed_bytes,
           )
-          return False, last_layer_evicted_key_values
-
+          return False, fully_evicted_key_values
+        layer.key_trie.insert(key)
       layer.strategy.use(key)
 
-    return True, last_layer_evicted_key_values
+    return True, fully_evicted_key_values
 
-  def retrieve(self, key: Key, device: Any = None) -> Optional[Value]:
-    """Retrieve from all layers and add to all layers.
+  def get_longest_common_prefix_key_from_layers(
+      self, key: Key
+  ) -> Optional[tuple[Key, int, int]]:
+    """Finds the stored key, its layer index, and common prefix length.
+
+    It prioritizes the match that yields the longest common prefix with the
+    input key. Ties are broken by preferring higher cache layers
+    (smaller layer_idx).
 
     Args:
-      key: key to retrieve.
-      device:
-        The same type as the device in jax.device_put.
-        Return the Value put on the device.
-        If None, the Value will be put on the Value.device.
-    Returns:
-      Value retrieved from all layers or None if not found.
-      The Value.device is not changed to device retrieved.
-    """
-    value: Optional[Value] = None
-    for layer in self._layers:
-      if layer.storage.contains(key):
-        value = layer.storage.retrieve(key, device)
-        break
+      key: The key to search for a prefix match.
 
+    Returns:
+      A tuple (stored_key, layer_idx, common_prefix_len) or None if no match.
+    """
+    best_stored_key: Optional[Key] = None
+    best_layer_idx: int = -1
+    max_common_prefix_len: int = 0
+
+    for idx, layer in enumerate(self._layers):
+      # stored_key_this_layer will be None if no common prefix with key in
+      #  this layer's trie
+      (
+          stored_key_this_layer,
+          common_len_this_layer,
+      ) = layer.key_trie.get_longest_common_prefix_key(key)
+
+      if stored_key_this_layer is not None:
+        if common_len_this_layer > max_common_prefix_len:
+          max_common_prefix_len = common_len_this_layer
+          best_stored_key = stored_key_this_layer
+          best_layer_idx = idx
+
+    if best_stored_key is None:
+      return None
+    else:
+      return best_stored_key, best_layer_idx, max_common_prefix_len
+
+  def retrieve(
+      self, key: Key, layer_idx: int, device: Any = None
+  ) -> Optional[Value]:
+    """Retrieves value from a layer, promotes it, and updates LRU status.
+
+    The value is fetched from `self._layers[layer_idx]`. After retrieval,
+    `self.add(key, value)` is called to ensure its presence in higher layers
+    and update its LRU status.
+
+    Args:
+      key: The key of the value to retrieve.
+      layer_idx: The index of the layer to retrieve the value from.
+      device: Target JAX device for the `prefix` in the retrieved `Value`.
+        If `None`, `Value.device` is used.
+    Returns:
+      The retrieved `Value`, or `None` if not found. The `Value.device`
+      attribute of the returned object is not changed to the target `device`.
+    """
+    value = self._layers[layer_idx].storage.retrieve(key, device)
     if value is None:
       logging.warning(
           "Should check key exist before retrieve, but fail for key=%r", key
       )
       return None
 
-    for layer in self._layers:
-      if not layer.storage.contains(key):
-        if not self._evict_to_enough_space(layer, value.prefix_size_bytes):
-          logging.error(
-              "Cannot evict enough space for retrieved Value to other layers."
-          )
-          continue
-
-        if not layer.storage.add(key, value):
-          logging.error("Cannot add retrieved Value to other layers.")
-          continue
-
-      layer.strategy.use(key)
+    # Add to all layers from the top.
+    self.add(key, value)
 
     return value
 
   def _evict_to_enough_space(
-      self, layer: StorageWithStrategy, needed_bytes: int
+      self, layer: CacheLayer, needed_bytes: int
   ) -> tuple[bool, dict[Key, Value]]:
     """Evict layer to enough bytes for add and return results.
 
@@ -771,6 +957,81 @@ class HierarchicalCache:
     return True, evicted_key_values
 
 
+class CacheHitLengthStatistic:
+  """Calculate recent k loading average cache hit length."""
+
+  @dataclasses.dataclass
+  class _Event:
+    """Internal representation of a cache access event."""
+
+    is_hit: bool
+    key_length: int
+    hit_length: int = 0  # Only relevant if is_hit is True
+    hit_layer_idx: int = -1  # Only relevant if is_hit is True
+
+  def __init__(self, recent_num: int, layer_num: int):
+    """Initializes the statistic tracker.
+
+    Args:
+      recent_num: The number of recent cache access events to consider for
+        statistics.
+      layer_num: The number of cache layers being tracked.
+    """
+    if recent_num <= 0:
+      raise ValueError("recent_num must be positive")
+    if layer_num <= 0:
+      raise ValueError("layer_num must be positive")
+    self._history: deque[CacheHitLengthStatistic._Event] = deque(
+        maxlen=recent_num
+    )
+    self._layer_num = layer_num
+
+  def hit(self, hit_length: int, hit_layer_idx: int, key_length: int) -> None:
+    """Records a cache hit event.
+
+    Args:
+      hit_length: The length of the prefix found in the cache.
+      hit_layer_idx: The index of the cache layer where the hit occurred (0 for
+        top layer).
+      key_length: The total length of the key requested.
+    """
+    if hit_layer_idx < 0 or hit_layer_idx >= self._layer_num:
+      raise ValueError(f"Invalid hit_layer_idx: {hit_layer_idx}")
+    self._history.append(
+        self._Event(
+            is_hit=True,
+            key_length=key_length,
+            hit_length=hit_length,
+            hit_layer_idx=hit_layer_idx,
+        )
+    )
+
+  def no_hit(self, key_length: int) -> None:
+    """Records a cache miss event."""
+    self._history.append(self._Event(is_hit=False, key_length=key_length))
+
+  def calculate_layers_hit_length_proportion(self) -> list[float]:
+    """Calculates the hit length proportion for each layer based on history."""
+    if not self._history:
+      return [0.0] * self._layer_num
+
+    total_requested_length = sum(event.key_length for event in self._history)
+    if total_requested_length == 0:
+      return [0.0] * self._layer_num
+
+    layer_hit_lengths = [0] * self._layer_num
+    for event in self._history:
+      if event.is_hit:
+        # Attribute hit length only to the layer it was found in
+        layer_hit_lengths[event.hit_layer_idx] += event.hit_length
+
+    # Calculate proportion for each layer based on total requested length
+    proportions = [
+        hit_len / total_requested_length for hit_len in layer_hit_lengths
+    ]
+    return proportions
+
+
 class PrefixCache:
   """Store Prefix KV cache.
 
@@ -789,12 +1050,16 @@ class PrefixCache:
   DRAM max size need to be >= than HBM max size.
   """
 
-  def __init__(self, hbm_bytes: int, dram_bytes: int):
+  def __init__(
+      self, hbm_bytes: int, dram_bytes: int, hit_statistic_recent_num: int = 100
+  ):
     """
     dram_bytes >= hbm_bytes
     Args:
       hbm_bytes: Total amount of HBM to use for cache.
       dram_bytes: Total amount of DRAM to use for cache.
+      hit_statistic_recent_num: The number of recent cache access events to
+        consider for statistics.
     """
     # TODO(yuyanpeng): way to disable DRAM cache
     assert (
@@ -803,9 +1068,10 @@ class PrefixCache:
     self._lock = threading.Lock()
     self._hbm_bytes = hbm_bytes
     self._dram_bytes = dram_bytes
+    self._hit_statistic_recent_num = hit_statistic_recent_num
     # init in clear()
-    self._trie: PrefixCacheTrie
     self._cache: HierarchicalCache
+    self._hit_statistic: CacheHitLengthStatistic
     self.clear()
 
   def contains(self, key: Key) -> bool:
@@ -821,21 +1087,16 @@ class PrefixCache:
       True if the key exists in the cache, False otherwise.
     """
     with self._lock:
-      # If the key exists in trie path, the succeed path to the leaf would
-      # be saved in the cache.
-      return self._trie.contains(key)
+      return self._cache.contains(key)
 
   def save(self, key: Key, value: Value) -> bool:
     """Save key/value to the cache."""
     logger.debug("save key=%r", key)
     with self._lock:
-      ok, evicted = self._cache.add(key, value)
-      for evicted_key in evicted.keys():
-        self._trie.erase(evicted_key)
+      ok, _ = self._cache.add(key, value)
       if not ok:
         logger.warning("Cannot add to cache")
         return False
-      self._trie.insert(key)
       return True
 
   def load(
@@ -863,72 +1124,115 @@ class PrefixCache:
     """
     logger.debug("load key=%r", key)
     with self._lock:
-      matched_key = self._trie.get_longest_common_prefix_key(key)
-      logger.debug("get matched key=%r", matched_key)
-      if matched_key is None:
+      match_result = self._cache.get_longest_common_prefix_key_from_layers(key)
+      if match_result is None:
+        self._hit_statistic.no_hit(key_length=len(key))
+        logger.debug("No matching key found in any layer for key=%r", key)
         return None
+      (
+          stored_key_from_cache,
+          found_layer_idx,
+          common_prefix_length,
+      ) = match_result
       if (
           min_common_prefix_key_length is not None
-          and cal_common_prefix_length(key, matched_key)
-          < min_common_prefix_key_length
+          and common_prefix_length < min_common_prefix_key_length
       ):
+        self._hit_statistic.no_hit(key_length=len(key))
         return None
 
-      value = self._cache.retrieve(matched_key, device)
-      if value is None:
-        logger.warning("Load key=%r should be valid but not.", key)
-        return None
+      value = self._cache.retrieve(
+          stored_key_from_cache, found_layer_idx, device=device
+      )
+      self._hit_statistic.hit(
+          hit_length=common_prefix_length,
+          hit_layer_idx=found_layer_idx,
+          key_length=len(key),
+      )
+      if logger.isEnabledFor(LOG_LEVEL_STATISTIC):
+        logger.log(
+            LOG_LEVEL_STATISTIC, "%s", self._gen_statistic_str_without_lock()
+        )
       return value
 
   def clear(self):
     """Clear entire cache."""
     logger.debug("clear cache")
     with self._lock:
-      self._trie = PrefixCacheTrie()
-      self._cache = HierarchicalCache(
-          layers=(
-              HBMStorage(self._hbm_bytes),
-              DRAMStorage(self._dram_bytes),
-          )
+      storage_layers = (
+          HBMStorage(self._hbm_bytes),
+          DRAMStorage(self._dram_bytes),
+      )
+      self._cache = HierarchicalCache(layers=storage_layers)
+      self._hit_statistic = CacheHitLengthStatistic(
+          recent_num=self._hit_statistic_recent_num,
+          layer_num=len(storage_layers),
       )
 
+  def gen_statistic_str(self):
+    """Generates a string representation of the cache hit length proportion
+      statistics.
 
-def load_existing_prefix(
+    The statistics show the proportion of total requested token length that was
+    served by each cache layer, based on the most recent access events.
+
+    Returns:
+      A string containing the formatted cache statistics. For example
+      Cache Hit Length Proportion Statistics:
+        Layer 0: 0.3396
+        Layer 1: 0.1165
+      (Based on the last 100 accesses)
+    """
+    with self._lock:
+      return self._gen_statistic_str_without_lock()
+
+  def _gen_statistic_str_without_lock(self) -> str:
+    proportions = self._hit_statistic.calculate_layers_hit_length_proportion()
+    result = "Cache Hit Length Proportion Statistics:\n"
+    for i, prop in enumerate(proportions):
+      result += f"  Layer {i}: {prop:.4f}\n"
+    result += f"(Based on the last {self._hit_statistic_recent_num} accesses)\n"
+    return result
+
+
+def load_existing_prefix_and_get_remain_tokens(
     prefix_cache: PrefixCache,
-    tokens: tuple[Token, ...],
+    tokens: jax.Array | np.ndarray,
     chunk_size: int,
-) -> Optional[tuple[engine_api.ExistingPrefix, int]]:
-  """Loads the longest common prefix from the cache for the given tokens.
+) -> tuple[Optional[engine_api.ExistingPrefix], jax.Array | np.ndarray]:
+  """Return existing prefix and remained tokens need to calculate
 
   The existing prefix will truncate to a multiple of chunk_size and ensure at
   least one token remains to do prefill once.
 
   Args:
     prefix_cache: The PrefixCache instance to load from.
-    tokens: The input token sequence (as a tuple) for which to find a prefix.
+    tokens: The input token sequence for which to find a prefix.
     chunk_size: The chunk size used for prefilling. The returned common prefix
       length will be truncated to a multiple of this size.
 
   Returns:
-    A tuple containing:
-      - existing_prefix: An ExistingPrefix object containing the cached KVCache
-        and the common prefix tokens (truncated to a multiple of chunk_size).
-      - common_prefix_len: The actual length of the common prefix found.
-    Returns None if no suitable prefix is found in the cache or if the common
-    prefix is shorter than chunk_size.
+    ExistingPrefix if at least one chunk or None.
+    Remain tokens need to calculate. At least one token remains.
+
   """
+
+  tuple_tokens = tuple(tokens.tolist())
+
   # Attempt to load the longest matching prefix from the cache.
   # We set a minimum length to ensure the match is at least one chunk long.
   cached_value = prefix_cache.load(
-      tokens, min_common_prefix_key_length=chunk_size
+      tuple_tokens, min_common_prefix_key_length=chunk_size
   )
 
   if cached_value is None:
     logger.debug("No prefix found in cache for the given tokens.")
-    return None
+    return None, tokens
 
   # Calculate the actual length of the common prefix.
-  common_prefix_len = cal_common_prefix_length(tokens, cached_value.tokens)
+  common_prefix_len = cal_common_prefix_length(
+      tuple_tokens, cached_value.tokens
+  )
 
   if common_prefix_len < chunk_size:
     # This case might occur if the cache logic changes or if there's an
@@ -939,7 +1243,7 @@ def load_existing_prefix(
         common_prefix_len,
         chunk_size,
     )
-    return None
+    return None, tokens
 
   # Truncate the common prefix length to the nearest multiple of chunk_size.
   truncated_len = common_prefix_len - (common_prefix_len % chunk_size)
@@ -961,7 +1265,7 @@ def load_existing_prefix(
           truncated_len,
           chunk_size,
       )
-      return None
+      return None, tokens
 
   # Check if truncated_len became zero after the initial truncation (shouldn't
   # happen with min_common_prefix_key_length check).
@@ -971,15 +1275,15 @@ def load_existing_prefix(
         common_prefix_len,
         chunk_size,
     )
-    return None
+    return None, tokens
 
   # Extract the truncated common prefix tokens.
   truncated_common_tokens = tokens[:truncated_len]
-  truncated_tokens_array = jnp.array(truncated_common_tokens)
+  remain_tokens = tokens[truncated_len:]
 
   # Create the ExistingPrefix object.
   existing_prefix = engine_api.ExistingPrefix(
-      cache=cached_value.prefix, common_prefix_tokens=truncated_tokens_array
+      cache=cached_value.prefix, common_prefix_tokens=truncated_common_tokens
   )
 
   logger.debug(
@@ -989,7 +1293,15 @@ def load_existing_prefix(
       truncated_len,
   )
 
-  return existing_prefix, common_prefix_len
+  return existing_prefix, remain_tokens
+
+
+@jax.jit
+def _copy_prefix_cache(cache):
+  def _array_copy(x):
+    return x.copy()
+
+  return jax.tree.map(_array_copy, cache)
 
 
 def save_existing_prefix(
@@ -1038,7 +1350,7 @@ def save_existing_prefix(
 
   copied_prefix = prefix
   if copy_prefix:
-    copied_prefix = jax.tree.map(lambda x: x.copy(), prefix)
+    copied_prefix = _copy_prefix_cache(prefix)
 
   value_to_save = Value(
       prefix=copied_prefix,

@@ -211,82 +211,95 @@ class PrefixCacheTrieTest(unittest.TestCase):
     trie = prefix_cache.PrefixCacheTrie()
     key = (1, 2, 3, 4)
     trie.insert(key)
-    assert trie.get_longest_common_prefix_key((1, 2, 3, 4)) == key
-    assert trie.get_longest_common_prefix_key((1, 2, 3)) == key
-    assert trie.get_longest_common_prefix_key((1, 2, 3, 4, 5)) == key
-    assert trie.get_longest_common_prefix_key((1, 2, 6, 7)) == key
-    assert trie.get_longest_common_prefix_key((2, 3, 4, 5)) is None
+    assert trie.get_longest_common_prefix_key((1, 2, 3, 4)) == (key, 4)
+    assert trie.get_longest_common_prefix_key((1, 2, 3)) == (key, 3)
+    assert trie.get_longest_common_prefix_key((1, 2, 3, 4, 5)) == (key, 4)
+    assert trie.get_longest_common_prefix_key((1, 2, 6, 7)) == (key, 2)
+    assert trie.get_longest_common_prefix_key((2, 3, 4, 5)) == (None, 0)
 
   def test_insert_longer_key_replace_shorter_key(self):
     trie = prefix_cache.PrefixCacheTrie()
     trie.insert((1, 2, 3))
     trie.insert((1, 2, 3, 4))
-    assert trie.get_longest_common_prefix_key((1, 2, 3)) == (1, 2, 3, 4)
+    assert trie.get_longest_common_prefix_key((1, 2, 3)) == ((1, 2, 3, 4), 3)
 
   def test_insert_key_with_different_suffix_will_store_another_one(self):
     trie = prefix_cache.PrefixCacheTrie()
     trie.insert((1, 2, 3, 4))
     trie.insert((1, 2, 3, 5))
-    assert trie.get_longest_common_prefix_key((1, 2, 3, 4)) == (1, 2, 3, 4)
-    assert trie.get_longest_common_prefix_key((1, 2, 3, 5)) == (1, 2, 3, 5)
+    assert trie.get_longest_common_prefix_key((1, 2, 3, 4)) == ((1, 2, 3, 4), 4)
+    assert trie.get_longest_common_prefix_key((1, 2, 3, 5)) == ((1, 2, 3, 5), 4)
 
   def test_insert_shorter_key_will_not_replace_longer_key(self):
     trie = prefix_cache.PrefixCacheTrie()
     trie.insert((1, 2, 3, 4))
     trie.insert((1, 2, 3))
-    assert trie.get_longest_common_prefix_key((1, 2, 3, 4)) == (1, 2, 3, 4)
+    assert trie.get_longest_common_prefix_key((1, 2, 3, 4)) == ((1, 2, 3, 4), 4)
 
   def test_insert_multiple_key_and_get_longest_common_prefix(self):
     trie = prefix_cache.PrefixCacheTrie()
     trie.insert((1, 2, 3))
     trie.insert((1, 2, 4))
     trie.insert((11, 2, 3))
-    trie.insert((11, 2))
+    trie.insert((11, 2))  # This is a prefix of (11,2,3)
     trie.insert((11, 3, 4))
+
     result1 = trie.get_longest_common_prefix_key((1, 2, 3, 4, 5))
-    assert result1 is not None
-    assert result1[:3] == (1, 2, 3)
+    assert result1[0] == (1, 2, 3)
+    assert result1[1] == 3
+
     result2 = trie.get_longest_common_prefix_key((1, 2, 4, 5, 6))
-    assert result2 is not None
-    assert result2[:3] == (1, 2, 4)
+    assert result2[0] == (1, 2, 4)
+    assert result2[1] == 3
+
     result3 = trie.get_longest_common_prefix_key((11, 2, 3, 4))
-    assert result3 is not None
-    assert result3[:3] == (11, 2, 3)
+    # (11,2) is a stored key, (11,2,3) is also a stored key.
+    # Common prefix with (11,2,3,4) is (11,2,3), length 3.
+    # Stored key is (11,2,3).
+    assert result3[0] == (11, 2, 3)
+    assert result3[1] == 3
+
     result4 = trie.get_longest_common_prefix_key((11, 3, 6))
-    assert result4 is not None and result4[:2] == (11, 3)
+    # Common prefix with (11,3,4) is (11,3), length 2. Stored key is (11,3,4).
+    assert result4[0] == (11, 3, 4)
+    assert result4[1] == 2
 
   def test_erase_matched_key(self):
     trie = prefix_cache.PrefixCacheTrie()
     trie.insert((1, 2, 3))
     trie.erase((1, 2, 3))
-    assert trie.get_longest_common_prefix_key((1, 2, 3)) is None
+    assert trie.get_longest_common_prefix_key((1, 2, 3)) == (None, 0)
 
   def test_erase_shorter_or_longer_key_will_not_effect(self):
     trie = prefix_cache.PrefixCacheTrie()
     trie.insert((1, 2, 3))
     trie.erase((1, 2, 3, 4))
     trie.erase((1, 2))
-    assert trie.get_longest_common_prefix_key((1, 2, 3)) == (1, 2, 3)
+    assert trie.get_longest_common_prefix_key((1, 2, 3)) == ((1, 2, 3), 3)
 
   def test_erase_key_will_change_to_another_longest_common_prefix_key(self):
     trie = prefix_cache.PrefixCacheTrie()
     trie.insert((1, 2, 3))
     trie.insert((1, 2, 4))
-    first_matched_key = trie.get_longest_common_prefix_key((1, 2))
-    assert first_matched_key is not None
-    trie.erase(first_matched_key)
-    second_matched_key = trie.get_longest_common_prefix_key((1, 2))
-    assert second_matched_key is not None
-    assert second_matched_key[:2] == (1, 2)
-    trie.erase(second_matched_key)
-    assert trie.get_longest_common_prefix_key((1, 2)) is None
+    stored_key1, common_len1 = trie.get_longest_common_prefix_key((1, 2))
+    assert stored_key1 is not None  # Could be (1,2,3) or (1,2,4)
+    assert common_len1 == 2
+    trie.erase(stored_key1)  # Erase one of them
+
+    stored_key2, common_len2 = trie.get_longest_common_prefix_key((1, 2))
+    assert stored_key2 is not None  # Should be the other one
+    assert common_len2 == 2
+    assert stored_key2 != stored_key1  # Make sure it's the other key
+    trie.erase(stored_key2)
+
+    assert trie.get_longest_common_prefix_key((1, 2)) == (None, 0)
 
   def test_insert_after_erase_to_empty(self):
     trie = prefix_cache.PrefixCacheTrie()
     trie.insert((1, 2, 3))
     trie.erase((1, 2, 3))
     trie.insert((4, 5, 6))
-    assert trie.get_longest_common_prefix_key((4, 5, 6)) == (4, 5, 6)
+    assert trie.get_longest_common_prefix_key((4, 5, 6)) == ((4, 5, 6), 3)
 
 
 class BasicStorageTest(unittest.TestCase):
@@ -405,7 +418,7 @@ class HBMStorageTest(unittest.TestCase):
     assert storage.get_max_size_bytes() == value.prefix_size_bytes
     assert storage.contains(key) is False
     assert storage.has_enough_space(value.prefix_size_bytes) is True
-    assert storage.add(key, value) is True
+    assert storage.add_async(key, value) is True
     assert storage.contains(key) is True
     assert storage.retrieve(key) == value
     # Only have one value size, and cannot afford the second.
@@ -416,7 +429,7 @@ class HBMStorageTest(unittest.TestCase):
     assert storage.evict(key) is None
     # After evict, it should have enough space
     assert storage.has_enough_space(value.prefix_size_bytes) is True
-    assert storage.add(key, value) is True
+    assert storage.add_async(key, value) is True
 
   def test_move_value_to_and_from_different_device(self):
     local_devices = jax.local_devices()
@@ -438,13 +451,10 @@ class HBMStorageTest(unittest.TestCase):
         max_size_bytes=value.prefix_size_bytes, device=local_devices[1]
     )
     device_1_bytes_before = get_byte_in_use(1)
-    assert storage.add(key, value) is True
+    assert storage.add_async(key, value) is True
     # The value will not removed from device 0 until async saved complete.
-    # Block the retrieved value to make sure the save complete.
-    retrieved_back_value = storage.retrieve(key)
-    assert retrieved_back_value is not None
-    jax.block_until_ready(retrieved_back_value.prefix)
-    del retrieved_back_value
+    # Flush value to make sure the save complete.
+    storage.flush(key)
     del value
     device_1_byte_after_add = get_byte_in_use(1)
     # The prefix value is saved in device 1, and delete in device 0
@@ -475,7 +485,7 @@ class HBMStorageTest(unittest.TestCase):
     )
     # Storage without move device
     storage = prefix_cache.HBMStorage(max_size_bytes=value.prefix_size_bytes)
-    assert storage.add(key, value) is True
+    assert storage.add_async(key, value) is True
 
     device_1_byte_before = get_byte_in_use(1)
     # Retrieve to device 1 from storage device 0
@@ -501,7 +511,7 @@ class DRAMStorageTest(unittest.TestCase):
     assert storage.get_max_size_bytes() == value.prefix_size_bytes
     assert storage.has_enough_space(value.prefix_size_bytes) is True
     assert storage.contains(key) is False
-    assert storage.add(key, value) is True
+    assert storage.add_async(key, value) is True
     assert storage.contains(key) is True
     assert storage.retrieve(key) == value
     # Only have one value size, and cannot afford the second.
@@ -512,7 +522,7 @@ class DRAMStorageTest(unittest.TestCase):
     assert storage.evict(key) is None
     # After evict, it should have enough space
     assert storage.has_enough_space(value.prefix_size_bytes) is True
-    assert storage.add(key, value) is True
+    assert storage.add_async(key, value) is True
 
   def test_move_value_between_device_and_host(self):
     origin_hbm_byte = get_byte_in_use()
@@ -520,15 +530,19 @@ class DRAMStorageTest(unittest.TestCase):
     value = create_default_value()
     storage = prefix_cache.DRAMStorage(max_size_bytes=value.prefix_size_bytes)
     value_on_device_hbm_byte = get_byte_in_use()
-    assert storage.add(key, value) is True
+    assert storage.add_async(key, value) is True
     # add to cache will not copy another in HBM
     assert value_on_device_hbm_byte == get_byte_in_use()
     del value
+    # value will keep in HBM until it flush to host
+    value_not_flush_hbm_byte = get_byte_in_use()
+    assert value_not_flush_hbm_byte == value_on_device_hbm_byte
+    # value move to the host after flush, hbm memory should release
+    storage.flush(key)
     value_on_host_hbm_byte = get_byte_in_use()
-    # after del the value on device, hbm memory should release
     assert value_on_host_hbm_byte == origin_hbm_byte
-    device_value = storage.retrieve(key)
     # copy the value back to device
+    device_value = storage.retrieve(key)
     assert value_on_device_hbm_byte == get_byte_in_use()
     del device_value
 
@@ -549,7 +563,7 @@ class DRAMStorageTest(unittest.TestCase):
     }
     value = create_default_value(prefix=prefix)
     storage = prefix_cache.DRAMStorage(max_size_bytes=value.prefix_size_bytes)
-    assert storage.add(key, value)
+    assert storage.add_async(key, value)
     del value
     retrieved_value = storage.retrieve(key)
     assert retrieved_value is not None
@@ -571,7 +585,7 @@ class DRAMStorageTest(unittest.TestCase):
     )
     # Storage without move device
     storage = prefix_cache.DRAMStorage(max_size_bytes=value.prefix_size_bytes)
-    assert storage.add(key, value) is True
+    assert storage.add_async(key, value) is True
 
     device_1_byte_before = get_byte_in_use(1)
     # Retrieve to device 1 from storage device 0
@@ -667,11 +681,17 @@ class HierarchicalCacheTest(unittest.TestCase):
     assert cache.add((2,), value)[0] is True
     assert not layers[0].contains((1,))
     assert layers[1].contains((1,))
-    assert cache.retrieve((1,)) == value
+    result = cache.get_longest_common_prefix_key_from_layers((1,))
+    assert result is not None
+    result_key, result_layer_idx, result_common_len = result
+    assert result_key == (1,)
+    assert result_layer_idx == 1
+    assert result_common_len == 1
+    assert cache.retrieve(result_key, result_layer_idx) == value
     assert layers[0].contains((1,))
     assert not layers[0].contains((2,))
 
-  def test_retrieve_not_exist_in_any_layers_return_none(self):
+  def test_get_longest_common_prefix_key_from_layers_return_none(self):
     value = create_default_value()
     layers = (
         prefix_cache.HBMStorage(max_size_bytes=value.prefix_size_bytes),
@@ -682,7 +702,7 @@ class HierarchicalCacheTest(unittest.TestCase):
     assert cache.add((2,), value)[0] is True
     assert cache.add((3,), value)[0] is True
     # Key (1,) is evicted since LRU
-    assert cache.retrieve((1,)) is None
+    assert cache.get_longest_common_prefix_key_from_layers((1,)) is None
 
   def test_add_will_happen_to_all_layers_even_if_some_layers_already_contains_the_key(  # pylint: disable=line-too-long
       self,
@@ -717,16 +737,17 @@ class HierarchicalCacheTest(unittest.TestCase):
     # There is a LRU queue length of 5. The first 2 will also at the first layer
     assert cache.add((1,), value)[0] is True
     assert cache.add((2,), value)[0] is True
-    assert cache.retrieve((1,)) is not None
+    assert cache.retrieve((1,), 0) is not None
     assert cache.add((3,), value)[0] is True
     assert cache.add((4,), value)[0] is True
     assert cache.add((5,), value)[0] is True
-    assert cache.retrieve((4,)) is not None
+    assert cache.retrieve((4,), 0) is not None
     ok, evicted = cache.add((6,), value)
     assert ok is True
     assert len(evicted) == 1
     assert (2,) in evicted
-    assert cache.retrieve((3,)) is not None
+    assert cache.retrieve((3,), 0) is None
+    assert cache.retrieve((3,), 1) is not None
     # Now [3, 6, 4, 5, 1] in LRU
     assert layers[0].contains((3,))
     assert layers[0].contains((6,))
@@ -753,7 +774,7 @@ class HierarchicalCacheTest(unittest.TestCase):
     )
     cache = prefix_cache.HierarchicalCache(layers)
     assert cache.add(key, value)[0]
-    retrieved_value = cache.retrieve(key, device=local_devices[1])
+    retrieved_value = cache.retrieve(key, 0, device=local_devices[1])
     assert retrieved_value is not None
     assert retrieved_value.prefix.device == local_devices[1]
     # The device in the Value remain the original before saved
@@ -1027,6 +1048,161 @@ class PrefixCacheTest(unittest.TestCase):
     assert loaded_value.device == local_devices[0]
 
 
+class CacheHitLengthStatisticTest(unittest.TestCase):
+  """Tests for CacheHitLengthStatistic."""
+
+  def test_init_valid_layer_num_reflected_in_empty_proportions(self):
+    """Tests that layer_num correctly initializes the output list size."""
+    statistic_two_layers = prefix_cache.CacheHitLengthStatistic(
+        recent_num=10, layer_num=2
+    )
+    proportions_two = (
+        statistic_two_layers.calculate_layers_hit_length_proportion()
+    )
+    self.assertEqual(len(proportions_two), 2)
+    self.assertEqual(proportions_two, [0.0, 0.0])
+
+    statistic_one_layer = prefix_cache.CacheHitLengthStatistic(
+        recent_num=5, layer_num=1
+    )
+    proportions_one = (
+        statistic_one_layer.calculate_layers_hit_length_proportion()
+    )
+    self.assertEqual(len(proportions_one), 1)
+    self.assertEqual(proportions_one, [0.0])
+
+  def test_init_invalid_recent_num(self):
+    with self.assertRaisesRegex(ValueError, "recent_num must be positive"):
+      prefix_cache.CacheHitLengthStatistic(recent_num=0, layer_num=2)
+    with self.assertRaisesRegex(ValueError, "recent_num must be positive"):
+      prefix_cache.CacheHitLengthStatistic(recent_num=-1, layer_num=2)
+
+  def test_init_invalid_layer_num(self):
+    with self.assertRaisesRegex(ValueError, "layer_num must be positive"):
+      prefix_cache.CacheHitLengthStatistic(recent_num=10, layer_num=0)
+    with self.assertRaisesRegex(ValueError, "layer_num must be positive"):
+      prefix_cache.CacheHitLengthStatistic(recent_num=10, layer_num=-1)
+
+  def test_hit_updates_proportions_correctly(self):
+    """Tests that hit() calls correctly update the calculated proportions."""
+    statistic = prefix_cache.CacheHitLengthStatistic(recent_num=10, layer_num=2)
+    statistic.hit(hit_length=5, hit_layer_idx=0, key_length=10)
+    # History: (hit, kl=10, hl=5, li=0)
+    # Total requested = 10
+    # Layer 0 hit length = 5; Layer 1 hit length = 0
+    # Prop L0 = 5/10 = 0.5; Prop L1 = 0/10 = 0.0
+    proportions = statistic.calculate_layers_hit_length_proportion()
+    self.assertAlmostEqual(proportions[0], 0.5)
+    self.assertAlmostEqual(proportions[1], 0.0)
+
+    statistic.hit(hit_length=3, hit_layer_idx=1, key_length=10)
+    # History: (hit, kl=10, hl=5, li=0), (hit, kl=10, hl=3, li=1)
+    # Total requested = 10 + 10 = 20
+    # Layer 0 hit length = 5; Layer 1 hit length = 3
+    # Prop L0 = 5/20 = 0.25; Prop L1 = 3/20 = 0.15
+    proportions = statistic.calculate_layers_hit_length_proportion()
+    self.assertAlmostEqual(proportions[0], 0.25)
+    self.assertAlmostEqual(proportions[1], 0.15)
+
+  def test_hit_invalid_layer_idx(self):
+    statistic = prefix_cache.CacheHitLengthStatistic(recent_num=10, layer_num=2)
+    with self.assertRaisesRegex(ValueError, "Invalid hit_layer_idx: -1"):
+      statistic.hit(hit_length=5, hit_layer_idx=-1, key_length=10)
+    with self.assertRaisesRegex(ValueError, "Invalid hit_layer_idx: 2"):
+      statistic.hit(hit_length=5, hit_layer_idx=2, key_length=10)
+
+  def test_no_hit_updates_proportions_correctly(self):
+    """Tests that no_hit() calls correctly update the calculated proportions."""
+    statistic = prefix_cache.CacheHitLengthStatistic(recent_num=10, layer_num=2)
+    statistic.no_hit(key_length=10)
+    # History: (miss, kl=10)
+    # Total requested = 10
+    # Proportions should be [0.0, 0.0]
+    proportions = statistic.calculate_layers_hit_length_proportion()
+    self.assertEqual(proportions, [0.0, 0.0])
+
+    statistic.hit(hit_length=5, hit_layer_idx=0, key_length=15)
+    # History: (miss, kl=10), (hit, kl=15, hl=5, li=0)
+    # Total requested = 10 + 15 = 25
+    # Prop L0 = 5/25 = 0.2; Prop L1 = 0/25 = 0.0
+    proportions = statistic.calculate_layers_hit_length_proportion()
+    self.assertAlmostEqual(proportions[0], 0.2)
+    self.assertAlmostEqual(proportions[1], 0.0)
+
+  def test_calculate_proportions_empty_history(self):
+    statistic = prefix_cache.CacheHitLengthStatistic(recent_num=10, layer_num=2)
+    proportions = statistic.calculate_layers_hit_length_proportion()
+    self.assertEqual(proportions, [0.0, 0.0])
+
+  def test_calculate_proportions_all_hits(self):
+    statistic = prefix_cache.CacheHitLengthStatistic(recent_num=10, layer_num=2)
+    statistic.hit(hit_length=5, hit_layer_idx=0, key_length=10)  # Layer 0: 5/10
+    statistic.hit(hit_length=8, hit_layer_idx=1, key_length=10)  # Layer 1: 8/10
+    # Total requested = 10 + 10 = 20
+    # Layer 0 hit length = 5
+    # Layer 1 hit length = 8
+    # Prop L0 = 5/20 = 0.25
+    # Prop L1 = 8/20 = 0.40
+    proportions = statistic.calculate_layers_hit_length_proportion()
+    self.assertAlmostEqual(proportions[0], 0.25)
+    self.assertAlmostEqual(proportions[1], 0.40)
+
+  def test_calculate_proportions_all_misses(self):
+    statistic = prefix_cache.CacheHitLengthStatistic(recent_num=10, layer_num=2)
+    statistic.no_hit(key_length=10)
+    statistic.no_hit(key_length=15)
+    proportions = statistic.calculate_layers_hit_length_proportion()
+    self.assertEqual(proportions, [0.0, 0.0])
+
+  def test_calculate_proportions_mix_hit_miss(self):
+    statistic = prefix_cache.CacheHitLengthStatistic(recent_num=10, layer_num=2)
+    statistic.hit(hit_length=6, hit_layer_idx=0, key_length=10)  # L0: 6
+    statistic.no_hit(key_length=5)
+    statistic.hit(hit_length=4, hit_layer_idx=1, key_length=8)  # L1: 4
+    # Total requested = 10 + 5 + 8 = 23
+    # Layer 0 hit length = 6
+    # Layer 1 hit length = 4
+    # Prop L0 = 6/23
+    # Prop L1 = 4/23
+    proportions = statistic.calculate_layers_hit_length_proportion()
+    self.assertAlmostEqual(proportions[0], 6 / 23)
+    self.assertAlmostEqual(proportions[1], 4 / 23)
+
+  def test_calculate_proportions_total_requested_zero(self):
+    statistic = prefix_cache.CacheHitLengthStatistic(recent_num=10, layer_num=2)
+    statistic.hit(hit_length=0, hit_layer_idx=0, key_length=0)
+    statistic.no_hit(key_length=0)
+    proportions = statistic.calculate_layers_hit_length_proportion()
+    self.assertEqual(proportions, [0.0, 0.0])
+
+  def test_calculate_proportions_history_eviction(self):
+    statistic = prefix_cache.CacheHitLengthStatistic(recent_num=2, layer_num=1)
+    statistic.hit(
+        hit_length=1, hit_layer_idx=0, key_length=10
+    )  # Event 1 (oldest, will be evicted)
+    statistic.hit(hit_length=2, hit_layer_idx=0, key_length=10)  # Event 2
+    statistic.hit(
+        hit_length=3, hit_layer_idx=0, key_length=10
+    )  # Event 3 (newest, evicts Event 1)
+    # History should now effectively contain Event 2 and Event 3 for calculation
+    # Total requested (from last 2 events) = 10 (E2) + 10 (E3) = 20
+    # Layer 0 hit length (from last 2 events) = 2 (E2) + 3 (E3) = 5
+    # Prop L0 = 5/20 = 0.25
+    proportions = statistic.calculate_layers_hit_length_proportion()
+    self.assertAlmostEqual(proportions[0], 0.25)
+
+    # Add another event to ensure eviction continues correctly
+    statistic.hit(
+        hit_length=4, hit_layer_idx=0, key_length=10
+    )  # Event 4 (evicts Event 2)
+    # History should now effectively contain Event 3 and Event 4
+    # Total requested (from last 2 events) = 10 (E3) + 10 (E4) = 20
+    # Layer 0 hit length (from last 2 events) = 3 (E3) + 4 (E4) = 7
+    # Prop L0 = 7/20 = 0.35
+    proportions = statistic.calculate_layers_hit_length_proportion()
+    self.assertAlmostEqual(proportions[0], 0.35)
+
+
 class PrefixCacheUtilsTest(unittest.TestCase):
 
   def setUp(self):
@@ -1046,10 +1222,16 @@ class PrefixCacheUtilsTest(unittest.TestCase):
     mock_cache.load.return_value = None
     tokens = (1, 2, 3, 4, 5, 6)
     chunk_size = 4
+    np_tokens = np.array(tokens)
 
-    result = prefix_cache.load_existing_prefix(mock_cache, tokens, chunk_size)
+    existing_prefix, remain_tokens = (
+        prefix_cache.load_existing_prefix_and_get_remain_tokens(
+            mock_cache, np_tokens, chunk_size
+        )
+    )
 
-    self.assertIsNone(result)
+    self.assertIsNone(existing_prefix)
+    np.testing.assert_array_equal(remain_tokens, np_tokens)
     mock_cache.load.assert_called_once_with(
         tokens, min_common_prefix_key_length=chunk_size
     )
@@ -1062,11 +1244,16 @@ class PrefixCacheUtilsTest(unittest.TestCase):
     mock_cache = MagicMock(spec=prefix_cache.PrefixCache)
     mock_cache.load.return_value = mock_value
     tokens = (1, 2, 3, 4, 5, 6)  # Input tokens
+    np_tokens = np.array(tokens)
     chunk_size = 4  # Chunk size > common prefix length
 
-    result = prefix_cache.load_existing_prefix(mock_cache, tokens, chunk_size)
-
-    self.assertIsNone(result)
+    existing_prefix, remain_tokens = (
+        prefix_cache.load_existing_prefix_and_get_remain_tokens(
+            mock_cache, np_tokens, chunk_size
+        )
+    )
+    self.assertIsNone(existing_prefix)
+    np.testing.assert_array_equal(remain_tokens, np_tokens)
     mock_cache.load.assert_called_once_with(
         tokens, min_common_prefix_key_length=chunk_size
     )
@@ -1080,20 +1267,22 @@ class PrefixCacheUtilsTest(unittest.TestCase):
     mock_cache = MagicMock(spec=prefix_cache.PrefixCache)
     mock_cache.load.return_value = mock_value
     tokens = (1, 2, 3, 4, 5, 6)  # Input tokens, common prefix is 4
+    np_tokens = np.array(tokens)
     chunk_size = 4
 
-    result = prefix_cache.load_existing_prefix(mock_cache, tokens, chunk_size)
+    existing_prefix, remain_tokens = (
+        prefix_cache.load_existing_prefix_and_get_remain_tokens(
+            mock_cache, np_tokens, chunk_size
+        )
+    )
 
-    self.assertIsNotNone(result)
-    assert result is not None
-    existing_prefix, common_prefix_len = result
-
-    self.assertEqual(common_prefix_len, 4)
+    assert existing_prefix is not None
     self.assertIsInstance(existing_prefix, engine_api.ExistingPrefix)
     self.assertEqual(existing_prefix.cache, self.mock_kv_cache)
     np.testing.assert_array_equal(
-        existing_prefix.common_prefix_tokens, jnp.array([1, 2, 3, 4])
+        existing_prefix.common_prefix_tokens, [1, 2, 3, 4]
     )
+    np.testing.assert_array_equal(remain_tokens, [5, 6])
     mock_cache.load.assert_called_once_with(
         tokens, min_common_prefix_key_length=chunk_size
     )
@@ -1107,21 +1296,23 @@ class PrefixCacheUtilsTest(unittest.TestCase):
     mock_cache = MagicMock(spec=prefix_cache.PrefixCache)
     mock_cache.load.return_value = mock_value
     tokens = (1, 2, 3, 4, 5, 6, 7, 8, 9)  # Input tokens, common prefix is 7
+    np_tokens = np.array(tokens)
     chunk_size = 4
 
-    result = prefix_cache.load_existing_prefix(mock_cache, tokens, chunk_size)
+    existing_prefix, remain_tokens = (
+        prefix_cache.load_existing_prefix_and_get_remain_tokens(
+            mock_cache, np_tokens, chunk_size
+        )
+    )
 
-    self.assertIsNotNone(result)
-    assert result is not None
-    existing_prefix, common_prefix_len = result
-
-    self.assertEqual(common_prefix_len, 7)  # Original common length
+    assert existing_prefix is not None
     self.assertIsInstance(existing_prefix, engine_api.ExistingPrefix)
     self.assertEqual(existing_prefix.cache, self.mock_kv_cache)
     # Truncated length should be 4 (7 - (7 % 4))
     np.testing.assert_array_equal(
-        existing_prefix.common_prefix_tokens, jnp.array([1, 2, 3, 4])
+        existing_prefix.common_prefix_tokens, [1, 2, 3, 4]
     )
+    np.testing.assert_array_equal(remain_tokens, [5, 6, 7, 8, 9])
     mock_cache.load.assert_called_once_with(
         tokens, min_common_prefix_key_length=chunk_size
     )
@@ -1144,21 +1335,23 @@ class PrefixCacheUtilsTest(unittest.TestCase):
         7,
         8,
     )  # Input tokens match cached tokens exactly
+    np_tokens = np.array(tokens)
     chunk_size = 4
 
-    result = prefix_cache.load_existing_prefix(mock_cache, tokens, chunk_size)
+    existing_prefix, remain_tokens = (
+        prefix_cache.load_existing_prefix_and_get_remain_tokens(
+            mock_cache, np_tokens, chunk_size
+        )
+    )
 
-    self.assertIsNotNone(result)
-    assert result is not None
-    existing_prefix, common_prefix_len = result
-
-    self.assertEqual(common_prefix_len, 8)  # Original common length
+    assert existing_prefix is not None
     self.assertIsInstance(existing_prefix, engine_api.ExistingPrefix)
     self.assertEqual(existing_prefix.cache, self.mock_kv_cache)
     # Truncated length initially 8, reduced by chunk_size to 4
     np.testing.assert_array_equal(
-        existing_prefix.common_prefix_tokens, jnp.array([1, 2, 3, 4])
+        existing_prefix.common_prefix_tokens, [1, 2, 3, 4]
     )
+    np.testing.assert_array_equal(remain_tokens, [5, 6, 7, 8])
     mock_cache.load.assert_called_once_with(
         tokens, min_common_prefix_key_length=chunk_size
     )
@@ -1172,12 +1365,18 @@ class PrefixCacheUtilsTest(unittest.TestCase):
     mock_cache = MagicMock(spec=prefix_cache.PrefixCache)
     mock_cache.load.return_value = mock_value
     tokens = (1, 2, 3, 4)  # Input tokens match cached tokens exactly
+    np_tokens = np.array(tokens)
     chunk_size = 4
 
-    result = prefix_cache.load_existing_prefix(mock_cache, tokens, chunk_size)
+    existing_prefix, remain_tokens = (
+        prefix_cache.load_existing_prefix_and_get_remain_tokens(
+            mock_cache, np_tokens, chunk_size
+        )
+    )
 
     # Should return None because reducing by chunk_size makes length 0
-    self.assertIsNone(result)
+    self.assertIsNone(existing_prefix)
+    np.testing.assert_array_equal(remain_tokens, np_tokens)
     mock_cache.load.assert_called_once_with(
         tokens, min_common_prefix_key_length=chunk_size
     )
