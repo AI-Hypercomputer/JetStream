@@ -75,6 +75,7 @@ python benchmark_serving.py \
 ```
 
 ## Benchmark with openorca dataset (openorca is used by MLPerf inference for LLaMA2 models)
+
 ```
 python JetStream/benchmarks/benchmark_serving.py   \
 --tokenizer ~/maxtext/assets/tokenizer.llama2  \
@@ -93,6 +94,7 @@ python JetStream/benchmarks/benchmark_serving.py   \
 The benchmark has better performance if it first conducts a warmup of the JetStream server. We currently support `sampled` and `full` warmup modes. `full` mode would warmup up the JetStream server with all the input requests. `sampled` mode would warmup up the JetStream server with a sampling of the input requests across different bucket sizes of input lengths.
 
 Example to run benchmark with `full` warmup mode:
+
 ```
 python JetStream/benchmarks/benchmark_serving.py   \
 --tokenizer ~/maxtext/assets/tokenizer.llama2  \
@@ -115,7 +117,25 @@ python eval_accuracy.py outputs.json
 ```
 
 With openorca dataset and llama2-chat models (used by MLPerf), here are the reference accuracy numbers:
+
 ```
 llama2-7b-chat {'rouge1': 42.0706, 'rouge2': 19.8021, 'rougeL': 26.8474, 'rougeLsum': 39.5952, 'gen_len': 1146679, 'gen_num': 998}
 llama2-70b-chat {'rouge1': 44.4312, 'rouge2': 22.0352, 'rougeL': 28.6162}
-``` 
+```
+
+## Benchmark prefix cache
+
+Benchmark with mock input requests that share common prefix. Use to test prefix caching.
+
+All prompts length is `max-input-length`, and share common prefix mean at length `--prefix-cache-test-common-len` with normal distribution.
+
+```
+python JetStream/benchmarks/benchmark_serving.py \
+--tokenizer prefix_cache_test \
+--dataset prefix_cache_test
+--warmup-mode full \
+--num-prompts 100 \
+--max-input-length 16000 \
+--prefix-cache-test-common-len 9000\
+--max-output-length 50 \
+```

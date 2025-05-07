@@ -209,6 +209,25 @@ class RequestFuncOutput:
     }
 
 
+class PrefixCacheTestTokenizer:
+  """A simple tokenizer for testing prefix caching.
+
+  This tokenizer converts each character in a string to its integer ordinal
+  value during encoding, and converts a list of integer ordinals back to
+  a string during decoding. It's designed for testing scenarios, particularly
+  those involving prefix caching, where a basic, predictable tokenizer is
+  needed.
+  """
+
+  def encode(self, s: str, **kwargs) -> list[int]:
+    del kwargs
+    return [ord(c) for c in s]
+
+  def decode(self, token_ids: list[int], **kwargs) -> str:
+    del kwargs
+    return "".join([chr(token_id) for token_id in token_ids])
+
+
 def get_tokenizer(
     model_id: str,
     tokenizer_name: str,
@@ -219,6 +238,9 @@ def get_tokenizer(
   if tokenizer_name == "test":
     print("Using test tokenizer")
     return "test"
+  elif tokenizer_name == "prefix_cache_test":
+    print("Using prefix_cache_test tokenizer")
+    return PrefixCacheTestTokenizer()
   elif use_hf_tokenizer:
     # Please accept agreement to access private/gated models in HF, and
     # follow up instructions below to set up access token
@@ -327,6 +349,98 @@ def load_mmlu_dataset_csv(dataset_path: str) -> tuple[Any, dict[str, str]]:
   }
   combined_dataset.rename(columns=header_dict, inplace=True)
   return combined_dataset, prompts_per_subject
+
+
+def load_mock_prefix_cache_test_input_requests(
+    prompt_len: int,
+    output_len: int,
+    common_prefix_len: int,
+    num_samples: int,
+) -> list[InputRequest]:
+  """Generates a mock dataset for testing prefix cache.
+
+  The prefix part of each prompt is a sub-string of a single master string.
+  The length of this prefix part for each sample is drawn from a normal
+  distribution with its mean set to `common_prefix_len`, and values are
+  clipped to the range [0, `prompt_len`].
+  The tokenizer is assumed to treat each character as a token.
+
+  Args:
+    prompt_len: The total length of each generated prompt string.
+    output_len: The length of each generated output string.
+    common_prefix_len: The target mean for the length of the prefix part
+                       of each prompt. These prefixes are derived from a
+                       shared master string.
+    num_samples: The number of (prompt, output) pairs to generate.
+
+  Returns:
+    A list of InputRequest objects.
+  """
+  if not 0 <= common_prefix_len <= prompt_len:
+    raise ValueError(
+        "Target mean common_prefix_len must be between 0 and prompt_len,"
+        f" inclusive. Got common_prefix_len={common_prefix_len}, "
+        f"prompt_len={prompt_len}"
+    )
+  if any(arg <= 0 for arg in [prompt_len, output_len, num_samples]):
+    raise ValueError(
+        "prompt_len, output_len, and num_samples cannot be 0 or negative."
+    )
+
+  input_requests: list[InputRequest] = []
+
+  # Generate a master string from which all prefixes will be derived.
+  # This ensures that prefixes of the same length are identical,
+  # and shorter prefixes are actual prefixes of longer ones.
+  master_potential_prefix = "".join(
+      random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=prompt_len)
+  )
+
+  # Generate prefix lengths for each sample from a normal distribution
+  scale = prompt_len / 3.0  # Standard deviation for the normal distribution
+
+  generated_prefix_lengths = np.random.normal(
+      loc=common_prefix_len, scale=scale, size=num_samples
+  )
+  generated_prefix_lengths = (
+      np.clip(generated_prefix_lengths, 0, prompt_len).round().astype(int)
+  )
+
+  for idx in range(num_samples):
+    current_actual_prefix_len = generated_prefix_lengths[idx]
+
+    actual_prefix_for_sample = master_potential_prefix[
+        :current_actual_prefix_len
+    ]
+
+    current_unique_len = prompt_len - current_actual_prefix_len
+    # This should not happen if generated_prefix_lengths is clipped correctly
+    if current_unique_len < 0:
+      current_unique_len = 0  # Safeguard
+      current_actual_prefix_len = prompt_len
+      actual_prefix_for_sample = master_potential_prefix[
+          :current_actual_prefix_len
+      ]
+
+    unique_suffix_str = "".join(
+        random.choices(
+            "abcdefghijklmnopqrstuvwxyz0123456789", k=current_unique_len
+        )
+    )
+
+    prompt_str = actual_prefix_for_sample + unique_suffix_str
+
+    output_str = "".join(random.choices("!@#$%^&*()_+", k=output_len))
+
+    request = InputRequest(
+        prompt=prompt_str,
+        prompt_len=len(prompt_str),
+        output=output_str,
+        output_len=len(output_str),
+        sample_idx=idx,
+    )
+    input_requests.append(request)
+  return input_requests
 
 
 def gen_mmlu_qa(data: Any, mmlu_method: str = "") -> str:
@@ -893,6 +1007,7 @@ def parse_args() -> argparse.Namespace:
           "mmlu",
           "math500",
           "longcontext",
+          "prefix_cache_test",
       ],
       help="The dataset name.",
   )
@@ -1086,6 +1201,12 @@ def parse_args() -> argparse.Namespace:
       choices=["HELM", "Harness", ""],
       help="mmlu method/format to generate shots",
   )
+  parser.add_argument(
+      "--prefix-cache-test-common-len",
+      type=int,
+      default=64,
+      help="Common prefix length for the prefix cache test dataset.",
+  )
   return parser.parse_args()
 
 
@@ -1112,6 +1233,13 @@ def main(args: argparse.Namespace):
     input_requests = mock_requests(
         args.total_mock_requests
     )  # e.g. [("AB", 2, "AB", 3)]
+  elif args.dataset == "prefix_cache_test":
+    input_requests = load_mock_prefix_cache_test_input_requests(
+        prompt_len=args.max_input_length,
+        output_len=args.max_output_length,
+        common_prefix_len=args.prefix_cache_test_common_len,
+        num_samples=args.num_prompts,
+    )
   else:
     dataset = []
     if args.dataset == "openorca":
