@@ -211,7 +211,6 @@ class Engine(abc.ABC):
       params: Params,
       decode_state: DecodeState,
       sampler: Optional[Callable[[Any], Any]] = None,
-      lora_params: Params = None,
   ) -> Tuple[DecodeState, ResultTokens]:
     """Generates tokens for each sequence being decoded in parallel.
 

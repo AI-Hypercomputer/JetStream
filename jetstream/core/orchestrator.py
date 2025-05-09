@@ -1031,7 +1031,7 @@ class Driver:
     # we can still generate if we can't insert. We do this in a while loop to
     # insert as many sequences as possible.
     adapter_tensorstore = None
-    if self._generate_adapterstore:
+    if self._generate_adapterstore and idx < len(self._generate_adapterstore):
       adapter_tensorstore = self._generate_adapterstore[idx]
 
     while True:
@@ -1102,7 +1102,6 @@ class Driver:
           new_request.prefill_result,
           decode_state,
           slot=slot,
-          # request_id=new_request.request_id,
       )
 
       if adapter_tensorstore:
@@ -1321,10 +1320,11 @@ class Driver:
 
       if adapter_tensorstore:
         decoding_adapters_cache = adapter_tensorstore.decoding_adapters_cache
+        #decode_state["lora_adapter_cache"] = decoding_adapters_cache
 
       # Now we actually take a generate step on requests in the slots.
       decode_state, sampled_tokens = generate_engine.generate(
-          generate_params, decode_state, decoding_adapters_cache
+          generate_params, decode_state
       )
       sampled_tokens.copy_to_host_async()
       # Respond to detokenization backpressure.
