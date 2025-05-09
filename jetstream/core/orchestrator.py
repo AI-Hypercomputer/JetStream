@@ -105,6 +105,7 @@ from jetstream.engine import token_utils
 from jetstream.engine import tokenizer_api
 from jetstream.core.metrics.prometheus import JetstreamMetricsCollector
 import numpy as np
+from flax import linen as nn #LogicallyPartitioned
 
 log_level = os.getenv("LOG_LEVEL", "WARNING").upper()
 
@@ -958,9 +959,28 @@ class Driver:
   def _jax_transfer_prefill_result(
       self, new_request: ActiveRequest, target_idx: int
   ):
+    # print(new_request.prefill_result)
+    for key, val in new_request.prefill_result['cache']['self_attention']['KVCache_0'].items():
+      if isinstance(val, nn.LogicallyPartitioned):
+          try:
+            print(f"{key}:")
+            print(f"sharding: {val.get_sharding(self._prefill_engines[0]._mesh)}")
+            print("\n")
+          except Exception as e:
+            print(f"Error: {e}")
+          print(f"shape: {val.value.shape}")
+      else:
+        print("not nn.LogicallyPartitioned")
+        print(f" {key}")
+        print(f" {val}")
+    prefix_destination_sharding = self._generate_engines[target_idx].get_prefix_destination_sharding()
+    # print(prefix_destination_sharding)
+    print("========================")
+    for key, val in prefix_destination_sharding['cache'].items():
+        print(f"{key}: {val}\n")
     new_request.prefill_result = jax.device_put(
         new_request.prefill_result,
-        self._generate_engines[target_idx].get_prefix_destination_sharding(),
+        prefix_destination_sharding,
     )
     # Block here so we don't block on the generate thread that steps.
     jax.block_until_ready(new_request.prefill_result)
