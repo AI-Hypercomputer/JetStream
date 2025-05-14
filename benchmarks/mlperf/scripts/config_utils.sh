@@ -9,7 +9,7 @@ export compute_axis_order=${compute_axis_order:=0,2,1,3}
 export prefill_cache_axis_order=${prefill_cache_axis_order:=0,2,1,3}
 export ar_cache_axis_order=${ar_cache_axis_order:=0,2,1,3}
 
-export config_file_path=MaxText/configs/v5e/inference/llama2_70b_v5e-16.yml
+export config_file_path=MaxText/inference/configs/multi_host/interleaved/llama2_70b_v5e-16.yml
 export ici_fsdp_parallelism=1
 export ici_autoregressive_parallelism=${ici_autoregressive_parallelism:=2}
 export ici_tensor_parallelism=${ici_tensor_parallelism:=8}
