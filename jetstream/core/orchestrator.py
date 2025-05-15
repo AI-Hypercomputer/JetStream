@@ -1106,7 +1106,8 @@ class Driver:
 
       if adapter_tensorstore:
         adapter_tensorstore.insert_adapter_in_cache(
-            new_request.adapter_id, slot)
+            new_request.adapter_id, slot
+        )
 
       ThreadDebugLog(
           thread_name,
@@ -1316,11 +1317,23 @@ class Driver:
           my_slots.qsize() < max_concurrent_decodes
       ), "At this point we must have some requests inserted into the slots."
 
-      decoding_adapters_cache = None
-
       if adapter_tensorstore:
-        decoding_adapters_cache = adapter_tensorstore.decoding_adapters_cache
-        #decode_state["lora_adapter_cache"] = decoding_adapters_cache
+        decoding_adapters_params = adapter_tensorstore.decoding_adapters_cache
+        adapters_scale_factor = adapter_tensorstore.adapters_scale_factor
+        b = adapters_scale_factor.shape[0]
+
+        # Reshaped the scale_factors array to 4-D to align with shape of
+        # the vectors `(batch, hidden_size, num_heads, head_dim)`.
+        reshaped_scale_factors = adapters_scale_factor.reshape((b, 1, 1, 1))
+
+        lora_state = {}
+        lora_state["scale_factor"] = reshaped_scale_factors
+        lora_state["lora_params"] = decoding_adapters_params
+
+        if isinstance(decode_state, dict): # For flax.struct.dataclass
+          decode_state["lora_state"] = lora_state
+        else: # For standard mutable dataclasses.dataclass
+          decode_state = decode_state.replace(lora_state=lora_state)
 
       # Now we actually take a generate step on requests in the slots.
       decode_state, sampled_tokens = generate_engine.generate(
