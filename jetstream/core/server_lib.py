@@ -159,7 +159,17 @@ def create_driver(
   model_load_start_time = time.time()
   prefill_params = [pe.load_params() for pe in engines.prefill_engines]
   generate_params = [ge.load_params() for ge in engines.generate_engines]
-  shared_params = [ie.load_params() for ie in engines.interleaved_engines]
+  # shared_params = [ie.load_params() for ie in engines.interleaved_engines]
+  shared_params = []
+  if engines.interleaved_engines:
+    with futures.ThreadPoolExecutor() as executor:
+      # Submit all load_params tasks
+      param_futures = [
+          executor.submit(ie.load_params) for ie in engines.interleaved_engines
+      ]
+      # Retrieve results
+      for future in param_futures:
+        shared_params.append(future.result())
   logger.info("Loaded all weights.")
   if metrics_collector:
     metrics_collector.get_model_load_time_metric().set(

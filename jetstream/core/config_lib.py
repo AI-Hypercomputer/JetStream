@@ -120,7 +120,7 @@ def _split_devices_by_slices(
   cumsum = 0
   slice_split_devices = []
   for sl in slices:
-    slice_split_devices.append(devices[cumsum : cumsum + sl])
+    slice_split_devices.append(devices[cumsum: cumsum + sl])
     cumsum += sl
   return slice_split_devices
 
@@ -146,6 +146,7 @@ def get_engines(
       + list(server_config.generate_slices)
       + list(server_config.interleaved_slices)
   ]
+  print(f"{slices=}")
   if sum(slices) != len(devices):
     raise ValueError(
         f"The number of available devices ({len(devices)}) do not match the "
@@ -159,6 +160,7 @@ def get_engines(
   # generate = v5e=1x1; or [[tpu_0, tpu_1, tpu_2, tpu_3]] corresponding to
   # interleaved: v5e=2x2
   split_devices = _split_devices_by_slices(devices, slices)
+  print(f"{split_devices=}")
   prefill_engines = [
       e(split_devices.pop(0)) for e in server_config.prefill_engine_create_fns
   ]
@@ -166,10 +168,15 @@ def get_engines(
       e(split_devices.pop(0)) for e in server_config.generate_engine_create_fns
   ]
   # These share chips and weights for prefill and generation.
+  # interleaved_engines = [
+  #     e(split_devices.pop(0))
+  #     for e in server_config.interleaved_engine_create_fns
+  # ]
   interleaved_engines = [
-      e(split_devices.pop(0))
-      for e in server_config.interleaved_engine_create_fns
+      server_config.interleaved_engine_create_fns[0](devices)
+      for devices in split_devices
   ]
+  print(f"interleaved_engines: {interleaved_engines}")
   return InstantiatedEngines(
       prefill_engines, generate_engines, interleaved_engines
   )

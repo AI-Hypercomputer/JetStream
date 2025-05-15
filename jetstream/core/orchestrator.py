@@ -394,6 +394,7 @@ class Driver:
     # operation. I.e. potentially available rows in the batch and/or microbatch.
     # When we want to insert a prefill result, we pop an integer to insert at.
     # When this is empty, it means all slots are full.
+    print(f"{self._generate_engines[0].max_concurrent_decodes}")
     self._generate_slots = [
         queue.Queue(engine.max_concurrent_decodes)
         for engine in self._generate_engines
@@ -790,7 +791,9 @@ class Driver:
       my_transfer_backlog = self._transfer_backlogs[idx]
       # The prefill thread can just sleep until it has work to do.
       request = self._prefill_backlog.get(block=True)
-
+      ThreadDebugLog(
+          thread_name, f"prefill thread {idx} got a request."
+      )
       if request is None:
         break
       request.metadata.prefill_dequeue_time = time.perf_counter()
@@ -970,35 +973,35 @@ class Driver:
     logger.info("Spinning up transfer thread %d.", idx)
     thread_name = f"Transfer thread {idx}"
     transfer_backlog = self._transfer_backlogs[idx]
-
+    generate_backlog = self._generate_backlogs[idx]
     while self.live:
       # The transfer thread can just sleep until it has work to do.
       new_request = transfer_backlog.get(block=True)
       if new_request is None:
         break
       new_request.metadata.transfer_dequeue_time = time.perf_counter()
-      target_idx = min(
-          self._generate_backlogs.items(), key=lambda q: q[1].qsize()
-      )[0]
+      # target_idx = min(
+      #     self._generate_backlogs.items(), key=lambda q: q[1].qsize()
+      # )[0]
       # Only transfer the KVCache for the disaggregated serving.
       # TODO: Remove the conditional after fixing the compatibility.
-      if not self._interleaved_mode:
-        ThreadDebugLog(
-            thread_name,
-            f"Transferring prefill result from prefill engine {idx} "
-            f"to generate engine {target_idx}.",
-        )
-        # Transfer the info to the relevant generate slice.
-        self._transfer_prefill_result(new_request, target_idx)
+      # if not self._interleaved_mode:
+      #   ThreadDebugLog(
+      #       thread_name,
+      #       f"Transferring prefill result from prefill engine {idx} "
+      #       f"to generate engine {target_idx}.",
+      #   )
+      #   # Transfer the info to the relevant generate slice.
+      #   self._transfer_prefill_result(new_request, target_idx)
       # Place the request on the correct generate backlog and block if full.
       new_request.metadata.generate_enqueue_time = time.perf_counter()
-      self._generate_backlogs[target_idx].put(new_request, block=True)
+      generate_backlog.put(new_request, block=True)
       ThreadDebugLog(
           thread_name,
           f"Transferred ActiveRequest from prefill engine {idx} "
-          f"to generate backlog {target_idx}. "
+          f"to generate backlog {idx}. "
           f"Current generate backlog size: "
-          f"{self._generate_backlogs[target_idx].qsize()}.",
+          f"{generate_backlog.qsize()}.",
       )
 
     logger.info("Transfer thread %d stopped.", idx)
