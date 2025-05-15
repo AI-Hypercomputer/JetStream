@@ -132,6 +132,9 @@ def eval_accuracy(request_outputs_dict, match_type):
   else:
     metric = evaluate.load("rouge")
     nltk.download("punkt_tab")
+    nltk.download("punkt")
+    nltk.download("wordnet")
+    nltk.download("omw-1.4")
     preds, targets = postprocess_text(preds, targets)
     result = metric.compute(
         predictions=preds,
