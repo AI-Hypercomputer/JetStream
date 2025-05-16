@@ -1018,6 +1018,10 @@ class Driver:
     # Check if there are any free my_slots. We don't want to block here since
     # we can still generate if we can't insert. We do this in a while loop to
     # insert as many sequences as possible.
+    adapter_tensorstore = None
+    if self._generate_adapterstore and idx < len(self._generate_adapterstore):
+      adapter_tensorstore = self._generate_adapterstore[idx]
+
     while True:
       my_slots_size = my_slots.qsize()
 
@@ -1086,8 +1090,13 @@ class Driver:
           new_request.prefill_result,
           decode_state,
           slot=slot,
-          # request_id=new_request.request_id,
       )
+
+      if adapter_tensorstore:
+        adapter_tensorstore.insert_adapter_in_cache(
+            new_request.adapter_id, slot
+        )
+
       ThreadDebugLog(
           thread_name,
           f"Generate slice {idx} filled slot {slot} at step "
@@ -1227,6 +1236,10 @@ class Driver:
     my_generate_backlog = self._generate_backlogs[idx]
     my_detokenize_backlog = self._detokenize_backlogs[idx]
 
+    adapter_tensorstore = None
+    if self._generate_adapterstore and idx < len(self._generate_adapterstore):
+      adapter_tensorstore = self._generate_adapterstore[idx]
+
     # Keep track of what step tokens were generated at.
     generate_timestep = 0
     # State to store things like running kv cache in.
@@ -1291,6 +1304,24 @@ class Driver:
       assert (
           my_slots.qsize() < max_concurrent_decodes
       ), "At this point we must have some requests inserted into the slots."
+
+      if adapter_tensorstore:
+        decoding_adapters_params = adapter_tensorstore.decoding_adapters_cache
+        adapters_scale_factor = adapter_tensorstore.adapters_scale_factor
+        b = adapters_scale_factor.shape[0]
+
+        # Reshaped the scale_factors array to 4-D to align with shape of
+        # the vectors `(batch, hidden_size, num_heads, head_dim)`.
+        reshaped_scale_factors = adapters_scale_factor.reshape((b, 1, 1, 1))
+
+        lora_state = {}
+        lora_state["scale_factor"] = reshaped_scale_factors
+        lora_state["lora_params"] = decoding_adapters_params
+
+        if isinstance(decode_state, dict):
+          decode_state["lora_state"] = lora_state
+        else:  # flax.struct.dataclass
+          decode_state = decode_state.replace(lora_state=lora_state)
 
       # Now we actually take a generate step on requests in the slots.
       decode_state, sampled_tokens = generate_engine.generate(

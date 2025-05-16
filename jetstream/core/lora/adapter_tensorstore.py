@@ -99,6 +99,7 @@ class AdapterTensorStore:
       adapters_dir_path: str,
       hbm_memory_budget: int,
       cpu_memory_budget: int,
+      total_slots: int,
   ):
     """Initializes the AdapterTensorStore."""
     self.engine = engine  # Possibly MaxEngine object
@@ -119,7 +120,26 @@ class AdapterTensorStore:
     self.running_requests: int = (
         0  # Number of async tasks which are in "loading" state
     )
+    self.decoding_adapters_cache: Dict[str, Any] = {}
+
+    # TODO: Make dtype configurable for the scale factor array
+    self.adapters_scale_factor = jnp.empty(1, dtype=jnp.bfloat16)
+
+    self.total_slots = total_slots
     self.lock = asyncio.Lock()  # Use an asyncio Lock for thread safety
+
+  def _get_adapter_scale_factor(self, adapter_id: str):
+    """
+    Internal: Get the LoRA scale_factor using the adapter_id.
+    """
+    adapter_config = self.adapter_registry[adapter_id].config
+    lora_scale_factor = float(1)
+
+    if "r" in adapter_config and "lora_alpha" in adapter_config:
+      lora_rank = int(adapter_config["r"])
+      lora_scale_factor = float(adapter_config["lora_alpha"]) / lora_rank
+
+    return lora_scale_factor
 
   # --- Unsafe Internal methods which assumes that lock is held ---
   def _unsafe_transfer_to_hbm(self, adapter_id: str):
@@ -206,6 +226,90 @@ class AdapterTensorStore:
     metadata.last_accessed = time.time()
     metadata.size_hbm = 0
     metadata.size_cpu = 0
+
+  def _initialize_decoding_adapters_cache(self, adapter_weights):
+    """
+    Create a new PyTree with zero tensors at the paths corresponding to
+    non-None leaves in the input PyTree. The zero tensors have an added
+    dimension of size `self.totol_slots`.
+    Args:
+      adatper_weights: The input PyTree, whose structure will be mirrored.
+    Returns:
+      A new PyTree with zero Tensors or None values, mirroring the structure
+      of the input PyTree.
+    """
+
+    def create_zero_leaf(leaf):
+      if leaf is not None:
+        original_shape = leaf.shape
+        if not original_shape:  # handle scalar case
+          zero_tensor_shape = (self.total_slots,)
+        else:
+          zero_tensor_shape = (
+              self.total_slots,
+          ) + original_shape  # Prepend a new dimension
+
+        return jnp.zeros(zero_tensor_shape, dtype=leaf.dtype)
+      else:
+        return None  # Maintain None structure for None leaves
+
+    self.adapters_scale_factor = jnp.ones(self.total_slots, dtype=jnp.bfloat16)
+    return jax.tree_util.tree_map(create_zero_leaf, adapter_weights)
+
+  def insert_adapter_in_cache(self, adapter_id: str, slot_id: int):
+    """
+    Insert the specific adapter tensors into a slot in the
+    serving_adapters_cache.
+    Args:
+      adapter_id: The id of the adapter, whose tensors will be inserted
+      slot_id: The id of slot, which represents the index in the
+      serving_adapter_cache where the adapter tensors will be inserted.
+    """
+
+    def insert_leaf(dest_leaf, source_leaf):
+      if dest_leaf is not None and source_leaf is not None:
+        return dest_leaf.at[slot_id].set(
+            source_leaf
+        )  # Insert at the specific index
+      elif dest_leaf is not None:
+        return dest_leaf  # If source_leaf is None, keep the zero_leaf as is
+      elif (
+          source_leaf is not None
+      ):  # In this case the adapters have different target modules
+        original_shape = source_leaf.shape
+        if not original_shape:  # Handle scalar case
+          zero_tensor_shape = (self.total_slots,)
+        else:
+          zero_tensor_shape = (self.total_slots,) + original_shape
+        new_dest_leaf = jnp.zeros(zero_tensor_shape, dtype=source_leaf.dtype)
+        return new_dest_leaf.at[slot_id].set(source_leaf)
+      else:
+        return None  # If both are None, return None
+
+    if adapter_id == "":
+      logging.info(
+          "Empty adapter id. No LoRA tensors added to adapter_tensorstore cache"
+      )
+      return
+
+    asyncio.run(self.load_adapter(adapter_id, None, True))
+
+    adapter_weights = self.loaded_adapters_hbm[adapter_id]
+
+    if not self.decoding_adapters_cache:
+      self.decoding_adapters_cache = self._initialize_decoding_adapters_cache(
+          adapter_weights
+      )
+
+    adapter_scale_factor = jnp.bfloat16(
+        self._get_adapter_scale_factor(adapter_id)
+    )
+    self.adapters_scale_factor = self.adapters_scale_factor.at[slot_id].set(
+        adapter_scale_factor
+    )
+    self.decoding_adapters_cache = jax.tree_util.tree_map(
+        insert_leaf, self.decoding_adapters_cache, adapter_weights
+    )
 
   # --- Public Methods (Acquire lock, then call unsafe methods) ---
 

@@ -145,6 +145,7 @@ class AdapterTensorStoreTest(
         adapters_dir_path=self.adapters_dir_path,
         hbm_memory_budget=self.hbm_budget,
         cpu_memory_budget=self.cpu_budget,
+        total_slots=8,
     )
 
     # Pre-register adapters for most tests to simplify setup
