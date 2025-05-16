@@ -1330,9 +1330,9 @@ class Driver:
         lora_state["scale_factor"] = reshaped_scale_factors
         lora_state["lora_params"] = decoding_adapters_params
 
-        if isinstance(decode_state, dict): # For flax.struct.dataclass
+        if isinstance(decode_state, dict):
           decode_state["lora_state"] = lora_state
-        else: # For standard mutable dataclasses.dataclass
+        else:  # flax.struct.dataclass
           decode_state = decode_state.replace(lora_state=lora_state)
 
       # Now we actually take a generate step on requests in the slots.
