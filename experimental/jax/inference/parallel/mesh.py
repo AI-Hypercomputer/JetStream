@@ -56,8 +56,7 @@ def create_device_mesh(
         allow_split_physical_axes=True,
     )
     return Mesh(devices=devices, axis_names=axis_names)
-  else:
-    assert p == "tpu"
+  elif p == "tpu":
     # TODO: Figure out a general method.
     # Current mesh builder is very limited.
     # only support (2,x) underlying topology shape to .
@@ -65,6 +64,8 @@ def create_device_mesh(
     devices = devices[::2] + devices[1::2][::-1]
     devices = np.reshape(devices, shape)
     return Mesh(devices=devices, axis_names=axis_names)
+  else:
+    raise RuntimeError(f"Unsupported platform: {p}")
 
 
 def get_num_partitions(axis_names):

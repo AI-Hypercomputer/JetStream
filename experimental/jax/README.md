@@ -19,7 +19,7 @@
 
 ## Quick Start
 
-So far, the experimental code only works for llama2 7b and TPU v5e-8. The whole process only takes less than 10 mins if you have a Cloud TPU v5e-8 ready.
+The experimental code supports llama2 7b and can run on TPUs (tested with v5e-8) and NVIDIA GPUs. The setup process varies slightly depending on your hardware.
 
 ### 1. Create Cloud TPU v5e-8 on Google Cloud:
 
@@ -34,9 +34,21 @@ gcloud alpha compute tpus queued-resources create ${QR_NAME} \
 
 For more [information](https://cloud.google.com/tpu/docs/queued-resources)
 
+### 2. Set up for GPU:
 
-### 2. Set up the LLM Server and serve request:
-SSH into your Cloud TPU VM first and run the following command:
+Ensure you have a compatible NVIDIA GPU, CUDA Toolkit, and cuDNN installed. Then, update your Python environment with JAX compiled for CUDA. Modify `experimental/jax/requirements.txt` to change `jax[tpu]` to `jax[cuda-pip]` (or the specific CUDA version you need, e.g., `jax[cuda12_pip]`) and reinstall the requirements:
+
+```bash
+# (Activate your virtual environment first)
+# Modify requirements.txt as described above by changing the jax[tpu] line to:
+# jax[cuda-pip]==0.4.33 # Or your specific CUDA version, e.g., jax[cuda12_pip]
+pip install -r experimental/jax/requirements.txt
+```
+
+The rest of the setup, including cloning the repository and logging into Hugging Face (see step 3 below), is the same as for TPU.
+
+### 3. Set up the LLM Server and serve request:
+SSH into your Cloud TPU VM or your GPU machine first and run the following command:
 
 Set up a new Python env.
 ```
@@ -60,7 +72,7 @@ huggingface-cli login
 ```
 
 
-### 3. Offline Benchmarking:
+### 4. Offline Benchmarking:
 
 Note: the current setup is using 8-ways TP which is just for experiment and compare with current JetStream + MaxText number.
 
@@ -86,7 +98,7 @@ Benchmarking result:
 
 Note: The online number should be even more better than the current MaxText and JetStream as the experimental framework runs the prefill and decode together in one model forward pass.
 
-### 4. Online Serving Example:
+### 5. Online Serving Example:
 
 Start server:
 
