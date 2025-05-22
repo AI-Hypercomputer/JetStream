@@ -123,6 +123,7 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
         adapters_dir_path="/tmp/",
         hbm_memory_budget=20 * (1024**3),  # 20 GB HBM
         cpu_memory_budget=100 * (1024**3),  # 100 GB RAM
+        total_slots=8,
     )
 
     generate_adapterstore = adapterstore.AdapterTensorStore(
@@ -130,6 +131,7 @@ class OrchestratorTest(unittest.IsolatedAsyncioTestCase):
         adapters_dir_path="/tmp/",
         hbm_memory_budget=20 * (1024**3),  # 20 GB HBM
         cpu_memory_budget=100 * (1024**3),  # 100 GB RAM
+        total_slots=8,
     )
 
     await prefill_adapterstore.register_adapter(
