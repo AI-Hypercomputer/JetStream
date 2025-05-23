@@ -32,7 +32,7 @@ I.e. ['Ċ', 'Ə', 'ɖ'] when converted back with chr()
 
 import functools
 from dataclasses import asdict
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Dict, Callable, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -71,6 +71,7 @@ class DecodeState:
   generate_cache_index: int
   generate_lengths: jax.Array
   generate_tokens: jax.Array
+  lora_state: Optional[Dict[str, Any]] = None
 
 
 class TestEngine(engine_api.Engine):
@@ -509,6 +510,7 @@ class TestEngine(engine_api.Engine):
         generate_tokens=jnp.zeros(
             (self.generate_cache_batch, 1), dtype=jnp.int32
         ),
+        lora_state={},
     )
 
   @property

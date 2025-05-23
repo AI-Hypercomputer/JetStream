@@ -174,6 +174,7 @@ def create_driver(
   shared_adapterstore = []
 
   if lora_input_adapters_path:
+    # TODO: Make hbm_memory_budget and cpu_memory_budget configurable
     for pe in engines.prefill_engines:
       prefill_adapterstore.append(
           adapterstore.AdapterTensorStore(
@@ -181,9 +182,10 @@ def create_driver(
               adapters_dir_path=lora_input_adapters_path,
               hbm_memory_budget=20 * (1024**3),  # 20 GB HBM
               cpu_memory_budget=100 * (1024**3),  # 100 GB RAM
+              total_slots=pe.max_concurrent_decodes,
           )
       )
-    # TODO: Make hbm_memory_budget and cpu_memory_budget configurable
+
     for ge in engines.generate_engines:
       generate_adapterstore.append(
           adapterstore.AdapterTensorStore(
@@ -191,6 +193,7 @@ def create_driver(
               adapters_dir_path=lora_input_adapters_path,
               hbm_memory_budget=20 * (1024**3),  # 20 GB HBM
               cpu_memory_budget=100 * (1024**3),  # 100 GB RAM
+              total_slots=ge.max_concurrent_decodes,
           )
       )
 
@@ -201,6 +204,7 @@ def create_driver(
               adapters_dir_path=lora_input_adapters_path,
               hbm_memory_budget=20 * (1024**3),  # 20 GB HBM
               cpu_memory_budget=100 * (1024**3),  # 100 GB RAM
+              total_slots=ie.max_concurrent_decodes,
           )
       )
 
@@ -314,6 +318,9 @@ def run(
     logger.info(
         "Not starting Prometheus server: --prometheus_port flag not set"
     )
+
+  if multi_sampling and lora_input_adapters_path:
+    raise ValueError("LoRA adapters is not enabled for multi_sampling mode.")
 
   driver = create_driver(
       config,
