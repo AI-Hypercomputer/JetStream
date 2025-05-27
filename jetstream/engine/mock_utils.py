@@ -56,7 +56,7 @@ class TestVocab(Vocabulary):
   tokenizer: TestTokenizer = TestTokenizer()
 
   def _encode(self, s: str) -> Sequence[int]:
-    """Converts a string into a integer sequenc."""
+    """Converts a string into a integer sequence."""
     # 'We use array methods, not python iterables so we don't
     # implement this method in the mock vocab.
     raise NotImplementedError

@@ -27,7 +27,7 @@ from jetstream.engine import engine_api
 
 
 class SPTokenizer:
-  """Tokenier used in original llama2 git"""
+  """Tokenizer used in original llama2 git"""
 
   def __init__(self, tokenizer_path: str):
     self.tokenizer = SentencePieceProcessor()
@@ -40,7 +40,7 @@ class SPTokenizer:
 
 
 class JetStreamTokenizer:
-  """Tokenier used in JetStream before mix_token"""
+  """Tokenizer used in JetStream before mix_token"""
 
   def __init__(self, tokenizer_path: str):
     metadata = tokenizer_pb2.TokenizerParameters(path=tokenizer_path)
@@ -91,13 +91,13 @@ class TokenUtilsTest(unittest.TestCase):
   def test_decode_vs_piece(self):
     self.setup_sentencepiece()
     tokens = [304, 13, 2266, 526, 777, 9590, 2020, 29901]
-    expeted_sp_output = []
+    expected_sp_output = []
     jt_output = []
     for t in tokens:
-      expeted_sp_output.append(self.sp_tokenizer.decode([t]))
+      expected_sp_output.append(self.sp_tokenizer.decode([t]))
       jt_output.append(self.jt_tokenizer.decode(t))
 
-    self.assertNotEqual(jt_output, expeted_sp_output)
+    self.assertNotEqual(jt_output, expected_sp_output)
 
   def test_sp_vs_seqio(self):
     self.setup_sentencepiece()

@@ -43,7 +43,7 @@ class Tokenizer(abc.ABC):
 
   @abc.abstractmethod
   def decode(self, token_ids: list[int], **kwargs) -> str:
-    """Processess input token ids to generate a string.
+    """Processes input token ids to generate a string.
     Args:
       token_ids: List of token ids.
       **kwargs: Additional keyword arguments.

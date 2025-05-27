@@ -22,7 +22,7 @@ from .mesh import get_num_partitions, get_partition_index
 
 
 def reduce_scatter(operand, scatter_dimension, axis_names):
-  """reduce-scatter sum operation via ppermute."""
+  """reduce-scatter sum operation via permute."""
   idx = get_partition_index(axis_names=axis_names)
   num_partitions = get_num_partitions(axis_names=axis_names)
   chunk_size = operand.shape[scatter_dimension] // num_partitions

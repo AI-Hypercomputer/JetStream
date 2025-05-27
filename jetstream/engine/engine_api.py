@@ -31,7 +31,7 @@ from jetstream.engine import token_utils
 
 
 # The model parameters - their partitioning will be unique for different prefill
-# and decode topoologies.
+# and decode topologies.
 Params = Any
 # The result of a prefill operation, often a batch size 1 KVCache.
 Prefix = Any
@@ -39,9 +39,9 @@ Prefix = Any
 DecodeState = Any
 # Accelerator representation of tokens.
 DeviceTokens = Any
-# Cpus asscociated with the mesh.
+# Cpus associated with the mesh.
 CpuDevices = Any
-# Tokenkizer used by the engine
+# Tokenizer used by the engine
 Tokenizer = Any
 # PRNG key used for prefilling
 PRNGKeyType = Any
@@ -264,7 +264,7 @@ class Engine(abc.ABC):
   ) -> Any:
     """Free cache and other decode resource for the slot.
 
-    This function is needed for advanced attetnion kenel like PageAttetion.
+    This function is needed for advanced attention kernel like PageAttention.
     After finishing one request, the engine need to free all used page block
     resource and reuse for coming requests.
     """

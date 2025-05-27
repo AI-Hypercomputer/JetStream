@@ -44,7 +44,7 @@ class TestBenchmarkServing(unittest.IsolatedAsyncioTestCase):
     disable_tqdm = True
 
     async def mocked_decode_response():
-      """Mocks decode reponse as an async generator."""
+      """Mocks decode response as an async generator."""
       responses = [
           jetstream_pb2.DecodeResponse(
               stream_content=jetstream_pb2.DecodeResponse.StreamContent(

@@ -27,6 +27,6 @@ def get_partition_spec(sharded_pytree):
     elif isinstance(a, int) or isinstance(a, float):
       return P()
     else:
-      raise ValueError(f"unknown parition spec for {a}")
+      raise ValueError(f"unknown partition spec for {a}")
 
   return jax.tree_util.tree_map(pspec, sharded_pytree)
