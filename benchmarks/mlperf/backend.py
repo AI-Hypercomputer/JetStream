@@ -327,7 +327,7 @@ class SUT:
         self.accuracy_log.write(json.dumps(pred_outputs))
         self.accuracy_log.flush()
         self.accuracy_log.close()
-        log.info("Dumpped prediction outputs to accuracy log... ")
+        log.info("Dumped prediction outputs to accuracy log... ")
 
   def __del__(self):
     print("Finished destroying SUT.")

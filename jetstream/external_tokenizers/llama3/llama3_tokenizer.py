@@ -125,7 +125,7 @@ class Tokenizer:
     By default, setting disallowed_special=() encodes a string by ignoring
     special tokens. Specifically:
     - Setting `disallowed_special` to () will cause all text corresponding
-      to special tokens to be encoded as natural text (insteading of raising
+      to special tokens to be encoded as natural text (instead of raising
       an error).
     - Setting `allowed_special` to "all" will treat all text corresponding
       to special tokens to be encoded as special tokens.

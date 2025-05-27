@@ -409,7 +409,7 @@ class SentencePieceTokenizer(tokenizer_api.Tokenizer):
     return tokens, true_length
 
   def decode(self, token_ids: list[int], **kwargs) -> str:
-    """Processess input token ids to generate a string.
+    """Processes input token ids to generate a string.
     Args:
       token_ids: List of token ids.
       **kwargs: Additional keyword arguments.
@@ -483,7 +483,7 @@ class TikToken(tokenizer_api.Tokenizer):
     return tokens, true_length
 
   def decode(self, token_ids: list[int]) -> str:
-    """Processess input token ids to generate a string.
+    """Processes input token ids to generate a string.
     Args:
       token_ids: List of token ids.
     Returns:
@@ -566,7 +566,7 @@ class HuggingFaceTokenizer(tokenizer_api.Tokenizer):
     return tokens, true_length
 
   def decode(self, token_ids: list[int]) -> str:
-    """Processess input token ids to generate a string.
+    """Processes input token ids to generate a string.
     Args:
       token_ids: List of token ids.
     Returns:

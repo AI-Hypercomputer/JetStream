@@ -64,12 +64,12 @@ def benchmark():
   num_input_tokens = sum(map(lambda r: len(r.input_tokens), res_list))
   num_output_tokens = sum(map(lambda r: len(r.generated_tokens), res_list))
 
-  print("Benchmarking result: ")
-  print("  Total requests:", len(dataset))
-  print("  Total input tokens:", num_input_tokens)
-  print("  Total output tokens:", num_output_tokens)
-  print(f"  Input token thruput: {num_input_tokens/duration: .2f} tokens/sec")
-  print(f"  Output token thruput: {num_output_tokens/duration: .2f} tokens/sec")
+  print("Benchmarking result:")
+  print("  Total requests:          ", len(dataset))
+  print("  Total input tokens:      ", num_input_tokens)
+  print("  Total output tokens:     ", num_output_tokens)
+  print(f"  Input token throughput:  {num_input_tokens/duration: .2f} tokens/sec")
+  print(f"  Output token throughput: {num_output_tokens/duration: .2f} tokens/sec")
 
 
 if __name__ == "__main__":

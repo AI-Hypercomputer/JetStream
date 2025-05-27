@@ -223,7 +223,7 @@ class Engine:
     )
     print(" preprocess,", end="")
     self._preprocess_queue: queue.Queue[Request] = queue.Queue()
-    # TODO: Seperate the running loop with the static inference model.
+    # TODO: Separate the running loop with the static inference model.
     self._preprocess_thread = threading.Thread(
         name="preprocess", target=self._preprocess
     )

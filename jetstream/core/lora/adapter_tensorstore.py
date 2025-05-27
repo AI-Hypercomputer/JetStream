@@ -231,9 +231,9 @@ class AdapterTensorStore:
     """
     Create a new PyTree with zero tensors at the paths corresponding to
     non-None leaves in the input PyTree. The zero tensors have an added
-    dimension of size `self.totol_slots`.
+    dimension of size `self.total_slots`.
     Args:
-      adatper_weights: The input PyTree, whose structure will be mirrored.
+      adapter_weights: The input PyTree, whose structure will be mirrored.
     Returns:
       A new PyTree with zero Tensors or None values, mirroring the structure
       of the input PyTree.
@@ -437,7 +437,7 @@ class AdapterTensorStore:
 
       # --- Handle LOADING state ---
       if metadata.status == AdapterStatus.LOADING:
-        # Wait untill loading is done.
+        # Wait until loading is done.
         logging.info(
             "Adapter %s is already loading by another task, waiting...",
             adapter_id,
@@ -655,7 +655,7 @@ class AdapterTensorStore:
   async def unload_adapter(self, adapter_id: str):
     """Unloads a LoRA adapter's weights and removes it from the TensorStore."""
     if adapter_id not in self.adapter_registry:
-      raise ValueError(f"Adatper with ID '{adapter_id}' not found.")
+      raise ValueError(f"Adapter with ID '{adapter_id}' not found.")
 
     event_to_wait_on: Optional[asyncio.Event] = None
     async with self.lock:
@@ -677,7 +677,7 @@ class AdapterTensorStore:
       self._unsafe_unload_adapter(adapter_id)
 
   def list_adapters(self) -> Dict[str, AdapterMetadata]:
-    """Lists all registered adatpers and their metadata."""
+    """Lists all registered adapters and their metadata."""
     return self.adapter_registry
 
   def _evict(self, from_hbm: bool = True) -> bool:

@@ -141,7 +141,7 @@ def initialize_insert_generate_jit_cache(
     generate_params: Any,
     generate_idx: int,
 ):
-  """Initialiszes jit cache for insert and generate.
+  """Initializes jit cache for insert and generate.
 
   Args:
       generate_engine: A generate engine to be compiled for.

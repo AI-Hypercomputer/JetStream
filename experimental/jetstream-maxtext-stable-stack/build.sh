@@ -37,4 +37,4 @@ docker build --no-cache \
     -t ${LOCAL_IMAGE_TAG} \
     -f ./Dockerfile .
 
-echo "********* Sucessfully built Stable Stack Image with tag $LOCAL_IMAGE_TAG *********"
+echo "********* Successfully built Stable Stack Image with tag $LOCAL_IMAGE_TAG *********"
