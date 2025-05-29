@@ -58,11 +58,22 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
   && \
-  apt-get install -y --no-install-recommends git git-lfs \
+  apt-get install -y --no-install-recommends git git-lfs curl \
   && \
   rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m pip install --upgrade pip
+
+# Add the Google Cloud SDK package repository
+RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+# RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
+RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+
+# Install the Google Cloud SDK
+RUN apt-get update && apt-get install -y google-cloud-sdk
+
+# Set environment variables for Google Cloud SDK
+ENV PATH="/usr/local/google-cloud-sdk/bin:${PATH}"
 
 # Install MaxText package
 COPY --from=maxtext_cloner /src .
