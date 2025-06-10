@@ -94,7 +94,6 @@ class ResultTokens(abc.ABC):
   )
   # log probabilities of the tokens. Shape: [batch, tokens]
   log_prob: Union[jax.Array, np.ndarray] = struct.field(
-      pytree_node=False,
       default=None,
   )
 
