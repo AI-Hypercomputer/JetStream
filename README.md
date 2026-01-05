@@ -3,6 +3,9 @@
 [![PyPi downloads](https://img.shields.io/pypi/dm/google-jetstream?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/google-jetstream/)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
+> [!WARNING]
+> **Notice of Archival:** In an effort to streamline TPU inference efforts in open source, we have migrated core functionality in Jetstream to the new [tpu-inference](tpu.vllm.ai) repository. For this reason, we will be archiving Jetstream on February 1st 2026. Please note, archival does not mean deletion! Users will still be able to fork and clone Jetstream, we are simply shifting the repository to "read-only". To get Jetstream features and so much more, please check out [tpu.vllm.ai](tpu.vllm.ai).
+
 # JetStream is a throughput and memory optimized engine for LLM inference on XLA devices.
 
 ## About
