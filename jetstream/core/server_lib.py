@@ -147,7 +147,7 @@ def create_driver(
     config: A ServerConfig to config engine, model, device slices, etc.
     devices: Device objects, will be used to get engine with proper slicing.
     jax_padding: The flag to enable JAX padding during tokenization.
-    metrics_collector: The JetStream Promethus metric collector.
+    metrics_collector: The JetStream Prometheus metric collector.
     enable_model_warmup: The flag to enable model server warmup.
     multi_sampling: The flag to enable multi-sampling.
     prefix_caching_config: Config to prefix caching. Disable if None.
@@ -291,7 +291,7 @@ def run(
     threads: Number of RPC handlers worker threads. This should be at least
       equal to the decoding batch size to fully saturate the decoding queue.
     jax_padding: The flag to enable JAX padding during tokenization.
-    metrics_server_config: The config to enable Promethus metric server.
+    metrics_server_config: The config to enable Prometheus metric server.
     enable_jax_profiler: The flag to enable JAX profiler server.
     jax_profiler_port: The port JAX profiler server (default to 9999).
     enable_model_warmup: The flag to enable model server warmup.

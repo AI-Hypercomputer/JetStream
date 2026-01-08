@@ -60,7 +60,7 @@ The primary concern is GIL contention between threads, which is why we block
 on queues that don't have an ongoing activity (i.e. everything but the
 generation queue) because we don't control to go back to those queues until
 necessary. Blocking means that the GIL doesn't switch back to that thread,
-wheras continual queue get operations 'chop' control and mean that we do not
+whereas continual queue get operations 'chop' control and mean that we do not
 achieve good throughput. This is okay on the prefill/transfer/detokenization
 threads because we don't need to do anything other than react to the presence
 of items on these queues, wheras the generation thread needs to also run a
@@ -811,9 +811,9 @@ class Driver:
 
       # Here we are applying the LoRA adapter params to the base params and
       # them. In the interleaved mode, the prefill and generate shares the
-      # same params. But as long as prefill and decode happens sequentially,
-      # there is no issues. Issue will arrise if prefill and decode is running
-      # in parallel and sharing the same params. Issue arrise because prefill
+      # same params. But as long as prefill and decode happen sequentially,
+      # there are no issues. Issue will arise if prefill and decode are running
+      # in parallel and sharing the same params. Issues arise because prefill
       # uses pre-merged weights and generate uses only base weights.
       final_prefill_params = prefill_params
       if adapter_id and adapter_tensorstore is not None:

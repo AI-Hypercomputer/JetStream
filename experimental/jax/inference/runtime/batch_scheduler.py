@@ -110,10 +110,10 @@ class BatchScheduler:
         cur_prompt_chunk_len = (
             total_len - next_prefill_req.chunk_idx * next_prefill_req.chunk_size
         )
-      alloced_pages = self.kv_manager.alloc_prefill_hbm_pages(
+      allocated_pages = self.kv_manager.alloc_prefill_hbm_pages(
           cur_prompt_chunk_len
       )
-      if len(alloced_pages) == 0:
+      if len(allocated_pages) == 0:
         # TODO: introduce priority for the request and better
         # eviction algorithm.
         raise NotImplementedError("Eviction is not supported yet")
@@ -121,9 +121,9 @@ class BatchScheduler:
         start_idx = (
             next_prefill_req.chunk_idx * next_prefill_req.chunk_size
         ) // self.kv_manager.page_size
-        for i, page in enumerate(alloced_pages):
+        for i, page in enumerate(allocated_pages):
           next_prefill_req.page_indices[start_idx + i] = page
-        prefill_pages_update = PrefillPagesUpdate(alloced_pages)
+        prefill_pages_update = PrefillPagesUpdate(allocated_pages)
 
     # Schedule new generate reqs and allocate memory for all reqs.
     with generate_state.map_mutex:
@@ -150,12 +150,12 @@ class BatchScheduler:
           next_generate_reqs.append(gr)
 
         # Check and alloc memory for generate.
-        alloced_pages = self.kv_manager.alloc_hbm_pages(
+        allocated_pages = self.kv_manager.alloc_hbm_pages(
             len(generate_state.active_slot_req_map)
         )
         if (
             len(generate_state.active_slot_req_map) != 0
-            and len(alloced_pages) == 0
+            and len(allocated_pages) == 0
         ):
           raise NotImplementedError(
               "Eviction isn't supported yet, please set a lower value for batch_size"
@@ -169,17 +169,17 @@ class BatchScheduler:
           if idx >= len(req.page_indices):
             continue
 
-          req.page_indices[idx] = alloced_pages[page_to_use]
+          req.page_indices[idx] = allocated_pages[page_to_use]
           generate_state_page_updates.append(
               GenerateStatePageUpdate(
                   slot=slot,
                   page_idx=idx,
-                  mapped_idx=alloced_pages[page_to_use],
+                  mapped_idx=allocated_pages[page_to_use],
               )
           )
           page_to_use += 1
 
-        self.kv_manager.free_hbm_pages(alloced_pages[page_to_use:])
+        self.kv_manager.free_hbm_pages(allocated_pages[page_to_use:])
 
         if len(generate_state.active_slot_req_map) == 0:
           schedule_generate = False

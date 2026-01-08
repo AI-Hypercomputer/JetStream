@@ -69,7 +69,7 @@ def get_tokenizer(
     model_id: str,
     tokenizer_name: str,
 ) -> Any:
-  """Return a tokenizer or a tokenizer placholder."""
+  """Return a tokenizer or a tokenizer placeholder."""
   if tokenizer_name == "test":
     print("Using test tokenizer")
     return "test"

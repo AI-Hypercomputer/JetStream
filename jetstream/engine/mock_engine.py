@@ -332,7 +332,7 @@ class TestEngine(engine_api.Engine):
     # TODO: Do we need a left aligned one to test spec sampling?
     # Don't need the + 1 you normally would, because we don't provide a
     # token from prefill in the dummy.
-    # This iota and masking is to allow for a cicular cache.
+    # This iota and masking is to allow for a circular cache.
     length_mask = (
         -(l_iota - generate_cache_index) % self.cache_length
     ) <= generate_lengths[:, None]
@@ -540,7 +540,7 @@ class TestEngine(engine_api.Engine):
 
   @property
   def use_chunked_prefill(self) -> bool:
-    """Wether to use chunked prefill."""
+    """Whether to use chunked prefill."""
     return self._use_chunked_prefill
 
   @property
