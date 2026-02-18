@@ -52,7 +52,7 @@ You can run the JetStream MaxText Server with Gemma and Llama2 models. This sect
 
 *   You can download a [Gemma checkpoint from Kaggle](https://www.kaggle.com/models/google/gemma/frameworks/maxText/variations/7b). 
 *   After downloading orbax Gemma checkpoints, copy them to your GCS bucket at `$CHKPT_BUCKET`. You should also set two more paths `$MAXTEXT_BUCKET_SCANNED` and `$MAXTEXT_BUCKET_UNSCANNED` that point to the locations of the maxtext checkpoints for the scanned and unscanned (inference-optimized) versions, respectively.
-    *   `gsutil -m cp -r ${YOUR_CKPT_PATH} ${CHKPT_BUCKET}`
+    *   `gcloud storage cp --recursive ${YOUR_CKPT_PATH} ${CHKPT_BUCKET}`
     *   Please refer to the [conversion script](https://github.com/google/JetStream/blob/main/jetstream/tools/maxtext/model_ckpt_conversion.sh) for an example of `$CHKPT_BUCKET`.
 *   Then, using the following command to convert the Gemma checkpoint into a MaxText compatible unscanned checkpoint.
 
@@ -70,7 +70,7 @@ Note: For more information about the Gemma model and checkpoints, see [About Gem
 
 *   You can use a Llama2 checkpoint you have generated or one from [the open source community](https://llama.meta.com/llama-downloads/). 
 *   After downloading PyTorch checkpoints, copy them to your GCS bucket at `$CHKPT_BUCKET`. You should also set two more paths `$MAXTEXT_BUCKET_SCANNED` and `$MAXTEXT_BUCKET_UNSCANNED` that point to the locations of the maxtext checkpoints for the scanned and unscanned (inference-optimized) versions, respectively.
-    *   `gsutil -m cp -r ${YOUR_CKPT_PATH} ${CHKPT_BUCKET}`
+    *   `gcloud storage cp --recursive ${YOUR_CKPT_PATH} ${CHKPT_BUCKET}`
     *   Please refer to the [conversion script](https://github.com/google/JetStream/blob/main/jetstream/tools/maxtext/model_ckpt_conversion.sh) for an example of `$CHKPT_BUCKET`.
 *   Then, using the following command to convert the Llama2 checkpoint into a MaxText compatible unscanned checkpoint.
 

@@ -1,4 +1,3 @@
-
 ## Create TPU VM.
 Follow these [instructions](https://cloud.google.com/tpu/docs/v5e-inference#tpu-vm) to create TPU v5e-8 VM and ssh into the VM
 
@@ -46,8 +45,8 @@ accelerate==0.21.0
 ```
 export DATA_DISK_DIR=~/loadgen_run_data
 mkdir -p ${DATA_DISK_DIR}
-gsutil cp gs://cloud-tpu-inference-public/mlcommons/inference/language/llama2-70b/data/processed-openorca/open_orca_gpt4_tokenized_llama.calibration_1000.pkl ${DATA_DISK_DIR}/processed-calibration-data.pkl
-gsutil cp gs://cloud-tpu-inference-public/mlcommons/inference/language/llama2-70b/data/processed-openorca/open_orca_gpt4_tokenized_llama.sampled_24576.pkl ${DATA_DISK_DIR}/processed-data.pkl
+gcloud storage cp gs://cloud-tpu-inference-public/mlcommons/inference/language/llama2-70b/data/processed-openorca/open_orca_gpt4_tokenized_llama.calibration_1000.pkl ${DATA_DISK_DIR}/processed-calibration-data.pkl
+gcloud storage cp gs://cloud-tpu-inference-public/mlcommons/inference/language/llama2-70b/data/processed-openorca/open_orca_gpt4_tokenized_llama.sampled_24576.pkl ${DATA_DISK_DIR}/processed-data.pkl
 ```
 
 ## Download Maxtext and Jetstream

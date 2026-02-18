@@ -10,7 +10,7 @@ echo "inference_microbenchmark_prefill_lengths: ${inference_microbenchmark_prefi
 cd /maxtext
 export run_dir=${base_output_dir}/microbenchmark/${run_name}/${experiment_time}/
 echo "run_dir: ${run_dir}"
-gsutil cp ${config_file_path} ${run_dir}/
+gcloud storage cp ${config_file_path} ${run_dir}/
 
 python3 -m MaxText.inference_microbenchmark \
     ${config_file_path} \
@@ -43,4 +43,4 @@ python3 -m MaxText.inference_microbenchmark \
     checkpoint_is_quantized=${checkpoint_is_quantized} \
     compute_axis_order=${compute_axis_order} \
     prefill_cache_axis_order=${prefill_cache_axis_order} \
-    ar_cache_axis_order=${ar_cache_axis_order} 2>&1 | tee results.log && gsutil mv results.log ${run_dir}/
+    ar_cache_axis_order=${ar_cache_axis_order} 2>&1 | tee results.log && gcloud storage mv results.log ${run_dir}/
